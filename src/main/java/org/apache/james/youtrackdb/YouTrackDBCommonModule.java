@@ -1,0 +1,150 @@
+package org.apache.james.youtrackdb;
+
+import java.io.Closeable;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.util.Map;
+
+import jakarta.annotation.PreDestroy;
+import jakarta.inject.Inject;
+
+import org.apache.commons.configuration2.Configuration;
+import org.apache.commons.configuration2.ex.ConfigurationException;
+import org.apache.james.filesystem.api.FileSystem;
+import org.apache.james.server.core.configuration.ConfigurationProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.inject.AbstractModule;
+import com.google.inject.Provides;
+import com.google.inject.Singleton;
+import com.jetbrains.youtrackdb.api.DatabaseType;
+import com.jetbrains.youtrackdb.api.YouTrackDB;
+import com.jetbrains.youtrackdb.api.YourTracks;
+import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
+
+public class YouTrackDBCommonModule extends AbstractModule {
+    private static final Logger LOGGER = LoggerFactory.getLogger(YouTrackDBCommonModule.class);
+    private static final String DEFAULT_PATH = "var/youtrackdb";
+    private static final String DB_NAME = "james";
+    private static final String DB_USER = "admin";
+    private static final String DB_PASS = "admin";
+
+    @Singleton
+    public static class YouTrackDBHolder implements Closeable {
+        private final YouTrackDB youTrackDB;
+        private final YTDBGraphTraversalSource traversalSource;
+
+        @Inject
+        public YouTrackDBHolder(ConfigurationProvider configurationProvider, FileSystem fileSystem) throws FileNotFoundException {
+            String path = DEFAULT_PATH;
+            Configuration ytdbConfig = new org.apache.commons.configuration2.BaseConfiguration();
+            try {
+                Configuration conf = configurationProvider.getConfiguration("youtrackdb");
+                path = conf.getString("youtrackdb.path", DEFAULT_PATH);
+                ytdbConfig = conf;
+            } catch (ConfigurationException e) {
+                LOGGER.info("youtrackdb.properties not found, using default settings with path {}", DEFAULT_PATH);
+            }
+
+            File dir = new File(path).isAbsolute() ? new File(path) : new File(fileSystem.getBasedir(), path);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+
+            LOGGER.info("Initializing embedded YouTrackDB environment at {}", dir.getAbsolutePath());
+            this.youTrackDB = YourTracks.instance(dir.getAbsolutePath(), ytdbConfig);
+            
+            // Create database if absent
+            this.youTrackDB.createIfNotExists(DB_NAME, DatabaseType.DISK, ytdbConfig, DB_USER, DB_PASS, "admin");
+            this.traversalSource = youTrackDB.openTraversal(DB_NAME, DB_USER, DB_PASS);
+
+            initSchema();
+        }
+
+        private void initSchema() {
+            try {
+                LOGGER.info("Verifying/initializing schema in YouTrackDB");
+                // Class for Users
+                traversalSource.executeInTx(g -> {
+                    g.command("CREATE CLASS JamesUser IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesUser.username IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesUser.password IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesUser.algorithm IF NOT EXISTS STRING");
+                    g.command("CREATE INDEX IF NOT EXISTS JamesUser.username UNIQUE");
+
+                    // Class for Domains
+                    g.command("CREATE CLASS JamesDomain IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesDomain.domain IF NOT EXISTS STRING");
+                    g.command("CREATE INDEX IF NOT EXISTS JamesDomain.domain UNIQUE");
+
+                    // Class for RRT Mappings
+                    g.command("CREATE CLASS JamesRRTMapping IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesRRTMapping.source IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesRRTMapping.mapping IF NOT EXISTS STRING");
+                    g.command("CREATE INDEX IF NOT EXISTS JamesRRTMapping.source NOTUNIQUE");
+
+                    // Class for Blobs
+                    g.command("CREATE CLASS JamesBlob IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesBlob.bucketAndBlobId IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesBlob.bucket IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesBlob.blobId IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesBlob.payload IF NOT EXISTS BINARY");
+                    g.command("CREATE INDEX IF NOT EXISTS JamesBlob.bucketAndBlobId UNIQUE");
+                    g.command("CREATE INDEX IF NOT EXISTS JamesBlob.bucket NOTUNIQUE");
+                });
+            } catch (Exception e) {
+                LOGGER.warn("Schema initialization noticed: {}", e.getMessage());
+            }
+        }
+
+        public YouTrackDB getYouTrackDB() {
+            return youTrackDB;
+        }
+
+        public YTDBGraphTraversalSource getTraversalSource() {
+            return traversalSource;
+        }
+
+        @Override
+        @PreDestroy
+        public void close() {
+            LOGGER.info("Closing YouTrackDB TraversalSource and Manager");
+            try {
+                if (traversalSource != null) {
+                    traversalSource.close();
+                }
+            } catch (Exception e) {
+                LOGGER.warn("Error closing YouTrackDB TraversalSource", e);
+            }
+            try {
+                if (youTrackDB != null && youTrackDB.isOpen()) {
+                    youTrackDB.close();
+                }
+            } catch (Exception e) {
+                LOGGER.warn("Error closing YouTrackDB manager", e);
+            }
+        }
+    }
+
+    @Override
+    protected void configure() {
+        bind(YouTrackDBHolder.class).asEagerSingleton();
+
+        com.google.inject.multibindings.Multibinder.newSetBinder(binder(), org.apache.james.webadmin.Routes.class)
+            .addBinding()
+            .to(YouTrackDBAdminRoutes.class);
+    }
+
+    @Provides
+    @Singleton
+    YouTrackDB provideYouTrackDB(YouTrackDBHolder holder) {
+        return holder.getYouTrackDB();
+    }
+
+    @Provides
+    @Singleton
+    YTDBGraphTraversalSource provideTraversalSource(YouTrackDBHolder holder) {
+        return holder.getTraversalSource();
+    }
+}

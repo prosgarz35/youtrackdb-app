@@ -1,0 +1,119 @@
+package org.apache.james;
+
+import static io.restassured.RestAssured.given;
+import static io.restassured.RestAssured.when;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.is;
+
+import org.apache.james.probe.DataProbe;
+import org.apache.james.utils.DataProbeImpl;
+import org.apache.james.utils.WebAdminGuiceProbe;
+import org.apache.james.webadmin.WebAdminUtils;
+import org.apache.james.webadmin.routes.DomainsRoutes;
+import org.apache.james.webadmin.routes.UserRoutes;
+import org.apache.james.youtrackdb.YouTrackDBJamesConfiguration;
+import org.apache.james.youtrackdb.YouTrackDBJamesServerMain;
+import org.eclipse.jetty.http.HttpStatus;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
+import io.restassured.RestAssured;
+
+class YouTrackDBWebAdminServerIntegrationTest implements JamesServerConcreteContract {
+
+    private static final String DOMAIN = "domain.local";
+    private static final String USERNAME = "alice@" + DOMAIN;
+    private static final String SPECIFIC_DOMAIN = DomainsRoutes.DOMAINS + "/" + DOMAIN;
+    private static final String SPECIFIC_USER = UserRoutes.USERS + "/" + USERNAME;
+
+    @RegisterExtension
+    static JamesServerExtension jamesServerExtension = new JamesServerBuilder<YouTrackDBJamesConfiguration>(tmpDir ->
+        YouTrackDBJamesConfiguration.builder()
+            .workingDirectory(tmpDir)
+            .configurationFromClasspath()
+            .build())
+        .server(YouTrackDBJamesServerMain::createServer)
+        .lifeCycle(JamesServerExtension.Lifecycle.PER_CLASS)
+        .build();
+
+    private DataProbe dataProbe;
+
+    @BeforeEach
+    void setUp(GuiceJamesServer guiceJamesServer) throws Exception {
+        dataProbe = guiceJamesServer.getProbe(DataProbeImpl.class);
+        WebAdminGuiceProbe webAdminGuiceProbe = guiceJamesServer.getProbe(WebAdminGuiceProbe.class);
+
+        RestAssured.requestSpecification = WebAdminUtils.buildRequestSpecification(webAdminGuiceProbe.getWebAdminPort())
+            .build();
+    }
+
+    @Test
+    void webAdminShouldManageDomains() throws Exception {
+        when()
+            .put(SPECIFIC_DOMAIN)
+        .then()
+            .statusCode(HttpStatus.NO_CONTENT_204);
+
+        assertThat(dataProbe.listDomains()).contains(DOMAIN);
+
+        when()
+            .get(DomainsRoutes.DOMAINS)
+        .then()
+            .statusCode(HttpStatus.OK_200)
+            .body("", hasItem(DOMAIN));
+
+        when()
+            .delete(SPECIFIC_DOMAIN)
+        .then()
+            .statusCode(HttpStatus.NO_CONTENT_204);
+
+        assertThat(dataProbe.listDomains()).doesNotContain(DOMAIN);
+    }
+
+    @Test
+    void webAdminShouldManageUsers() throws Exception {
+        dataProbe.addDomain(DOMAIN);
+
+        given()
+            .body("{\"password\":\"secret\"}")
+        .when()
+            .put(SPECIFIC_USER)
+        .then()
+            .statusCode(HttpStatus.NO_CONTENT_204);
+
+        assertThat(dataProbe.listUsers()).contains(USERNAME);
+
+        when()
+            .get(UserRoutes.USERS)
+        .then()
+            .statusCode(HttpStatus.OK_200)
+            .body("username", hasItem(USERNAME));
+
+        when()
+            .delete(SPECIFIC_USER)
+        .then()
+            .statusCode(HttpStatus.NO_CONTENT_204);
+
+        assertThat(dataProbe.listUsers()).doesNotContain(USERNAME);
+    }
+
+    @Test
+    void webAdminShouldCheckIntegrity() {
+        when()
+            .get("/youtrackdb/check")
+        .then()
+            .statusCode(HttpStatus.OK_200)
+            .body("status", is("HEALTHY"))
+            .body("databaseOpen", is(true));
+    }
+
+    @Test
+    void webAdminShouldExecuteBackup() {
+        when()
+            .post("/youtrackdb/backup")
+        .then()
+            .statusCode(HttpStatus.CREATED_201);
+    }
+}
