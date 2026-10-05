@@ -64,7 +64,7 @@ public class YouTrackDBJamesServerMain implements JamesServerMain {
         new MemoryEventStoreModule(),
         new YouTrackDBDataModule(),
         new YouTrackDBMailboxModule(),
-        new MemoryMailQueueModule(),
+        new YouTrackDBMailQueueModule(),
         new TaskManagerModule(),
         new NoJwtModule(),
         new RawPostDequeueDecoratorModule(),

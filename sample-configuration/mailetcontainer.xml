@@ -75,7 +75,15 @@
             </mailet>
             <mailet match="RecipientIsLocal" class="Sieve"/>
             <mailet match="RecipientIsLocal" class="AddDeliveredToHeader"/>
-            <mailet match="RecipientIsLocal" class="LocalDelivery"/>
+            <mailet match="RecipientIsLocal" class="LocalDelivery">
+                <consume>false</consume>
+            </mailet>
+            <mailet match="DSNSuccessRequested" class="DSNBounce">
+                <defaultStatus>2.0.0</defaultStatus>
+                <action>delivered</action>
+                <prefix>[SUCCESS]</prefix>
+                <messageString>Your message was successfully delivered to the destination mailbox.</messageString>
+            </mailet>
             <mailet match="HostIsLocal" class="ToProcessor">
                 <processor>local-address-error</processor>
                 <notice>550 - Requested action not taken: no such user here</notice>

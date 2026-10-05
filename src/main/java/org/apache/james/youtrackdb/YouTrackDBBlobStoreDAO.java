@@ -40,11 +40,17 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     private static final String PROP_BLOB_ID = "blobId";
     private static final String PROP_KEY = "bucketAndBlobId";
     private static final String PROP_PAYLOAD = "payload";
-    private static final String PROP_STORAGE_TYPE = "storageType"; // "INLINE" or "FILE"
-    private static final String STORAGE_INLINE = "INLINE";
-    private static final String STORAGE_FILE = "FILE";
+    private static final String PROP_STORAGE_TYPE = "storageType"; // "INLINE_RAW", "INLINE_ZSTD", "FILE_ZSTD"
+    private static final String STORAGE_INLINE_RAW = "INLINE_RAW";
+    private static final String STORAGE_INLINE_ZSTD = "INLINE_ZSTD";
+    private static final String STORAGE_FILE_ZSTD = "FILE_ZSTD";
 
-    private static final int INLINE_THRESHOLD_BYTES = 16 * 1024; // 16 KB threshold
+    // Legacy fallback compatibility
+    private static final String LEGACY_STORAGE_INLINE = "INLINE";
+    private static final String LEGACY_STORAGE_FILE = "FILE";
+
+    private static final int TIER1_RAW_THRESHOLD = 4 * 1024;    // 4 KB: raw in DB (no compress, no dedup)
+    private static final int TIER2_DB_THRESHOLD = 64 * 1024;   // 64 KB: Zstd in DB (page size limit)
 
     private final YTDBGraphTraversalSource g;
     private final BlobId.Factory blobIdFactory;
@@ -68,9 +74,53 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         return bucketName.asString() + "/" + blobId.asString();
     }
 
+    /**
+     * Resolves the filesystem location for a blob using 3-level directory sharding:
+     * var/blobs/{bucket}/{p1}/{p2}/{p3}/{blobId}
+     * For example, blob "abcdef123456" -> var/blobs/{bucket}/ab/cd/ef/abcdef123456
+     * Also checks flat legacy location (var/blobs/{bucket}/{blobId}) for backward compatibility.
+     */
     private File getFileForBlob(BucketName bucketName, BlobId blobId) {
         File bucketDir = new File(blobsDirectory, bucketName.asString());
-        return new File(bucketDir, blobId.asString());
+        String id = blobId.asString();
+
+        if (id.length() >= 6) {
+            String p1 = id.substring(0, 2);
+            String p2 = id.substring(2, 4);
+            String p3 = id.substring(4, 6);
+            File sharded = new File(new File(new File(bucketDir, p1), p2), p3);
+            File shardedFile = new File(sharded, id);
+            if (shardedFile.exists()) {
+                return shardedFile;
+            }
+            // Check legacy flat location if file exists there
+            File flatFile = new File(bucketDir, id);
+            if (flatFile.exists()) {
+                return flatFile;
+            }
+            // Return sharded destination for new writes
+            return shardedFile;
+        }
+
+        return new File(bucketDir, id);
+    }
+
+    private void pruneEmptyParentDirectories(File file, File stopDir) {
+        try {
+            File parent = file.getParentFile();
+            while (parent != null && !parent.equals(stopDir) && parent.getAbsolutePath().startsWith(stopDir.getAbsolutePath())) {
+                String[] list = parent.list();
+                if (list != null && list.length == 0) {
+                    if (!parent.delete()) {
+                        break;
+                    }
+                    parent = parent.getParentFile();
+                } else {
+                    break;
+                }
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     @Override
@@ -88,19 +138,34 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     return null;
                 }
                 Vertex v = traversal.next();
-                String storageType = v.property(PROP_STORAGE_TYPE).isPresent() ? v.value(PROP_STORAGE_TYPE) : STORAGE_INLINE;
+                String storageType = v.property(PROP_STORAGE_TYPE).isPresent() ? v.value(PROP_STORAGE_TYPE) : STORAGE_INLINE_RAW;
 
-                if (STORAGE_FILE.equals(storageType)) {
+                if (STORAGE_FILE_ZSTD.equals(storageType) || LEGACY_STORAGE_FILE.equals(storageType)) {
                     File file = getFileForBlob(bucketName, blobId);
                     if (!file.exists()) {
                         throw new RuntimeException(new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath()));
                     }
                     try {
-                        return InputStreamBlob.of(new FileInputStream(file));
+                        InputStream in = new FileInputStream(file);
+                        if (STORAGE_FILE_ZSTD.equals(storageType)) {
+                            return InputStreamBlob.of(new com.github.luben.zstd.ZstdInputStream(in));
+                        }
+                        return InputStreamBlob.of(in);
                     } catch (IOException e) {
                         throw new RuntimeException(new ObjectStoreIOException("Error opening blob file: " + file.getAbsolutePath(), e));
                     }
+                } else if (STORAGE_INLINE_ZSTD.equals(storageType)) {
+                    byte[] compressed = v.value(PROP_PAYLOAD);
+                    if (compressed == null || compressed.length == 0) {
+                        return InputStreamBlob.of(new ByteArrayInputStream(new byte[0]));
+                    }
+                    try {
+                        return InputStreamBlob.of(new com.github.luben.zstd.ZstdInputStream(new ByteArrayInputStream(compressed)));
+                    } catch (Exception e) {
+                        throw new RuntimeException(new ObjectStoreIOException("Error decompressing inline blob: " + key, e));
+                    }
                 } else {
+                    // STORAGE_INLINE_RAW or LEGACY_STORAGE_INLINE
                     byte[] bytes = v.value(PROP_PAYLOAD);
                     if (bytes == null) {
                         bytes = new byte[0];
@@ -108,80 +173,110 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     return InputStreamBlob.of(new ByteArrayInputStream(bytes));
                 }
             });
-        }).switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())));
+        }).switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
+        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override
     public Publisher<BytesBlob> readBytes(BucketName bucketName, BlobId blobId) {
         return Mono.from(readReactive(bucketName, blobId))
-            .flatMap(inputStreamBlob -> Mono.fromCallable(inputStreamBlob::asBytes));
+            .flatMap(inputStreamBlob -> Mono.fromCallable(inputStreamBlob::asBytes))
+            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override
     public Publisher<Void> save(BucketName bucketName, BlobId blobId, Blob blob) {
         Preconditions.checkNotNull(blob);
-        return Mono.fromRunnable(() -> {
+        return Mono.<Void>fromRunnable(() -> {
             try {
                 byte[] data = blob.asInputStream().payload().readAllBytes();
                 String key = buildKey(bucketName, blobId);
 
-                if (data.length > INLINE_THRESHOLD_BYTES) {
-                    // Stream to external file storage
+                if (data.length < TIER1_RAW_THRESHOLD) {
+                    // Tier 1: < 4 KB -> Inline raw into YouTrackDB (no compression, no dedup overhead)
+                    g.executeInTx(tx -> {
+                        var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
+                        Vertex v = traversal.hasNext() ? traversal.next() : tx.addV(CLASS_NAME)
+                            .property(PROP_BUCKET, bucketName.asString())
+                            .property(PROP_BLOB_ID, blobId.asString())
+                            .property(PROP_KEY, key)
+                            .next();
+                        v.property(PROP_STORAGE_TYPE, STORAGE_INLINE_RAW);
+                        v.property(PROP_PAYLOAD, data);
+                    });
+                } else if (data.length <= TIER2_DB_THRESHOLD) {
+                    // Tier 2: 4 KB .. 64 KB -> Compress (Zstd) and deduplicate in DB
+                    byte[] compressed = com.github.luben.zstd.Zstd.compress(data, 3);
+                    g.executeInTx(tx -> {
+                        var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
+                        if (traversal.hasNext()) {
+                            // Deduplication: record already exists with same key, update storage type and payload
+                            Vertex v = traversal.next();
+                            v.property(PROP_STORAGE_TYPE, STORAGE_INLINE_ZSTD);
+                            v.property(PROP_PAYLOAD, compressed);
+                        } else {
+                            tx.addV(CLASS_NAME)
+                                .property(PROP_BUCKET, bucketName.asString())
+                                .property(PROP_BLOB_ID, blobId.asString())
+                                .property(PROP_KEY, key)
+                                .property(PROP_STORAGE_TYPE, STORAGE_INLINE_ZSTD)
+                                .property(PROP_PAYLOAD, compressed)
+                                .next();
+                        }
+                    });
+                } else {
+                    // Tier 3: > 64 KB -> Compress (Zstd) and stream to filesystem with atomic rename (deduplicated)
                     File file = getFileForBlob(bucketName, blobId);
                     File parent = file.getParentFile();
                     if (!parent.exists()) {
                         parent.mkdirs();
                     }
-                    try (FileOutputStream fos = new FileOutputStream(file)) {
-                        fos.write(data);
+
+                    // Content-addressed deduplication: if file already exists with same blobId, skip disk write
+                    if (!file.exists()) {
+                        File tempFile = new File(parent, blobId.asString() + ".tmp." + Thread.currentThread().threadId());
+                        try (FileOutputStream fos = new FileOutputStream(tempFile);
+                             com.github.luben.zstd.ZstdOutputStream zos = new com.github.luben.zstd.ZstdOutputStream(fos, 3)) {
+                            zos.write(data);
+                            zos.flush();
+                            fos.getFD().sync(); // Ensure durability
+                        }
+                        try {
+                            Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        } catch (Exception e) {
+                            if (!file.exists()) {
+                                Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            } else {
+                                tempFile.delete();
+                            }
+                        }
                     }
 
                     g.executeInTx(tx -> {
                         var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                        Vertex v;
-                        if (traversal.hasNext()) {
-                            v = traversal.next();
-                        } else {
-                            v = tx.addV(CLASS_NAME)
-                                .property(PROP_BUCKET, bucketName.asString())
-                                .property(PROP_BLOB_ID, blobId.asString())
-                                .property(PROP_KEY, key)
-                                .next();
-                        }
-                        v.property(PROP_STORAGE_TYPE, STORAGE_FILE);
-                        v.property(PROP_PAYLOAD, new byte[0]); // Clear inline binary
-                    });
-                } else {
-                    // Inline directly in YouTrackDB record
-                    g.executeInTx(tx -> {
-                        var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                        Vertex v;
-                        if (traversal.hasNext()) {
-                            v = traversal.next();
-                        } else {
-                            v = tx.addV(CLASS_NAME)
-                                .property(PROP_BUCKET, bucketName.asString())
-                                .property(PROP_BLOB_ID, blobId.asString())
-                                .property(PROP_KEY, key)
-                                .next();
-                        }
-                        v.property(PROP_STORAGE_TYPE, STORAGE_INLINE);
-                        v.property(PROP_PAYLOAD, data);
+                        Vertex v = traversal.hasNext() ? traversal.next() : tx.addV(CLASS_NAME)
+                            .property(PROP_BUCKET, bucketName.asString())
+                            .property(PROP_BLOB_ID, blobId.asString())
+                            .property(PROP_KEY, key)
+                            .next();
+                        v.property(PROP_STORAGE_TYPE, STORAGE_FILE_ZSTD);
+                        v.property(PROP_PAYLOAD, new byte[0]); // Zero payload in DB page
                     });
                 }
             } catch (Exception e) {
                 throw new ObjectStoreIOException("Error saving blob " + blobId.asString(), e);
             }
-        });
+        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override
     public Publisher<Void> delete(BucketName bucketName, BlobId blobId) {
-        return Mono.fromRunnable(() -> {
+        return Mono.<Void>fromRunnable(() -> {
             String key = buildKey(bucketName, blobId);
             File file = getFileForBlob(bucketName, blobId);
             if (file.exists()) {
                 file.delete();
+                pruneEmptyParentDirectories(file, new File(blobsDirectory, bucketName.asString()));
             }
             g.executeInTx(tx -> {
                 var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
@@ -189,16 +284,18 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     traversal.next().remove();
                 }
             });
-        });
+        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override
     public Publisher<Void> delete(BucketName bucketName, Collection<BlobId> blobIds) {
-        return Mono.fromRunnable(() -> {
+        return Mono.<Void>fromRunnable(() -> {
+            File bucketDir = new File(blobsDirectory, bucketName.asString());
             for (BlobId blobId : blobIds) {
                 File file = getFileForBlob(bucketName, blobId);
                 if (file.exists()) {
                     file.delete();
+                    pruneEmptyParentDirectories(file, bucketDir);
                 }
             }
             g.executeInTx(tx -> {
@@ -210,12 +307,12 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     }
                 }
             });
-        });
+        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override
     public Publisher<Void> deleteBucket(BucketName bucketName) {
-        return Mono.fromRunnable(() -> {
+        return Mono.<Void>fromRunnable(() -> {
             File bucketDir = new File(blobsDirectory, bucketName.asString());
             if (bucketDir.exists()) {
                 try {
@@ -232,7 +329,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     traversal.next().remove();
                 }
             });
-        });
+        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override
@@ -246,7 +343,8 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 }
                 return buckets;
             });
-        }).flatMapMany(Flux::fromIterable);
+        }).flatMapMany(Flux::fromIterable)
+        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override
@@ -262,6 +360,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 }
                 return blobIds;
             });
-        }).flatMapMany(Flux::fromIterable);
+        }).flatMapMany(Flux::fromIterable)
+        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 }

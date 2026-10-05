@@ -29,16 +29,10 @@ public class YouTrackDBBlobModule extends AbstractModule {
         bind(BlobStore.class).to(DeDuplicationBlobStore.class);
 
         bind(YouTrackDBBlobStoreDAO.class).in(Scopes.SINGLETON);
-        bind(BlobStoreDAO.class).annotatedWith(Names.named(YOUTRACKDB_RAW)).to(YouTrackDBBlobStoreDAO.class);
+        bind(BlobStoreDAO.class).to(YouTrackDBBlobStoreDAO.class);
 
         bind(BucketName.class)
             .annotatedWith(Names.named(BlobStore.DEFAULT_BUCKET_NAME_QUALIFIER))
             .toInstance(BucketName.DEFAULT);
-    }
-
-    @Provides
-    @Singleton
-    BlobStoreDAO provideZstdBlobStoreDAO(@Named(YOUTRACKDB_RAW) BlobStoreDAO rawDao, MetricFactory metricFactory) {
-        return new ZstdBlobStoreDAO(rawDao, CompressionConfiguration.DEFAULT, metricFactory);
     }
 }

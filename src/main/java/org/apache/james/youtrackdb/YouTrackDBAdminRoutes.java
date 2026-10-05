@@ -66,7 +66,8 @@ public class YouTrackDBAdminRoutes implements Routes {
         } else {
             backupDir = new File(fileSystem.getBasedir(), "var/backups");
         }
-        return new YouTrackDBBackupTask(traversalSource, backupDir);
+        File blobsSourceDir = new File(fileSystem.getBasedir(), "var/blobs");
+        return new YouTrackDBBackupTask(traversalSource, backupDir, blobsSourceDir);
     }
 
     private Object checkIntegrity(Request request, Response response) {

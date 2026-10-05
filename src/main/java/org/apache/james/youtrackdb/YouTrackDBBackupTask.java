@@ -45,11 +45,13 @@ public class YouTrackDBBackupTask implements Task {
 
     private final YTDBGraphTraversalSource traversalSource;
     private final File backupDir;
+    private final File blobsSourceDir;
     private volatile AdditionalInformation additionalInformation;
 
-    public YouTrackDBBackupTask(YTDBGraphTraversalSource traversalSource, File backupDir) {
+    public YouTrackDBBackupTask(YTDBGraphTraversalSource traversalSource, File backupDir, File blobsSourceDir) {
         this.traversalSource = traversalSource;
         this.backupDir = backupDir;
+        this.blobsSourceDir = blobsSourceDir;
         this.additionalInformation = new AdditionalInformation(Clock.systemUTC().instant(), backupDir.getAbsolutePath(), 0);
     }
 
@@ -63,15 +65,16 @@ public class YouTrackDBBackupTask implements Task {
             LOGGER.info("Executing YouTrackDB online hot backup task into {}", backupDir.getAbsolutePath());
             Path targetPath = backupDir.toPath();
             traversalSource.backup(targetPath);
-            LOGGER.info("YouTrackDB backup completed into {}", backupDir.getAbsolutePath());
+            LOGGER.info("YouTrackDB database backup completed into {}", backupDir.getAbsolutePath());
 
-            long totalSize = 0;
-            File[] files = backupDir.listFiles();
-            if (files != null) {
-                for (File f : files) {
-                    totalSize += f.length();
-                }
+            // Backup filesystem blobs alongside the database snapshot
+            if (blobsSourceDir != null && blobsSourceDir.exists()) {
+                Path blobsBackupDir = targetPath.resolve("blobs");
+                LOGGER.info("Backing up filesystem blobs from {} to {}", blobsSourceDir.getAbsolutePath(), blobsBackupDir.toAbsolutePath());
+                copyDirectoryRecursively(blobsSourceDir.toPath(), blobsBackupDir);
             }
+
+            long totalSize = calculateDirectorySize(targetPath);
 
             this.additionalInformation = new AdditionalInformation(
                 Clock.systemUTC().instant(),
@@ -82,6 +85,49 @@ public class YouTrackDBBackupTask implements Task {
         } catch (Exception e) {
             LOGGER.error("YouTrackDB backup task failed", e);
             return Result.PARTIAL;
+        }
+    }
+
+    private static void copyDirectoryRecursively(Path source, Path target) throws java.io.IOException {
+        if (!java.nio.file.Files.exists(source)) {
+            return;
+        }
+        try (var stream = java.nio.file.Files.walk(source)) {
+            stream.forEach(src -> {
+                try {
+                    Path dest = target.resolve(source.relativize(src));
+                    if (java.nio.file.Files.isDirectory(src)) {
+                        if (!java.nio.file.Files.exists(dest)) {
+                            java.nio.file.Files.createDirectories(dest);
+                        }
+                    } else {
+                        if (dest.getParent() != null && !java.nio.file.Files.exists(dest.getParent())) {
+                            java.nio.file.Files.createDirectories(dest.getParent());
+                        }
+                        java.nio.file.Files.copy(src, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                } catch (java.io.IOException e) {
+                    throw new RuntimeException("Failed copying blob file during backup: " + src, e);
+                }
+            });
+        }
+    }
+
+    private static long calculateDirectorySize(Path path) {
+        if (!java.nio.file.Files.exists(path)) {
+            return 0;
+        }
+        try (var stream = java.nio.file.Files.walk(path)) {
+            return stream.filter(p -> !java.nio.file.Files.isDirectory(p))
+                .mapToLong(p -> {
+                    try {
+                        return java.nio.file.Files.size(p);
+                    } catch (Exception e) {
+                        return 0L;
+                    }
+                }).sum();
+        } catch (Exception e) {
+            return 0;
         }
     }
 

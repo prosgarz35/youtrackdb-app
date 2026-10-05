@@ -24,6 +24,7 @@
 <smtpservers>
     <!-- Port 25: MTA-to-MTA relay, no auth (NoAuthCmdHandlerLoader strips AUTH command) -->
     <smtpserver enabled="true">
+        <jmxName>smtpserver-global</jmxName>
         <bind>0.0.0.0:25</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="false" startTLS="false">
@@ -43,11 +44,16 @@
         <smtpGreeting>Mail Service Ready</smtpGreeting>
         <handlerchain coreHandlersPackage="org.apache.james.smtpserver.NoAuthCmdHandlerLoader">
             <handler class="org.apache.james.smtpserver.fastfail.ValidRcptHandler"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNEhloHook"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNMailParameterHook"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNRcptParameterHook"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNMessageHook"/>
         </handlerchain>
     </smtpserver>
 
     <!-- Port 465: SMTPS (implicit TLS), authenticated submission -->
     <smtpserver enabled="true">
+        <jmxName>smtpserver-TLS</jmxName>
         <bind>0.0.0.0:465</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="true" startTLS="false">
@@ -74,11 +80,16 @@
         <handlerchain>
             <handler class="org.apache.james.smtpserver.fastfail.ValidRcptHandler"/>
             <handler class="org.apache.james.smtpserver.CoreCmdHandlerLoader"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNEhloHook"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNMailParameterHook"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNRcptParameterHook"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNMessageHook"/>
         </handlerchain>
     </smtpserver>
 
     <!-- Port 587: STARTTLS submission, authenticated -->
     <smtpserver enabled="true">
+        <jmxName>smtpserver-authenticated</jmxName>
         <bind>0.0.0.0:587</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="false" startTLS="true">
@@ -105,6 +116,10 @@
         <handlerchain>
             <handler class="org.apache.james.smtpserver.fastfail.ValidRcptHandler"/>
             <handler class="org.apache.james.smtpserver.CoreCmdHandlerLoader"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNEhloHook"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNMailParameterHook"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNRcptParameterHook"/>
+            <handler class="org.apache.james.smtpserver.dsn.DSNMessageHook"/>
         </handlerchain>
     </smtpserver>
 </smtpservers>

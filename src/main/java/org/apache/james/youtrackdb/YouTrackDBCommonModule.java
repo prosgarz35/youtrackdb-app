@@ -92,6 +92,15 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesBlob.payload IF NOT EXISTS BINARY");
                     g.command("CREATE INDEX IF NOT EXISTS JamesBlob.bucketAndBlobId UNIQUE");
                     g.command("CREATE INDEX IF NOT EXISTS JamesBlob.bucket NOTUNIQUE");
+
+                    // Class for MailQueue Items
+                    g.command("CREATE CLASS JamesQueueItem IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesQueueItem.queueName IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesQueueItem.mailName IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesQueueItem.nextDelivery IF NOT EXISTS LONG");
+                    g.command("CREATE PROPERTY JamesQueueItem.serializedMail IF NOT EXISTS BINARY");
+                    g.command("CREATE INDEX IF NOT EXISTS JamesQueueItem.queueName NOTUNIQUE");
+                    g.command("CREATE INDEX IF NOT EXISTS JamesQueueItem.mailName NOTUNIQUE");
                 });
             } catch (Exception e) {
                 LOGGER.warn("Schema initialization noticed: {}", e.getMessage());

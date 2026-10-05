@@ -23,6 +23,7 @@
 <imapservers>
     <!-- Port 143: plaintext with STARTTLS upgrade. Plain auth blocked until TLS established (RFC 3501 §6.2.2) -->
     <imapserver enabled="true">
+        <jmxName>imapserver</jmxName>
         <bind>0.0.0.0:143</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="false" startTLS="true">
@@ -44,6 +45,7 @@
 
     <!-- Port 993: implicit TLS (IMAPS). Plain auth permitted since connection is already encrypted -->
     <imapserver enabled="true">
+        <jmxName>imapserver-ssl</jmxName>
         <bind>0.0.0.0:993</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="true" startTLS="false">

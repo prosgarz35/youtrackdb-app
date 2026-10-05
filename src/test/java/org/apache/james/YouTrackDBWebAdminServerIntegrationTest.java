@@ -111,9 +111,20 @@ class YouTrackDBWebAdminServerIntegrationTest implements JamesServerConcreteCont
 
     @Test
     void webAdminShouldExecuteBackup() {
-        when()
+        String taskId = when()
             .post("/youtrackdb/backup")
         .then()
-            .statusCode(HttpStatus.CREATED_201);
+            .statusCode(HttpStatus.CREATED_201)
+            .header("Location", org.hamcrest.Matchers.startsWith("/tasks/"))
+            .extract()
+            .jsonPath()
+            .getString("taskId");
+
+        when()
+            .get("/tasks/" + taskId + "/await")
+        .then()
+            .statusCode(HttpStatus.OK_200)
+            .body("status", org.hamcrest.Matchers.equalTo("completed"))
+            .body("type", org.hamcrest.Matchers.equalTo("youtrackdb-backup"));
     }
 }
