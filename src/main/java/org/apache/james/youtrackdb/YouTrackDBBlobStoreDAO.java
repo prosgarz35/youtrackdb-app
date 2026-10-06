@@ -212,16 +212,29 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                         byte[] decompressed = com.github.luben.zstd.Zstd.decompress(compressed, (int) decompressedSize);
                         return BytesBlob.of(decompressed);
                     }
+                    try (var is = new com.github.luben.zstd.ZstdInputStream(new ByteArrayInputStream(compressed))) {
+                        return BytesBlob.of(is.readAllBytes());
+                    } catch (IOException e) {
+                        throw new ObjectStoreIOException("Error decompressing inline blob: " + key, e);
+                    }
+                } else if (STORAGE_FILE_ZSTD.equals(storageType) || LEGACY_STORAGE_FILE.equals(storageType)) {
+                    File file = getFileForBlob(bucketName, blobId);
+                    if (!file.exists()) {
+                        throw new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath());
+                    }
+                    try (InputStream in = new FileInputStream(file)) {
+                        if (STORAGE_FILE_ZSTD.equals(storageType)) {
+                            try (var zis = new com.github.luben.zstd.ZstdInputStream(in)) {
+                                return BytesBlob.of(zis.readAllBytes());
+                            }
+                        }
+                        return BytesBlob.of(in.readAllBytes());
+                    } catch (IOException e) {
+                        throw new ObjectStoreIOException("Error reading blob file: " + file.getAbsolutePath(), e);
+                    }
                 }
-                return null;
+                return BytesBlob.of(new byte[0]);
             });
-        })
-        .flatMap(bytesBlob -> {
-            if (bytesBlob != null) {
-                return Mono.just(bytesBlob);
-            }
-            return Mono.from(readReactive(bucketName, blobId))
-                .flatMap(inputStreamBlob -> Mono.fromCallable(inputStreamBlob::asBytes));
         })
         .onErrorResume(e -> {
             if (e.getCause() instanceof ObjectNotFoundException) {
