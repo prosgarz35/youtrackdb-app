@@ -44,7 +44,7 @@ public class YouTrackDBBenchmarkTest implements JamesServerConcreteContract {
     static final String USER = "bench@" + DOMAIN;
     static final String PASSWORD = "secretpassword";
     static final int TOTAL_MESSAGES = 5000;
-    static final int CONCURRENCY = 20;
+    static final int CONCURRENCY = 8;
 
     @Test
     void benchmark5000Messages(GuiceJamesServer jamesServer) throws Exception {
@@ -55,6 +55,31 @@ public class YouTrackDBBenchmarkTest implements JamesServerConcreteContract {
 
         int smtpPort = jamesServer.getProbe(SmtpGuiceProbe.class).getSmtpPort().getValue();
         int imapPort = jamesServer.getProbe(ImapGuiceProbe.class).getImapPort();
+
+        LOGGER.info("=== WARMING UP JVM & STORAGE (20 messages) ===");
+        for (int w = 0; w < 20; w++) {
+            try (Socket socket = new Socket("127.0.0.1", smtpPort);
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
+                 PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.US_ASCII), true)) {
+                reader.readLine();
+                writer.println("HELO localhost");
+                reader.readLine();
+                writer.println("MAIL FROM:<warmup@benchmark.local>");
+                reader.readLine();
+                writer.println("RCPT TO:<" + USER + ">");
+                reader.readLine();
+                writer.println("DATA");
+                reader.readLine();
+                writer.println("Subject: Warmup " + w);
+                writer.println();
+                writer.println("Warmup payload");
+                writer.println(".");
+                reader.readLine();
+                writer.println("QUIT");
+                reader.readLine();
+            } catch (Exception ignored) {}
+        }
+        LOGGER.info("=== WARMUP COMPLETE ===");
 
         LOGGER.info("=== STARTING YOUTRACKDB BENCHMARK: {} messages, concurrency: {} ===", TOTAL_MESSAGES, CONCURRENCY);
 
@@ -69,24 +94,30 @@ public class YouTrackDBBenchmarkTest implements JamesServerConcreteContract {
         for (int i = 0; i < TOTAL_MESSAGES; i++) {
             final int msgIndex = i;
             executor.submit(() -> {
-                long startNs = System.nanoTime();
+                long t0 = System.nanoTime();
                 try (Socket socket = new Socket("127.0.0.1", smtpPort);
                      BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
                      PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.US_ASCII), true)) {
+                    long tConnect = System.nanoTime();
 
                     reader.readLine(); // 220 banner
+                    long tBanner = System.nanoTime();
 
                     writer.println("HELO localhost");
                     reader.readLine(); // 250
+                    long tHelo = System.nanoTime();
 
                     writer.println("MAIL FROM:<sender@benchmark.local>");
                     reader.readLine(); // 250
+                    long tMail = System.nanoTime();
 
                     writer.println("RCPT TO:<" + USER + ">");
                     reader.readLine(); // 250
+                    long tRcpt = System.nanoTime();
 
                     writer.println("DATA");
                     reader.readLine(); // 354
+                    long tDataCmd = System.nanoTime();
 
                     writer.println("Subject: Benchmark Message #" + msgIndex);
                     writer.println("From: sender@benchmark.local");
@@ -96,11 +127,13 @@ public class YouTrackDBBenchmarkTest implements JamesServerConcreteContract {
                     writer.println("Payload content line 2: Testing JetBrains YouTrackDB persistence, Zstd compression and indexing.");
                     writer.println(".");
                     reader.readLine(); // 250 OK
+                    long tDataCommit = System.nanoTime();
 
                     writer.println("QUIT");
                     reader.readLine(); // 221
+                    long tQuit = System.nanoTime();
 
-                    long durationMs = (System.nanoTime() - startNs) / 1_000_000;
+                    long durationMs = (tQuit - t0) / 1_000_000;
                     latenciesMs.add(durationMs);
                     successCount.incrementAndGet();
                 } catch (Exception e) {

@@ -52,12 +52,7 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
     public void removeMapping(MappingSource source, Mapping mapping) {
         try {
             g.executeInTx(tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME)
-                    .has(PROP_SOURCE, source.asString())
-                    .has(PROP_MAPPING, mapping.asString());
-                while (traversal.hasNext()) {
-                    traversal.next().remove();
-                }
+                tx.command("DELETE VERTEX JamesRRTMapping WHERE source = ? AND mapping = ?", source.asString(), mapping.asString());
             });
         } catch (Exception e) {
             throw new RuntimeException("Failed to remove mapping: " + source.asString() + " -> " + mapping.asString(), e);
@@ -87,14 +82,15 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
         try {
             return g.computeInTx(tx -> {
                 Map<MappingSource, List<Mapping>> map = new HashMap<>();
-                var traversal = tx.V().hasLabel(CLASS_NAME);
-                while (traversal.hasNext()) {
-                    Vertex v = traversal.next();
-                    String src = v.value(PROP_SOURCE);
-                    String mappingStr = v.value(PROP_MAPPING);
-                    if (src != null && mappingStr != null) {
-                        MappingSource source = MappingSource.parse(src);
-                        map.computeIfAbsent(source, s -> new ArrayList<>()).add(Mapping.of(mappingStr));
+                var list = tx.yql("SELECT source, mapping FROM JamesRRTMapping").toList();
+                for (Object item : list) {
+                    if (item instanceof Map<?, ?> m) {
+                        Object srcObj = m.get("source");
+                        Object mappingObj = m.get("mapping");
+                        if (srcObj != null && mappingObj != null) {
+                            MappingSource source = MappingSource.parse(srcObj.toString());
+                            map.computeIfAbsent(source, s -> new ArrayList<>()).add(Mapping.of(mappingObj.toString()));
+                        }
                     }
                 }
                 Map<MappingSource, Mappings> result = new HashMap<>();

@@ -312,12 +312,9 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         public long clear() {
             int size = mailItems.size();
             mailItems.clear();
-            // Remove from YouTrackDB
+            // Remove from YouTrackDB via set-based YQL deletion
             g.executeInTx(tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_QUEUE_NAME, name.asString());
-                while (traversal.hasNext()) {
-                    traversal.next().remove();
-                }
+                tx.command("DELETE VERTEX JamesQueueItem WHERE queueName = ?", name.asString());
             });
             return size;
         }
@@ -340,12 +337,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             }
             try {
                 g.executeInTx(tx -> {
-                    var traversal = tx.V().hasLabel(CLASS_NAME)
-                        .has(PROP_QUEUE_NAME, name.asString())
-                        .has(PROP_MAIL_NAME, mailName);
-                    if (traversal.hasNext()) {
-                        traversal.next().remove();
-                    }
+                    tx.command("DELETE VERTEX JamesQueueItem WHERE queueName = ? AND mailName = ?", name.asString(), mailName);
                 });
             } catch (Exception e) {
                 if (!closed) {

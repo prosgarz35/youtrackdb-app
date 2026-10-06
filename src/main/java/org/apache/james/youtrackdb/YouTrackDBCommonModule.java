@@ -46,10 +46,12 @@ public class YouTrackDBCommonModule extends AbstractModule {
             ytdbConfig.setProperty("youtrackdb.storage.diskCache.checksumMode", "Store");
             ytdbConfig.setProperty("youtrackdb.storage.wal.bufferSize", 128);
             ytdbConfig.setProperty("youtrackdb.storage.wal.cacheSize", 65536);
-            ytdbConfig.setProperty("youtrackdb.storage.wal.commitTimeout", 250);
-            ytdbConfig.setProperty("youtrackdb.db.pool.min", 32);
-            ytdbConfig.setProperty("youtrackdb.db.pool.max", 100);
-            ytdbConfig.setProperty("youtrackdb.statement.cacheSize", 200);
+            ytdbConfig.setProperty("youtrackdb.storage.wal.commitTimeout", 50);
+            ytdbConfig.setProperty("youtrackdb.memory.directMemory.preallocate", true);
+            ytdbConfig.setProperty("youtrackdb.db.pool.min", 64);
+            ytdbConfig.setProperty("youtrackdb.db.pool.max", 256);
+            ytdbConfig.setProperty("youtrackdb.storage.componentsLock.cache", 65536);
+            ytdbConfig.setProperty("youtrackdb.statement.cacheSize", 500);
             try {
                 Configuration conf = configurationProvider.getConfiguration("youtrackdb");
                 path = conf.getString("youtrackdb.path", DEFAULT_PATH);

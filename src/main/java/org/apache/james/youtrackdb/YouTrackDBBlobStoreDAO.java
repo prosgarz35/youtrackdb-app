@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import jakarta.inject.Inject;
@@ -72,6 +73,17 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
 
     private String buildKey(BucketName bucketName, BlobId blobId) {
         return bucketName.asString() + "/" + blobId.asString();
+    }
+
+    private static boolean isDuplicateKey(Throwable t) {
+        while (t != null) {
+            String msg = t.getMessage();
+            if (msg != null && (msg.contains("duplicat") || msg.contains("Duplicat") || msg.contains("unique") || msg.contains("Unique"))) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
     }
 
     /**
@@ -258,10 +270,9 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 String key = buildKey(bucketName, blobId);
 
                 if (data.length < TIER1_RAW_THRESHOLD) {
-                    // Tier 1: < 4 KB -> Inline raw into YouTrackDB
+                    // Tier 1: < 4 KB -> Inline raw into YouTrackDB (fast-path direct write)
                     g.executeInTx(tx -> {
-                        var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                        if (!traversal.hasNext()) {
+                        try {
                             tx.addV(CLASS_NAME)
                                 .property(PROP_BUCKET, bucketName.asString())
                                 .property(PROP_BLOB_ID, blobId.asString())
@@ -269,14 +280,18 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                                 .property(PROP_STORAGE_TYPE, STORAGE_INLINE_RAW)
                                 .property(PROP_PAYLOAD, data)
                                 .iterate();
+                        } catch (Exception e) {
+                            // If already present due to unique index on bucketAndBlobId, deduplication is achieved
+                            if (!isDuplicateKey(e)) {
+                                throw e;
+                            }
                         }
                     });
                 } else if (data.length <= TIER2_DB_THRESHOLD) {
-                    // Tier 2: 4 KB .. 64 KB -> Compress (Zstd level 1 for lowest CPU overhead) and deduplicate in DB
+                    // Tier 2: 4 KB .. 64 KB -> Compress (Zstd level 1) and insert into DB
+                    byte[] compressed = com.github.luben.zstd.Zstd.compress(data, 1);
                     g.executeInTx(tx -> {
-                        var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                        if (!traversal.hasNext()) {
-                            byte[] compressed = com.github.luben.zstd.Zstd.compress(data, 1);
+                        try {
                             tx.addV(CLASS_NAME)
                                 .property(PROP_BUCKET, bucketName.asString())
                                 .property(PROP_BLOB_ID, blobId.asString())
@@ -284,6 +299,10 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                                 .property(PROP_STORAGE_TYPE, STORAGE_INLINE_ZSTD)
                                 .property(PROP_PAYLOAD, compressed)
                                 .iterate();
+                        } catch (Exception e) {
+                            if (!isDuplicateKey(e)) {
+                                throw e;
+                            }
                         }
                     });
                 } else {
@@ -315,8 +334,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     }
 
                     g.executeInTx(tx -> {
-                        var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                        if (!traversal.hasNext()) {
+                        try {
                             tx.addV(CLASS_NAME)
                                 .property(PROP_BUCKET, bucketName.asString())
                                 .property(PROP_BLOB_ID, blobId.asString())
@@ -324,6 +342,10 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                                 .property(PROP_STORAGE_TYPE, STORAGE_FILE_ZSTD)
                                 .property(PROP_PAYLOAD, new byte[0]) // Zero payload in DB page
                                 .iterate();
+                        } catch (Exception e) {
+                            if (!isDuplicateKey(e)) {
+                                throw e;
+                            }
                         }
                     });
                 }
@@ -343,10 +365,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 pruneEmptyParentDirectories(file, new File(blobsDirectory, bucketName.asString()));
             }
             g.executeInTx(tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                while (traversal.hasNext()) {
-                    traversal.next().remove();
-                }
+                tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = ?", key);
             });
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
@@ -365,10 +384,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
             g.executeInTx(tx -> {
                 for (BlobId blobId : blobIds) {
                     String key = buildKey(bucketName, blobId);
-                    var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                    while (traversal.hasNext()) {
-                        traversal.next().remove();
-                    }
+                    tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = ?", key);
                 }
             });
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
@@ -388,10 +404,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 }
             }
             g.executeInTx(tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_BUCKET, bucketName.asString());
-                while (traversal.hasNext()) {
-                    traversal.next().remove();
-                }
+                tx.command("DELETE VERTEX JamesBlob WHERE bucket = ?", bucketName.asString());
             });
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
@@ -401,9 +414,14 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         return Mono.fromCallable(() -> {
             return g.computeInTx(tx -> {
                 Set<BucketName> buckets = new HashSet<>();
-                var traversal = tx.V().hasLabel(CLASS_NAME).<String>values(PROP_BUCKET);
-                while (traversal.hasNext()) {
-                    buckets.add(BucketName.of(traversal.next()));
+                var list = tx.yql("SELECT DISTINCT(bucket) AS bucket FROM JamesBlob").toList();
+                for (Object item : list) {
+                    if (item instanceof Map<?, ?> m) {
+                        Object b = m.get("bucket");
+                        if (b != null) {
+                            buckets.add(BucketName.of(b.toString()));
+                        }
+                    }
                 }
                 return buckets;
             });

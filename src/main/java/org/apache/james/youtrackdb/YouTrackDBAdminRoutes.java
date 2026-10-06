@@ -77,10 +77,13 @@ public class YouTrackDBAdminRoutes implements Routes {
             long[] counts = {0, 0, 0};
             if (dbOpen) {
                 try {
-                    counts[0] = traversalSource.computeInTx(tx -> tx.V().hasLabel(YouTrackDBBlobStoreDAO.CLASS_NAME).count().next());
-                    counts[1] = traversalSource.computeInTx(tx -> tx.V().hasLabel("JamesUser").count().next());
-                    counts[2] = traversalSource.computeInTx(tx -> tx.V().hasLabel("JamesDomain").count().next());
-                } catch (Exception ignored) {
+                    traversalSource.executeInTx(tx -> {
+                        counts[0] = tx.V().hasLabel(YouTrackDBBlobStoreDAO.CLASS_NAME).count().next();
+                        counts[1] = tx.V().hasLabel("JamesUser").count().next();
+                        counts[2] = tx.V().hasLabel("JamesDomain").count().next();
+                    });
+                } catch (Exception e) {
+                    LOGGER.warn("Failed to get counts: {}", e.getMessage(), e);
                 }
             }
 
@@ -110,9 +113,14 @@ public class YouTrackDBAdminRoutes implements Routes {
             if (blobsSourceDir.exists()) {
                 java.util.Set<String> activeBlobIds = traversalSource.computeInTx(tx -> {
                     java.util.Set<String> set = new java.util.HashSet<>();
-                    var traversal = tx.V().hasLabel(YouTrackDBBlobStoreDAO.CLASS_NAME).<String>values("blobId");
-                    while (traversal.hasNext()) {
-                        set.add(traversal.next());
+                    var list = tx.yql("SELECT blobId FROM JamesBlob").toList();
+                    for (Object item : list) {
+                        if (item instanceof Map<?, ?> m) {
+                            Object bId = m.get("blobId");
+                            if (bId != null) {
+                                set.add(bId.toString());
+                            }
+                        }
                     }
                     return set;
                 });
