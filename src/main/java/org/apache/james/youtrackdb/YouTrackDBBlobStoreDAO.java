@@ -434,11 +434,14 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         return Mono.fromCallable(() -> {
             return g.computeInTx(tx -> {
                 Set<BlobId> blobIds = new HashSet<>();
-                var traversal = tx.V().hasLabel(CLASS_NAME)
-                    .has(PROP_BUCKET, bucketName.asString())
-                    .<String>values(PROP_BLOB_ID);
-                while (traversal.hasNext()) {
-                    blobIds.add(blobIdFactory.of(traversal.next()));
+                var results = tx.yql("SELECT blobId FROM JamesBlob WHERE bucket = :bucket", "bucket", bucketName.asString()).toList();
+                for (Object item : results) {
+                    if (item instanceof Map<?, ?> m) {
+                        Object bId = m.get(PROP_BLOB_ID);
+                        if (bId != null) {
+                            blobIds.add(blobIdFactory.of(bId.toString()));
+                        }
+                    }
                 }
                 return blobIds;
             });
