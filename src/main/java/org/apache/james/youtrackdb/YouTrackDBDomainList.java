@@ -29,7 +29,14 @@ public class YouTrackDBDomainList extends AbstractDomainList {
     public void addDomain(Domain domain) throws DomainListException {
         try {
             g.executeInTx(tx -> {
-                boolean exists = tx.V().hasLabel(CLASS_NAME).has(PROP_DOMAIN, domain.asString()).hasNext();
+                boolean exists = false;
+                try {
+                    exists = !tx.yql("SELECT 1 FROM JamesDomain WHERE domain = :domain LIMIT 1", "domain", domain.asString()).toList().isEmpty();
+                } catch (Exception e) {
+                    if (e.getMessage() == null || !e.getMessage().contains("Class not found")) {
+                        throw e;
+                    }
+                }
                 if (exists) {
                     throw new RuntimeException(new DomainListException(domain.name() + " already exists."));
                 }
@@ -48,14 +55,21 @@ public class YouTrackDBDomainList extends AbstractDomainList {
         try {
             return g.computeInTx(tx -> {
                 List<Domain> list = new ArrayList<>();
-                var results = tx.yql("SELECT domain FROM JamesDomain").toList();
-                for (Object item : results) {
-                    if (item instanceof java.util.Map<?, ?> m) {
-                        Object d = m.get(PROP_DOMAIN);
-                        if (d != null) {
-                            list.add(Domain.of(d.toString()));
+                try {
+                    var results = tx.yql("SELECT domain FROM JamesDomain").toList();
+                    for (Object item : results) {
+                        if (item instanceof java.util.Map<?, ?> m) {
+                            Object d = m.get(PROP_DOMAIN);
+                            if (d != null) {
+                                list.add(Domain.of(d.toString()));
+                            }
                         }
                     }
+                } catch (Exception e) {
+                    if (e.getMessage() != null && e.getMessage().contains("Class not found")) {
+                        return list;
+                    }
+                    throw e;
                 }
                 return list;
             });

@@ -5,6 +5,7 @@ import static org.apache.james.user.lib.model.Algorithm.HashingMode.PLAIN;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import jakarta.inject.Inject;
@@ -50,7 +51,14 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
 
         try {
             g.executeInTx(tx -> {
-                boolean exists = tx.V().hasLabel(CLASS_NAME).has(PROP_USERNAME, username.asString()).hasNext();
+                boolean exists = false;
+                try {
+                    exists = !tx.yql("SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1", "uname", username.asString()).toList().isEmpty();
+                } catch (Exception e) {
+                    if (e.getMessage() == null || !e.getMessage().contains("Class not found")) {
+                        throw e;
+                    }
+                }
                 if (exists) {
                     throw new RuntimeException(new AlreadyExistInUsersRepositoryException("User " + username.asString() + " already exists"));
                 }
@@ -72,15 +80,26 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
     public Optional<User> getUserByName(Username name) throws UsersRepositoryException {
         try {
             return g.computeInTx(tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_USERNAME, name.asString());
-                if (!traversal.hasNext()) {
-                    return Optional.empty();
+                try {
+                    var list = tx.yql("SELECT password, algorithm FROM JamesUser WHERE username = :uname LIMIT 1", "uname", name.asString()).toList();
+                    if (list.isEmpty()) {
+                        return Optional.empty();
+                    }
+                    if (list.get(0) instanceof Map<?, ?> m) {
+                        Object pwdObj = m.get(PROP_PASSWORD);
+                        String pwd = pwdObj != null ? pwdObj.toString() : "";
+                        Object algoObj = m.get(PROP_ALGO);
+                        String algoStr = algoObj != null ? algoObj.toString() : null;
+                        Algorithm userAlgo = (algoStr != null) ? Algorithm.of(algoStr) : algo;
+                        return Optional.of((User) new DefaultUser(name, pwd, userAlgo, algo));
+                    }
+                } catch (Exception e) {
+                    if (e.getMessage() != null && e.getMessage().contains("Class not found")) {
+                        return Optional.empty();
+                    }
+                    throw e;
                 }
-                Vertex v = traversal.next();
-                String pwd = v.value(PROP_PASSWORD);
-                String algoStr = v.property(PROP_ALGO).isPresent() ? v.value(PROP_ALGO) : null;
-                Algorithm userAlgo = (algoStr != null) ? Algorithm.of(algoStr) : algo;
-                return Optional.of((User) new DefaultUser(name, pwd, userAlgo, algo));
+                return Optional.empty();
             });
         } catch (Exception e) {
             throw new UsersRepositoryException("Failed to get user " + name.asString(), e);
