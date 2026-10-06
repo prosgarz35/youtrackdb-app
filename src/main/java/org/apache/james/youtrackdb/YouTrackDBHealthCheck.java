@@ -38,7 +38,7 @@ public class YouTrackDBHealthCheck implements HealthCheck {
                 if (!youTrackDB.isOpen()) {
                     return Result.unhealthy(COMPONENT_NAME, "YouTrackDB instance is not open");
                 }
-                traversalSource.computeInTx(tx -> tx.V().limit(1).count().next());
+                traversalSource.computeInTx(tx -> tx.yql("SELECT 1").toList());
                 return Result.healthy(COMPONENT_NAME);
             })
             .subscribeOn(Schedulers.boundedElastic())

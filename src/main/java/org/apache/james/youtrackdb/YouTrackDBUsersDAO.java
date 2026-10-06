@@ -147,7 +147,16 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
     @Override
     public int countUsers() throws UsersRepositoryException {
         try {
-            Long count = g.computeInTx(tx -> tx.V().hasLabel(CLASS_NAME).count().next());
+            Long count = g.computeInTx(tx -> {
+                var results = tx.yql("SELECT count(*) AS total FROM JamesUser").toList();
+                if (!results.isEmpty() && results.get(0) instanceof java.util.Map<?, ?> m) {
+                    Object total = m.get("total");
+                    if (total instanceof Number num) {
+                        return num.longValue();
+                    }
+                }
+                return 0L;
+            });
             return count != null ? count.intValue() : 0;
         } catch (Exception e) {
             throw new UsersRepositoryException("Failed to count users", e);
@@ -159,9 +168,14 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
         try {
             List<Username> result = g.computeInTx(tx -> {
                 List<Username> list = new ArrayList<>();
-                var traversal = tx.V().hasLabel(CLASS_NAME).<String>values(PROP_USERNAME);
-                while (traversal.hasNext()) {
-                    list.add(Username.of(traversal.next()));
+                var results = tx.yql("SELECT username FROM JamesUser").toList();
+                for (Object item : results) {
+                    if (item instanceof java.util.Map<?, ?> m) {
+                        Object u = m.get(PROP_USERNAME);
+                        if (u != null) {
+                            list.add(Username.of(u.toString()));
+                        }
+                    }
                 }
                 return list;
             });

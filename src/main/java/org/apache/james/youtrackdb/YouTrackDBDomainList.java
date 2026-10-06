@@ -48,9 +48,14 @@ public class YouTrackDBDomainList extends AbstractDomainList {
         try {
             return g.computeInTx(tx -> {
                 List<Domain> list = new ArrayList<>();
-                var traversal = tx.V().hasLabel(CLASS_NAME).<String>values(PROP_DOMAIN);
-                while (traversal.hasNext()) {
-                    list.add(Domain.of(traversal.next()));
+                var results = tx.yql("SELECT domain FROM JamesDomain").toList();
+                for (Object item : results) {
+                    if (item instanceof java.util.Map<?, ?> m) {
+                        Object d = m.get(PROP_DOMAIN);
+                        if (d != null) {
+                            list.add(Domain.of(d.toString()));
+                        }
+                    }
                 }
                 return list;
             });

@@ -162,17 +162,21 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             try {
                 List<YouTrackDBMailQueueItem> recovered = g.computeInTx(tx -> {
                     List<YouTrackDBMailQueueItem> items = new ArrayList<>();
-                    var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_QUEUE_NAME, name.asString());
-                    while (traversal.hasNext()) {
-                        Vertex v = traversal.next();
-                        try {
-                            byte[] data = v.value(PROP_SERIALIZED_MAIL);
-                            Long nextDeliveryMillis = v.property(PROP_NEXT_DELIVERY).isPresent() ? v.value(PROP_NEXT_DELIVERY) : 0L;
-                            Mail mail = deserializeMail(data);
-                            ZonedDateTime delivery = Instant.ofEpochMilli(nextDeliveryMillis).atZone(ZoneId.of("UTC"));
-                            items.add(new YouTrackDBMailQueueItem(mail, this, clock, delivery));
-                        } catch (Exception e) {
-                            LOGGER.error("Failed to recover mail item for queue {}", name.asString(), e);
+                    var results = tx.yql("SELECT serializedMail, nextDelivery FROM JamesQueueItem WHERE queueName = :qName ORDER BY nextDelivery ASC", "qName", name.asString()).toList();
+                    for (Object item : results) {
+                        if (item instanceof Map<?, ?> m) {
+                            try {
+                                Object dataObj = m.get(PROP_SERIALIZED_MAIL);
+                                if (dataObj instanceof byte[] data) {
+                                    Object nextDelObj = m.get(PROP_NEXT_DELIVERY);
+                                    long nextDeliveryMillis = (nextDelObj instanceof Number n) ? n.longValue() : 0L;
+                                    Mail mail = deserializeMail(data);
+                                    ZonedDateTime delivery = Instant.ofEpochMilli(nextDeliveryMillis).atZone(ZoneId.of("UTC"));
+                                    items.add(new YouTrackDBMailQueueItem(mail, this, clock, delivery));
+                                }
+                            } catch (Exception e) {
+                                LOGGER.error("Failed to recover mail item for queue {}", name.asString(), e);
+                            }
                         }
                     }
                     return items;
