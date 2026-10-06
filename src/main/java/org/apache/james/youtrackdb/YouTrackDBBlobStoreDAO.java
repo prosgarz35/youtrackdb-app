@@ -266,88 +266,104 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         Preconditions.checkNotNull(blob);
         return Mono.<Void>fromRunnable(() -> {
             try {
-                byte[] data = blob.asInputStream().payload().readAllBytes();
                 String key = buildKey(bucketName, blobId);
-
-                if (data.length < TIER1_RAW_THRESHOLD) {
-                    // Tier 1: < 4 KB -> Inline raw into YouTrackDB (fast-path direct write)
-                    g.executeInTx(tx -> {
-                        try {
-                            tx.addV(CLASS_NAME)
-                                .property(PROP_BUCKET, bucketName.asString())
-                                .property(PROP_BLOB_ID, blobId.asString())
-                                .property(PROP_KEY, key)
-                                .property(PROP_STORAGE_TYPE, STORAGE_INLINE_RAW)
-                                .property(PROP_PAYLOAD, data)
-                                .iterate();
-                        } catch (Exception e) {
-                            // If already present due to unique index on bucketAndBlobId, deduplication is achieved
-                            if (!isDuplicateKey(e)) {
-                                throw e;
-                            }
+                try (InputStream in = blob.asInputStream().payload()) {
+                    // Read up to TIER2_DB_THRESHOLD + 1 bytes to determine tier without buffering huge payloads
+                    byte[] initialBuffer = new byte[TIER2_DB_THRESHOLD + 1];
+                    int totalRead = 0;
+                    while (totalRead < initialBuffer.length) {
+                        int r = in.read(initialBuffer, totalRead, initialBuffer.length - totalRead);
+                        if (r == -1) {
+                            break;
                         }
-                    });
-                } else if (data.length <= TIER2_DB_THRESHOLD) {
-                    // Tier 2: 4 KB .. 64 KB -> Compress (Zstd level 1) and insert into DB
-                    byte[] compressed = com.github.luben.zstd.Zstd.compress(data, 1);
-                    g.executeInTx(tx -> {
-                        try {
-                            tx.addV(CLASS_NAME)
-                                .property(PROP_BUCKET, bucketName.asString())
-                                .property(PROP_BLOB_ID, blobId.asString())
-                                .property(PROP_KEY, key)
-                                .property(PROP_STORAGE_TYPE, STORAGE_INLINE_ZSTD)
-                                .property(PROP_PAYLOAD, compressed)
-                                .iterate();
-                        } catch (Exception e) {
-                            if (!isDuplicateKey(e)) {
-                                throw e;
-                            }
-                        }
-                    });
-                } else {
-                    // Tier 3: > 64 KB -> Compress (Zstd level 1) and stream to filesystem with atomic rename (deduplicated)
-                    File file = getFileForBlob(bucketName, blobId);
-                    File parent = file.getParentFile();
-                    if (!parent.exists()) {
-                        parent.mkdirs();
+                        totalRead += r;
                     }
 
-                    // Content-addressed deduplication: if file already exists with same blobId, skip disk write
-                    if (!file.exists()) {
-                        File tempFile = new File(parent, blobId.asString() + ".tmp." + Thread.currentThread().threadId());
-                        try (FileOutputStream fos = new FileOutputStream(tempFile);
-                             com.github.luben.zstd.ZstdOutputStream zos = new com.github.luben.zstd.ZstdOutputStream(fos, 1)) {
-                            zos.write(data);
-                            zos.flush();
-                            fos.getFD().sync(); // Ensure durability
-                        }
-                        try {
-                            Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                        } catch (Exception e) {
-                            if (!file.exists()) {
-                                Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                            } else {
-                                tempFile.delete();
+                    if (totalRead <= TIER1_RAW_THRESHOLD) {
+                        // Tier 1: < 4 KB -> Inline raw into YouTrackDB
+                        byte[] data = java.util.Arrays.copyOf(initialBuffer, totalRead);
+                        g.executeInTx(tx -> {
+                            try {
+                                tx.addV(CLASS_NAME)
+                                    .property(PROP_BUCKET, bucketName.asString())
+                                    .property(PROP_BLOB_ID, blobId.asString())
+                                    .property(PROP_KEY, key)
+                                    .property(PROP_STORAGE_TYPE, STORAGE_INLINE_RAW)
+                                    .property(PROP_PAYLOAD, data)
+                                    .iterate();
+                            } catch (Exception e) {
+                                if (!isDuplicateKey(e)) {
+                                    throw e;
+                                }
                             }
+                        });
+                    } else if (totalRead <= TIER2_DB_THRESHOLD) {
+                        // Tier 2: 4 KB .. 64 KB -> Compress (Zstd level 1) and insert into DB
+                        byte[] data = java.util.Arrays.copyOf(initialBuffer, totalRead);
+                        byte[] compressed = com.github.luben.zstd.Zstd.compress(data, 1);
+                        g.executeInTx(tx -> {
+                            try {
+                                tx.addV(CLASS_NAME)
+                                    .property(PROP_BUCKET, bucketName.asString())
+                                    .property(PROP_BLOB_ID, blobId.asString())
+                                    .property(PROP_KEY, key)
+                                    .property(PROP_STORAGE_TYPE, STORAGE_INLINE_ZSTD)
+                                    .property(PROP_PAYLOAD, compressed)
+                                    .iterate();
+                            } catch (Exception e) {
+                                if (!isDuplicateKey(e)) {
+                                    throw e;
+                                }
+                            }
+                        });
+                    } else {
+                        // Tier 3: > 64 KB -> Direct Zero-Copy Streaming to file storage with Zstd compression
+                        File file = getFileForBlob(bucketName, blobId);
+                        File parent = file.getParentFile();
+                        if (!parent.exists()) {
+                            parent.mkdirs();
                         }
-                    }
 
-                    g.executeInTx(tx -> {
-                        try {
-                            tx.addV(CLASS_NAME)
-                                .property(PROP_BUCKET, bucketName.asString())
-                                .property(PROP_BLOB_ID, blobId.asString())
-                                .property(PROP_KEY, key)
-                                .property(PROP_STORAGE_TYPE, STORAGE_FILE_ZSTD)
-                                .property(PROP_PAYLOAD, new byte[0]) // Zero payload in DB page
-                                .iterate();
-                        } catch (Exception e) {
-                            if (!isDuplicateKey(e)) {
-                                throw e;
+                        if (!file.exists()) {
+                            File tempFile = new File(parent, blobId.asString() + ".tmp." + Thread.currentThread().threadId());
+                            try (FileOutputStream fos = new FileOutputStream(tempFile);
+                                 com.github.luben.zstd.ZstdOutputStream zos = new com.github.luben.zstd.ZstdOutputStream(fos, 1)) {
+                                zos.write(initialBuffer, 0, totalRead);
+                                byte[] transferBuf = new byte[8192];
+                                int bytesRead;
+                                while ((bytesRead = in.read(transferBuf)) != -1) {
+                                    zos.write(transferBuf, 0, bytesRead);
+                                }
+                                zos.flush();
+                                fos.getFD().sync();
+                            }
+                            try {
+                                Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            } catch (Exception e) {
+                                if (!file.exists()) {
+                                    Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                } else {
+                                    tempFile.delete();
+                                }
                             }
                         }
-                    });
+
+                        g.executeInTx(tx -> {
+                            try {
+                                tx.addV(CLASS_NAME)
+                                    .property(PROP_BUCKET, bucketName.asString())
+                                    .property(PROP_BLOB_ID, blobId.asString())
+                                    .property(PROP_KEY, key)
+                                    .property(PROP_STORAGE_TYPE, STORAGE_FILE_ZSTD)
+                                    .property(PROP_PAYLOAD, new byte[0])
+                                    .iterate();
+                            } catch (Exception e) {
+                                if (!isDuplicateKey(e)) {
+                                    throw e;
+                                }
+                            }
+                        });
+                    }
                 }
             } catch (Exception e) {
                 throw new ObjectStoreIOException("Error saving blob " + blobId.asString(), e);

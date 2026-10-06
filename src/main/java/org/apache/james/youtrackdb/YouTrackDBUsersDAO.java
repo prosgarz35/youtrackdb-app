@@ -138,7 +138,17 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
     @Override
     public boolean contains(Username name) throws UsersRepositoryException {
         try {
-            return g.computeInTx(tx -> tx.V().hasLabel(CLASS_NAME).has(PROP_USERNAME, name.asString()).hasNext());
+            return g.computeInTx(tx -> {
+                try {
+                    var res = tx.yql("SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1", "uname", name.asString()).toList();
+                    return !res.isEmpty();
+                } catch (Exception e) {
+                    if (e.getMessage() != null && e.getMessage().contains("Class not found")) {
+                        return false;
+                    }
+                    throw e;
+                }
+            });
         } catch (Exception e) {
             throw new UsersRepositoryException("Failed to check if user exists: " + name.asString(), e);
         }

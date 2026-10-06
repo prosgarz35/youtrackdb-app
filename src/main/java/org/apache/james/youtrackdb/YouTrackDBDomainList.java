@@ -67,7 +67,17 @@ public class YouTrackDBDomainList extends AbstractDomainList {
     @Override
     protected boolean containsDomainInternal(Domain domain) throws DomainListException {
         try {
-            return g.computeInTx(tx -> tx.V().hasLabel(CLASS_NAME).has(PROP_DOMAIN, domain.asString()).hasNext());
+            return g.computeInTx(tx -> {
+                try {
+                    var res = tx.yql("SELECT 1 FROM JamesDomain WHERE domain = :domain LIMIT 1", "domain", domain.asString()).toList();
+                    return !res.isEmpty();
+                } catch (Exception e) {
+                    if (e.getMessage() != null && e.getMessage().contains("Class not found")) {
+                        return false;
+                    }
+                    throw e;
+                }
+            });
         } catch (Exception e) {
             throw new DomainListException("Failed to check if domain exists: " + domain.name(), e);
         }

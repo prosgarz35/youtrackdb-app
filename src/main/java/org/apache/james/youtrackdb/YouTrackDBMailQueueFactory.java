@@ -328,10 +328,25 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             ImmutableList<YouTrackDBMailQueueItem> toBeRemoved = mailItems.stream()
                 .filter(item -> shouldRemove(item, type, value))
                 .collect(ImmutableList.toImmutableList());
-            toBeRemoved.forEach(item -> {
-                mailItems.remove(item);
-                deleteFromDatabase(item.getMail().getName());
-            });
+            if (!toBeRemoved.isEmpty()) {
+                toBeRemoved.forEach(mailItems::remove);
+                if (!closed) {
+                    try {
+                        g.executeInTx(tx -> {
+                            for (YouTrackDBMailQueueItem item : toBeRemoved) {
+                                var traversal = tx.V().hasLabel(CLASS_NAME)
+                                    .has(PROP_QUEUE_NAME, name.asString())
+                                    .has(PROP_MAIL_NAME, item.getMail().getName());
+                                if (traversal.hasNext()) {
+                                    traversal.next().remove();
+                                }
+                            }
+                        });
+                    } catch (Exception e) {
+                        LOGGER.warn("Failed batch removal of mail items from queue {}", name.asString(), e);
+                    }
+                }
+            }
             return toBeRemoved.size();
         }
 

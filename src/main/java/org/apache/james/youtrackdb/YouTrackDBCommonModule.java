@@ -111,6 +111,7 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesRRTMapping.source IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesRRTMapping.mapping IF NOT EXISTS STRING");
                     g.command("CREATE INDEX IF NOT EXISTS JamesRRTMapping.source NOTUNIQUE");
+                    g.command("CREATE INDEX IF NOT EXISTS JamesRRTMapping.sourceAndMapping UNIQUE source, mapping");
 
                     // Class for Blobs
                     g.command("CREATE CLASS JamesBlob IF NOT EXISTS EXTENDS V");

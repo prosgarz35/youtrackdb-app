@@ -64,11 +64,21 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
         try {
             return g.computeInTx(tx -> {
                 List<Mapping> list = new ArrayList<>();
-                var traversal = tx.V().hasLabel(CLASS_NAME)
-                    .has(PROP_SOURCE, source.asString())
-                    .<String>values(PROP_MAPPING);
-                while (traversal.hasNext()) {
-                    list.add(Mapping.of(traversal.next()));
+                try {
+                    var results = tx.yql("SELECT mapping FROM JamesRRTMapping WHERE source = :src", "src", source.asString()).toList();
+                    for (Object item : results) {
+                        if (item instanceof Map<?, ?> m) {
+                            Object mappingObj = m.get(PROP_MAPPING);
+                            if (mappingObj != null) {
+                                list.add(Mapping.of(mappingObj.toString()));
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    if (e.getMessage() != null && e.getMessage().contains("Class not found")) {
+                        return MappingsImpl.empty();
+                    }
+                    throw e;
                 }
                 return MappingsImpl.fromMappings(list.stream());
             });
@@ -82,16 +92,23 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
         try {
             return g.computeInTx(tx -> {
                 Map<MappingSource, List<Mapping>> map = new HashMap<>();
-                var list = tx.yql("SELECT source, mapping FROM JamesRRTMapping").toList();
-                for (Object item : list) {
-                    if (item instanceof Map<?, ?> m) {
-                        Object srcObj = m.get("source");
-                        Object mappingObj = m.get("mapping");
-                        if (srcObj != null && mappingObj != null) {
-                            MappingSource source = MappingSource.parse(srcObj.toString());
-                            map.computeIfAbsent(source, s -> new ArrayList<>()).add(Mapping.of(mappingObj.toString()));
+                try {
+                    var list = tx.yql("SELECT source, mapping FROM JamesRRTMapping").toList();
+                    for (Object item : list) {
+                        if (item instanceof Map<?, ?> m) {
+                            Object srcObj = m.get("source");
+                            Object mappingObj = m.get("mapping");
+                            if (srcObj != null && mappingObj != null) {
+                                MappingSource source = MappingSource.parse(srcObj.toString());
+                                map.computeIfAbsent(source, s -> new ArrayList<>()).add(Mapping.of(mappingObj.toString()));
+                            }
                         }
                     }
+                } catch (Exception e) {
+                    if (e.getMessage() != null && e.getMessage().contains("Class not found")) {
+                        return Map.of();
+                    }
+                    throw e;
                 }
                 Map<MappingSource, Mappings> result = new HashMap<>();
                 map.forEach((k, v) -> result.put(k, MappingsImpl.fromMappings(v.stream())));
