@@ -39,10 +39,22 @@ public class YouTrackDBCommonModule extends AbstractModule {
         public YouTrackDBHolder(ConfigurationProvider configurationProvider, FileSystem fileSystem) throws FileNotFoundException {
             String path = DEFAULT_PATH;
             Configuration ytdbConfig = new org.apache.commons.configuration2.BaseConfiguration();
+            // High-throughput storage defaults for mail workloads (strict ACID, zero loss)
+            ytdbConfig.setProperty("youtrackdb.storage.diskCache.bufferSize", 2048);
+            ytdbConfig.setProperty("youtrackdb.storage.diskCache.writeCachePart", 15);
+            ytdbConfig.setProperty("youtrackdb.storage.diskCache.writeCachePageFlushInterval", 25);
+            ytdbConfig.setProperty("youtrackdb.storage.diskCache.checksumMode", "Store");
+            ytdbConfig.setProperty("youtrackdb.storage.wal.bufferSize", 128);
+            ytdbConfig.setProperty("youtrackdb.storage.wal.commitTimeout", 250);
             try {
                 Configuration conf = configurationProvider.getConfiguration("youtrackdb");
                 path = conf.getString("youtrackdb.path", DEFAULT_PATH);
-                ytdbConfig = conf;
+                // Merge overrides from configuration file
+                var keys = conf.getKeys();
+                while (keys.hasNext()) {
+                    String k = keys.next();
+                    ytdbConfig.setProperty(k, conf.getProperty(k));
+                }
             } catch (ConfigurationException e) {
                 LOGGER.info("youtrackdb.properties not found, using default settings with path {}", DEFAULT_PATH);
             }
@@ -99,8 +111,8 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesQueueItem.mailName IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesQueueItem.nextDelivery IF NOT EXISTS LONG");
                     g.command("CREATE PROPERTY JamesQueueItem.serializedMail IF NOT EXISTS BINARY");
+                    g.command("CREATE INDEX IF NOT EXISTS JamesQueueItem.queueAndMail UNIQUE queueName, mailName");
                     g.command("CREATE INDEX IF NOT EXISTS JamesQueueItem.queueName NOTUNIQUE");
-                    g.command("CREATE INDEX IF NOT EXISTS JamesQueueItem.mailName NOTUNIQUE");
                 });
             } catch (Exception e) {
                 LOGGER.warn("Schema initialization noticed: {}", e.getMessage());
