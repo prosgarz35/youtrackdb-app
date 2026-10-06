@@ -178,4 +178,19 @@ Optional configuration file: `conf/youtrackdb.properties`
 ```properties
 # Custom path for YouTrackDB storage (defaults to var/youtrackdb)
 youtrackdb.path=var/youtrackdb
+
+# Dedicated path for Write-Ahead Log (WAL) to isolate sequential journal I/O from page cache I/O (optional)
+# youtrackdb.storage.wal.path=/fast_wal_nvme/youtrackdb_wal
+
+# Engine tuning defaults for high-concurrency mail workloads
+# youtrackdb.storage.diskCache.bufferSize=2048
+# youtrackdb.storage.diskCache.writeCachePart=15
+# youtrackdb.storage.diskCache.writeCachePageFlushInterval=25
+# youtrackdb.storage.diskCache.checksumMode=Store
+# youtrackdb.storage.wal.bufferSize=128
+# youtrackdb.storage.wal.cacheSize=65536
+# youtrackdb.storage.wal.commitTimeout=250
+# youtrackdb.db.pool.min=32
+# youtrackdb.db.pool.max=100
+# youtrackdb.statement.cacheSize=200
 ```

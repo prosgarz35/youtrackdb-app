@@ -120,6 +120,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         static final String PROP_SERIALIZED_MAIL = "serializedMail";
 
         private final AtomicInteger references = new AtomicInteger(0);
+        private volatile boolean closed = false;
         private final DelayQueue<YouTrackDBMailQueueItem> mailItems;
         private final LinkedBlockingDeque<YouTrackDBMailQueueItem> inProcessingMailItems;
         private final MailQueueName name;
@@ -194,6 +195,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         @Override
         public void close() {
             if (references.decrementAndGet() <= 0) {
+                this.closed = true;
                 this.scheduler.dispose();
                 mailItems.forEach(LifecycleUtil::dispose);
                 inProcessingMailItems.forEach(LifecycleUtil::dispose);
@@ -221,7 +223,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                         .property(PROP_MAIL_NAME, cloned.getName())
                         .property(PROP_NEXT_DELIVERY, nextDelivery.toInstant().toEpochMilli())
                         .property(PROP_SERIALIZED_MAIL, serialized)
-                        .next();
+                        .iterate();
                 });
 
                 mailItems.put(new YouTrackDBMailQueueItem(cloned, this, clock, nextDelivery));
@@ -333,17 +335,22 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         }
 
         private void deleteFromDatabase(String mailName) {
+            if (closed) {
+                return;
+            }
             try {
                 g.executeInTx(tx -> {
                     var traversal = tx.V().hasLabel(CLASS_NAME)
                         .has(PROP_QUEUE_NAME, name.asString())
                         .has(PROP_MAIL_NAME, mailName);
-                    while (traversal.hasNext()) {
+                    if (traversal.hasNext()) {
                         traversal.next().remove();
                     }
                 });
             } catch (Exception e) {
-                LOGGER.warn("Failed to delete mail {} from YouTrackDB queue table", mailName, e);
+                if (!closed) {
+                    LOGGER.warn("Failed to delete mail {} from YouTrackDB queue table", mailName, e);
+                }
             }
         }
 

@@ -189,9 +189,51 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
 
     @Override
     public Publisher<BytesBlob> readBytes(BucketName bucketName, BlobId blobId) {
-        return Mono.from(readReactive(bucketName, blobId))
-            .flatMap(inputStreamBlob -> Mono.fromCallable(inputStreamBlob::asBytes))
-            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        return Mono.fromCallable(() -> {
+            String key = buildKey(bucketName, blobId);
+            return g.computeInTx(tx -> {
+                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
+                if (!traversal.hasNext()) {
+                    return null;
+                }
+                Vertex v = traversal.next();
+                String storageType = v.property(PROP_STORAGE_TYPE).isPresent() ? v.value(PROP_STORAGE_TYPE) : STORAGE_INLINE_RAW;
+
+                if (STORAGE_INLINE_RAW.equals(storageType) || LEGACY_STORAGE_INLINE.equals(storageType)) {
+                    byte[] bytes = v.value(PROP_PAYLOAD);
+                    return BytesBlob.of(bytes != null ? bytes : new byte[0]);
+                } else if (STORAGE_INLINE_ZSTD.equals(storageType)) {
+                    byte[] compressed = v.value(PROP_PAYLOAD);
+                    if (compressed == null || compressed.length == 0) {
+                        return BytesBlob.of(new byte[0]);
+                    }
+                    long decompressedSize = com.github.luben.zstd.Zstd.decompressedSize(compressed);
+                    if (decompressedSize > 0 && decompressedSize <= TIER2_DB_THRESHOLD * 2) {
+                        byte[] decompressed = com.github.luben.zstd.Zstd.decompress(compressed, (int) decompressedSize);
+                        return BytesBlob.of(decompressed);
+                    }
+                }
+                return null;
+            });
+        })
+        .flatMap(bytesBlob -> {
+            if (bytesBlob != null) {
+                return Mono.just(bytesBlob);
+            }
+            return Mono.from(readReactive(bucketName, blobId))
+                .flatMap(inputStreamBlob -> Mono.fromCallable(inputStreamBlob::asBytes));
+        })
+        .onErrorResume(e -> {
+            if (e.getCause() instanceof ObjectNotFoundException) {
+                return Mono.error(e.getCause());
+            }
+            if (e.getCause() instanceof ObjectStoreIOException) {
+                return Mono.error(e.getCause());
+            }
+            return Mono.error(e);
+        })
+        .switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
+        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override
@@ -203,39 +245,36 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 String key = buildKey(bucketName, blobId);
 
                 if (data.length < TIER1_RAW_THRESHOLD) {
-                    // Tier 1: < 4 KB -> Inline raw into YouTrackDB (no compression, no dedup overhead)
+                    // Tier 1: < 4 KB -> Inline raw into YouTrackDB
                     g.executeInTx(tx -> {
                         var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                        Vertex v = traversal.hasNext() ? traversal.next() : tx.addV(CLASS_NAME)
-                            .property(PROP_BUCKET, bucketName.asString())
-                            .property(PROP_BLOB_ID, blobId.asString())
-                            .property(PROP_KEY, key)
-                            .next();
-                        v.property(PROP_STORAGE_TYPE, STORAGE_INLINE_RAW);
-                        v.property(PROP_PAYLOAD, data);
+                        if (!traversal.hasNext()) {
+                            tx.addV(CLASS_NAME)
+                                .property(PROP_BUCKET, bucketName.asString())
+                                .property(PROP_BLOB_ID, blobId.asString())
+                                .property(PROP_KEY, key)
+                                .property(PROP_STORAGE_TYPE, STORAGE_INLINE_RAW)
+                                .property(PROP_PAYLOAD, data)
+                                .iterate();
+                        }
                     });
                 } else if (data.length <= TIER2_DB_THRESHOLD) {
-                    // Tier 2: 4 KB .. 64 KB -> Compress (Zstd) and deduplicate in DB
-                    byte[] compressed = com.github.luben.zstd.Zstd.compress(data, 3);
+                    // Tier 2: 4 KB .. 64 KB -> Compress (Zstd level 1 for lowest CPU overhead) and deduplicate in DB
                     g.executeInTx(tx -> {
                         var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                        if (traversal.hasNext()) {
-                            // Deduplication: record already exists with same key, update storage type and payload
-                            Vertex v = traversal.next();
-                            v.property(PROP_STORAGE_TYPE, STORAGE_INLINE_ZSTD);
-                            v.property(PROP_PAYLOAD, compressed);
-                        } else {
+                        if (!traversal.hasNext()) {
+                            byte[] compressed = com.github.luben.zstd.Zstd.compress(data, 1);
                             tx.addV(CLASS_NAME)
                                 .property(PROP_BUCKET, bucketName.asString())
                                 .property(PROP_BLOB_ID, blobId.asString())
                                 .property(PROP_KEY, key)
                                 .property(PROP_STORAGE_TYPE, STORAGE_INLINE_ZSTD)
                                 .property(PROP_PAYLOAD, compressed)
-                                .next();
+                                .iterate();
                         }
                     });
                 } else {
-                    // Tier 3: > 64 KB -> Compress (Zstd) and stream to filesystem with atomic rename (deduplicated)
+                    // Tier 3: > 64 KB -> Compress (Zstd level 1) and stream to filesystem with atomic rename (deduplicated)
                     File file = getFileForBlob(bucketName, blobId);
                     File parent = file.getParentFile();
                     if (!parent.exists()) {
@@ -246,7 +285,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     if (!file.exists()) {
                         File tempFile = new File(parent, blobId.asString() + ".tmp." + Thread.currentThread().threadId());
                         try (FileOutputStream fos = new FileOutputStream(tempFile);
-                             com.github.luben.zstd.ZstdOutputStream zos = new com.github.luben.zstd.ZstdOutputStream(fos, 3)) {
+                             com.github.luben.zstd.ZstdOutputStream zos = new com.github.luben.zstd.ZstdOutputStream(fos, 1)) {
                             zos.write(data);
                             zos.flush();
                             fos.getFD().sync(); // Ensure durability
@@ -264,13 +303,15 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
 
                     g.executeInTx(tx -> {
                         var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                        Vertex v = traversal.hasNext() ? traversal.next() : tx.addV(CLASS_NAME)
-                            .property(PROP_BUCKET, bucketName.asString())
-                            .property(PROP_BLOB_ID, blobId.asString())
-                            .property(PROP_KEY, key)
-                            .next();
-                        v.property(PROP_STORAGE_TYPE, STORAGE_FILE_ZSTD);
-                        v.property(PROP_PAYLOAD, new byte[0]); // Zero payload in DB page
+                        if (!traversal.hasNext()) {
+                            tx.addV(CLASS_NAME)
+                                .property(PROP_BUCKET, bucketName.asString())
+                                .property(PROP_BLOB_ID, blobId.asString())
+                                .property(PROP_KEY, key)
+                                .property(PROP_STORAGE_TYPE, STORAGE_FILE_ZSTD)
+                                .property(PROP_PAYLOAD, new byte[0]) // Zero payload in DB page
+                                .iterate();
+                        }
                     });
                 }
             } catch (Exception e) {

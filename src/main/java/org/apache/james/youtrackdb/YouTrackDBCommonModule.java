@@ -45,7 +45,11 @@ public class YouTrackDBCommonModule extends AbstractModule {
             ytdbConfig.setProperty("youtrackdb.storage.diskCache.writeCachePageFlushInterval", 25);
             ytdbConfig.setProperty("youtrackdb.storage.diskCache.checksumMode", "Store");
             ytdbConfig.setProperty("youtrackdb.storage.wal.bufferSize", 128);
+            ytdbConfig.setProperty("youtrackdb.storage.wal.cacheSize", 65536);
             ytdbConfig.setProperty("youtrackdb.storage.wal.commitTimeout", 250);
+            ytdbConfig.setProperty("youtrackdb.db.pool.min", 32);
+            ytdbConfig.setProperty("youtrackdb.db.pool.max", 100);
+            ytdbConfig.setProperty("youtrackdb.statement.cacheSize", 200);
             try {
                 Configuration conf = configurationProvider.getConfiguration("youtrackdb");
                 path = conf.getString("youtrackdb.path", DEFAULT_PATH);
@@ -62,6 +66,16 @@ public class YouTrackDBCommonModule extends AbstractModule {
             File dir = new File(path).isAbsolute() ? new File(path) : new File(fileSystem.getBasedir(), path);
             if (!dir.exists()) {
                 dir.mkdirs();
+            }
+
+            // Create custom WAL directory if configured
+            String customWalPath = ytdbConfig.getString("youtrackdb.storage.wal.path", null);
+            if (customWalPath != null && !customWalPath.isBlank()) {
+                File walDir = new File(customWalPath).isAbsolute() ? new File(customWalPath) : new File(fileSystem.getBasedir(), customWalPath);
+                if (!walDir.exists()) {
+                    walDir.mkdirs();
+                }
+                LOGGER.info("Using dedicated WAL path for YouTrackDB: {}", walDir.getAbsolutePath());
             }
 
             LOGGER.info("Initializing embedded YouTrackDB environment at {}", dir.getAbsolutePath());
@@ -101,6 +115,7 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesBlob.bucketAndBlobId IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesBlob.bucket IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesBlob.blobId IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesBlob.storageType IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesBlob.payload IF NOT EXISTS BINARY");
                     g.command("CREATE INDEX IF NOT EXISTS JamesBlob.bucketAndBlobId UNIQUE");
                     g.command("CREATE INDEX IF NOT EXISTS JamesBlob.bucket NOTUNIQUE");
