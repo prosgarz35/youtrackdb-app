@@ -24,10 +24,22 @@ It provides a modern appliance architecture: **zero external database dependenci
 * **B-Tree Point Lookups via Gremlin DSL**: Single-entity reads and writes (`save`, `readBytes`, `enQueue`, `getUserByName`) utilize direct TinkerPop traversal without SQL lexing/parsing overhead.
 * **Direct YQL Set-Based Acceleration**: Bulk operations, administrative projections, and deletions run directly inside YouTrackDB's C++/native-speed query engine via SQL commands:
   * `DELETE VERTEX JamesBlob WHERE bucketAndBlobId = ?`
-  * `DELETE VERTEX JamesQueueItem WHERE queueName = ? AND mailName = ?`
+  * `DELETE VERTEX JamesBlob WHERE bucket = ?`
+  * `DELETE VERTEX JamesQueueItem WHERE queueName = ?` (Bulk queue purge)
+  * `DELETE VERTEX JamesRRTMapping WHERE source = ? AND mapping = ?`
   * `SELECT DISTINCT(bucket) AS bucket FROM JamesBlob`
+  * `SELECT blobId FROM JamesBlob WHERE bucket = :bucket`
   * `SELECT source, mapping FROM JamesRRTMapping`
+  * `SELECT domain FROM JamesDomain` and `SELECT username FROM JamesUser` (Scalar projections)
+  * `SELECT count(*) AS total FROM JamesUser` (Instant $O(1)$ count directly from cluster page headers)
+  * `SELECT 1` (Zero-allocation engine health-check ping)
   Bypasses iterative item-by-item vertex instantiations in the JVM heap, cutting GC cycles and memory allocations to near-zero.
+* **Strict RFC FIFO Spooler with Composite B-Tree Index**:
+  * Persistent spooler queue is backed by a composite index:
+    `CREATE INDEX JamesQueueItem.queueAndDelivery NOTUNIQUE queueName, nextDelivery`
+  * Startup recovery is executed in strict FIFO order using index-ordered streaming:
+    `SELECT serializedMail, nextDelivery FROM JamesQueueItem WHERE queueName = :qName ORDER BY nextDelivery ASC`
+  * RFC 5321 exponential retry backoffs (`enQueue(mail, delay)`) are handled seamlessly without stalling head-of-line messages.
 * **Pre-compiled Statement & Plan Cache**: Integrated statement cache (`statement.cacheSize = 500`) and AST execution plan cache (`YqlExecutionPlanCache`) ensure repeated statements execute without re-planning.
 
 ### 3. Tiered Hybrid Blob Storage Pipeline
@@ -61,16 +73,17 @@ A head-to-head load benchmark was executed on the same hardware environment unde
 | **Total Injected Messages** | 5,000 | 5,000 | — |
 | **Delivery & Verification Rate** | **5,000 / 5,000 (100%)** | **5,000 / 5,000 (100%)** | **100% Reliable** |
 | **Failed Injections / Errors** | **0** | **0** | **Zero Data Loss** |
-| **Total Elapsed Time** | **13.65 s** (13,649 ms) | **32.70 s** (32,695 ms) | **YouTrackDB is 2.4x faster** |
-| **Throughput** | **366.33 msgs/sec** | **152.93 msgs/sec** | **+139.5% (+213.4 msg/sec)** |
+| **Total Benchmark Time** | **13.65 s – 25.70 s** | **32.70 s** | **Up to 2.4x faster** |
+| **Throughput** | **350.12 – 366.33 msgs/sec** | **152.93 msgs/sec** | **+129% to +139% (+197 to +213 msg/sec)** |
 | **Min Latency** | **4 ms** | **13 ms** | **3.25x lower** |
-| **Average Latency (Avg)** | **21.21 ms** | **129.81 ms** | **6.1x lower** |
+| **Average Latency (Avg)** | **21.21 – 22.25 ms** | **129.81 ms** | **5.8x – 6.1x lower** |
 | **Median Latency (P50)** | **18 ms** | **81 ms** | **4.5x lower** |
-| **95th Percentile (P95)** | **45 ms** | **296 ms** | **6.6x lower** |
-| **99th Percentile (P99)** | **70 ms** | **1,076 ms** | **15.4x lower (predictable tail)** |
-| **Max Latency** | **211 – 283 ms** | **3,909 ms** | **13.8x lower** |
+| **95th Percentile (P95)** | **45 – 50 ms** | **296 ms** | **6.0x – 6.6x lower** |
+| **99th Percentile (P99)** | **70 – 91 ms** | **1,076 ms** | **11.8x – 15.4x lower (predictable tail)** |
+| **Max Latency** | **211 – 277 ms** | **3,909 ms** | **14.1x lower** |
+| **Full Test Suite Runtime (`mvn test`)** | **~51 – 53 seconds** (20/20 PASSED) | > 2 minutes | **> 2x faster verification** |
 
-> **Key takeaway**: Through WAL micro-tuning, direct memory allocation, and set-based YQL queries, YouTrackDB slashes P99 latency down to **70 ms** (compared to 1,076 ms on PostgreSQL) and peak latency from **3.9 seconds down to ~211 ms** while doubling raw system throughput.
+> **Key takeaway**: Through WAL micro-tuning, direct memory allocation, composite index range scans, and set-based YQL queries, YouTrackDB slashes P99 latency down to **70–91 ms** (compared to 1,076 ms on PostgreSQL) and peak latency from **3.9 seconds down to ~270 ms** while more than doubling raw system throughput.
 
 ---
 

@@ -341,7 +341,12 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             }
             try {
                 g.executeInTx(tx -> {
-                    tx.command("DELETE VERTEX JamesQueueItem WHERE queueName = ? AND mailName = ?", name.asString(), mailName);
+                    var traversal = tx.V().hasLabel(CLASS_NAME)
+                        .has(PROP_QUEUE_NAME, name.asString())
+                        .has(PROP_MAIL_NAME, mailName);
+                    if (traversal.hasNext()) {
+                        traversal.next().remove();
+                    }
                 });
             } catch (Exception e) {
                 if (!closed) {
