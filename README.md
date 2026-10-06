@@ -129,8 +129,53 @@ curl -X GET http://localhost:8000/youtrackdb/check
 }
 ```
 
+### Standard James HealthCheck
+```bash
+curl -X GET http://localhost:8000/healthcheck
+```
+Includes the native `YouTrackDBHealthCheck` component reporting the live operational status of the embedded database engine directly in the standard JSON health response.
+
 ### Triggering an Online Hot Backup
 ```bash
 curl -X POST "http://localhost:8000/youtrackdb/backup?backupDir=var/backups"
 ```
 The server will create a consistent `.zip` snapshot of all graph structures, mail metadata, and BLOB payloads in the background without locking concurrent readers or writers.
+
+### Blobs Garbage Collection (Orphan Blobs GC)
+```bash
+curl -X POST http://localhost:8000/youtrackdb/blobs/gc
+```
+*Response:*
+```json
+{
+  "status": "COMPLETED",
+  "deletedOrphanBlobs": 0
+}
+```
+Traverses the content-addressed blob directory and securely purges unreferenced orphaned payload files, reclaiming disk space.
+
+### Managing Domains & Users via WebAdmin
+```bash
+# Add domain
+curl -X PUT http://localhost:8000/domains/example.com
+
+# Create user
+curl -X PUT http://localhost:8000/users/alice@example.com \
+  -H "Content-Type: application/json" \
+  -d '{"password":"secretpassword"}'
+```
+
+---
+
+## ⚙️ Configuration & Storage Layout
+
+Default data directory layout in `var/`:
+* `var/youtrackdb/` — Embedded YouTrackDB graph database files, Lucene index segments, WAL, and in-database binary blobs (< 64 KB).
+* `var/blobs/` — Sharded directory structure for large attachments & message bodies (> 64 KB) with transparent Zstd compression.
+* `var/backups/` — Destination directory for point-in-time online `.zip` hot backups.
+
+Optional configuration file: `conf/youtrackdb.properties`
+```properties
+# Custom path for YouTrackDB storage (defaults to var/youtrackdb)
+youtrackdb.path=var/youtrackdb
+```

@@ -143,7 +143,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 if (STORAGE_FILE_ZSTD.equals(storageType) || LEGACY_STORAGE_FILE.equals(storageType)) {
                     File file = getFileForBlob(bucketName, blobId);
                     if (!file.exists()) {
-                        throw new RuntimeException(new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath()));
+                        throw new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath());
                     }
                     try {
                         InputStream in = new FileInputStream(file);
@@ -152,7 +152,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                         }
                         return InputStreamBlob.of(in);
                     } catch (IOException e) {
-                        throw new RuntimeException(new ObjectStoreIOException("Error opening blob file: " + file.getAbsolutePath(), e));
+                        throw new ObjectStoreIOException("Error opening blob file: " + file.getAbsolutePath(), e);
                     }
                 } else if (STORAGE_INLINE_ZSTD.equals(storageType)) {
                     byte[] compressed = v.value(PROP_PAYLOAD);
@@ -162,7 +162,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     try {
                         return InputStreamBlob.of(new com.github.luben.zstd.ZstdInputStream(new ByteArrayInputStream(compressed)));
                     } catch (Exception e) {
-                        throw new RuntimeException(new ObjectStoreIOException("Error decompressing inline blob: " + key, e));
+                        throw new ObjectStoreIOException("Error decompressing inline blob: " + key, e);
                     }
                 } else {
                     // STORAGE_INLINE_RAW or LEGACY_STORAGE_INLINE
@@ -173,7 +173,17 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     return InputStreamBlob.of(new ByteArrayInputStream(bytes));
                 }
             });
-        }).switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
+        })
+        .onErrorResume(e -> {
+            if (e.getCause() instanceof ObjectNotFoundException) {
+                return Mono.error(e.getCause());
+            }
+            if (e.getCause() instanceof ObjectStoreIOException) {
+                return Mono.error(e.getCause());
+            }
+            return Mono.error(e);
+        })
+        .switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 

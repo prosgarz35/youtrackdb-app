@@ -140,6 +140,10 @@ public class YouTrackDBCommonModule extends AbstractModule {
     protected void configure() {
         bind(YouTrackDBHolder.class).asEagerSingleton();
 
+        com.google.inject.multibindings.Multibinder.newSetBinder(binder(), org.apache.james.core.healthcheck.HealthCheck.class)
+            .addBinding()
+            .to(YouTrackDBHealthCheck.class);
+
         com.google.inject.multibindings.Multibinder.newSetBinder(binder(), org.apache.james.webadmin.Routes.class)
             .addBinding()
             .to(YouTrackDBAdminRoutes.class);

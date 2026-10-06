@@ -55,6 +55,7 @@ public class YouTrackDBAdminRoutes implements Routes {
     public void define(Service service) {
         TaskFromRequest backupTaskFromRequest = this::createBackupTask;
         service.post(YOUTRACKDB_BASE_PATH + "/backup", backupTaskFromRequest.asRoute(taskManager), jsonTransformer);
+        service.post(YOUTRACKDB_BASE_PATH + "/blobs/gc", this::cleanupOrphanBlobs, jsonTransformer);
         service.get(YOUTRACKDB_BASE_PATH + "/check", this::checkIntegrity, jsonTransformer);
     }
 
@@ -98,6 +99,50 @@ public class YouTrackDBAdminRoutes implements Routes {
                 .statusCode(HttpStatus.INTERNAL_SERVER_ERROR_500)
                 .type(ErrorResponder.ErrorType.SERVER_ERROR)
                 .message("Check failed: " + e.getMessage())
+                .haltError();
+        }
+    }
+
+    private Object cleanupOrphanBlobs(Request request, Response response) {
+        try {
+            File blobsSourceDir = new File(fileSystem.getBasedir(), "var/blobs");
+            long[] deleted = {0};
+            if (blobsSourceDir.exists()) {
+                java.util.Set<String> activeBlobIds = traversalSource.computeInTx(tx -> {
+                    java.util.Set<String> set = new java.util.HashSet<>();
+                    var traversal = tx.V().hasLabel(YouTrackDBBlobStoreDAO.CLASS_NAME).<String>values("blobId");
+                    while (traversal.hasNext()) {
+                        set.add(traversal.next());
+                    }
+                    return set;
+                });
+
+                try (var stream = java.nio.file.Files.walk(blobsSourceDir.toPath())) {
+                    stream.filter(java.nio.file.Files::isRegularFile)
+                        .forEach(path -> {
+                            String fileName = path.getFileName().toString();
+                            if (!fileName.contains(".tmp.") && !activeBlobIds.contains(fileName)) {
+                                try {
+                                    java.nio.file.Files.deleteIfExists(path);
+                                    deleted[0]++;
+                                } catch (Exception ignored) {
+                                }
+                            }
+                        });
+                }
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "COMPLETED");
+            result.put("deletedOrphanBlobs", deleted[0]);
+            response.status(HttpStatus.OK_200);
+            return result;
+        } catch (Exception e) {
+            LOGGER.error("Failed to run orphan blobs cleanup", e);
+            throw ErrorResponder.builder()
+                .statusCode(HttpStatus.INTERNAL_SERVER_ERROR_500)
+                .type(ErrorResponder.ErrorType.SERVER_ERROR)
+                .message("Blobs GC failed: " + e.getMessage())
                 .haltError();
         }
     }
