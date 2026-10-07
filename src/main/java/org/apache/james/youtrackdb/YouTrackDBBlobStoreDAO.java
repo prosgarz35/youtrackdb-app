@@ -530,10 +530,21 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
 
     @Override
     public Publisher<BlobId> listBlobs(BucketName bucketName) {
+        return listBlobs(bucketName, null);
+    }
+
+    public Publisher<BlobId> listBlobs(BucketName bucketName, String prefix) {
         return Mono.fromCallable(() -> {
             return g.computeInTx(tx -> {
                 Set<BlobId> blobIds = new HashSet<>();
-                var results = tx.yql("SELECT blobId FROM JamesBlob WHERE bucket = :bucket", "bucket", bucketName.asString()).toList();
+                String query = (prefix == null || prefix.isEmpty())
+                    ? "SELECT blobId FROM JamesBlob WHERE bucket = :bucket"
+                    : "SELECT blobId FROM JamesBlob WHERE bucket = :bucket AND blobId LIKE :prefix";
+                var queryParams = (prefix == null || prefix.isEmpty())
+                    ? new Object[]{"bucket", bucketName.asString()}
+                    : new Object[]{"bucket", bucketName.asString(), "prefix", prefix + "%"};
+
+                var results = tx.yql(query, queryParams).toList();
                 for (Object item : results) {
                     if (item instanceof Map<?, ?> m) {
                         Object bId = m.get(PROP_BLOB_ID);
@@ -547,4 +558,27 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         }).flatMapMany(Flux::fromIterable)
         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
+
+    public Mono<Long> countBlobs(BucketName bucketName, String prefix) {
+        return Mono.fromCallable(() -> {
+            return g.computeInTx(tx -> {
+                String query = (prefix == null || prefix.isEmpty())
+                    ? "SELECT count(*) AS cnt FROM JamesBlob WHERE bucket = :bucket"
+                    : "SELECT count(*) AS cnt FROM JamesBlob WHERE bucket = :bucket AND blobId LIKE :prefix";
+                var queryParams = (prefix == null || prefix.isEmpty())
+                    ? new Object[]{"bucket", bucketName.asString()}
+                    : new Object[]{"bucket", bucketName.asString(), "prefix", prefix + "%"};
+
+                var results = tx.yql(query, queryParams).toList();
+                if (!results.isEmpty() && results.getFirst() instanceof Map<?, ?> m) {
+                    Object count = m.get("cnt");
+                    if (count instanceof Number n) {
+                        return n.longValue();
+                    }
+                }
+                return 0L;
+            });
+        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+    }
 }
+

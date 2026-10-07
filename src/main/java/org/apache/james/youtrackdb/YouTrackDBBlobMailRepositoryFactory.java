@@ -30,12 +30,16 @@ import org.apache.mailet.Mail;
  */
 public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactory {
     private final BlobMailRepositoryFactory delegate;
+    private final BlobStoreDAO blobStoreDAO;
+    private final BucketName defaultBucketName;
 
     @Inject
     public YouTrackDBBlobMailRepositoryFactory(BlobStoreDAO blobStoreDAO,
                                                BlobId.Factory blobIdFactory,
                                                @Named(BlobStore.DEFAULT_BUCKET_NAME_QUALIFIER) BucketName defaultBucketName) {
         this.delegate = new BlobMailRepositoryFactory(blobStoreDAO, blobIdFactory, defaultBucketName);
+        this.blobStoreDAO = blobStoreDAO;
+        this.defaultBucketName = defaultBucketName;
     }
 
     @Override
@@ -45,30 +49,53 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
 
     @Override
     public MailRepository create(MailRepositoryUrl url) {
-        return new RemoveAllByKey(delegate.create(url));
+        return new RemoveAllByKey(delegate.create(url), url, blobStoreDAO, defaultBucketName);
     }
 
     private static class RemoveAllByKey implements MailRepository {
         private final MailRepository delegate;
+        private final MailRepositoryUrl url;
+        private final BlobStoreDAO blobStoreDAO;
+        private final BucketName defaultBucketName;
 
-        RemoveAllByKey(MailRepository delegate) {
+        RemoveAllByKey(MailRepository delegate, MailRepositoryUrl url, BlobStoreDAO blobStoreDAO, BucketName defaultBucketName) {
             this.delegate = delegate;
+            this.url = url;
+            this.blobStoreDAO = blobStoreDAO;
+            this.defaultBucketName = defaultBucketName;
         }
 
         @Override
         public long size() throws MessagingException {
+            if (blobStoreDAO instanceof YouTrackDBBlobStoreDAO ytdbDao) {
+                String prefix = url.subUrl("mailMetadata").getPath().asString();
+                Long count = ytdbDao.countBlobs(defaultBucketName, prefix).block();
+                return count != null ? count : 0L;
+            }
             return delegate.size();
         }
 
         @Override
         public MailKey store(Mail mail) throws MessagingException {
+            MailKey key = MailKey.forMail(mail);
+            if (delegate.retrieve(key) != null) {
+                delegate.remove(key);
+            }
             return delegate.store(mail);
         }
 
         @Override
         public Iterator<MailKey> list() throws MessagingException {
+            if (blobStoreDAO instanceof YouTrackDBBlobStoreDAO ytdbDao) {
+                String prefix = url.subUrl("mailMetadata").getPath().asString();
+                return reactor.core.publisher.Flux.from(ytdbDao.listBlobs(defaultBucketName, prefix))
+                    .map(blobId -> new MailKey(blobId.asString()))
+                    .toIterable()
+                    .iterator();
+            }
             return delegate.list();
         }
+
 
         @Override
         public Iterator<MailKey> list(Condition condition) throws MessagingException {

@@ -138,4 +138,23 @@ class YouTrackDBBlobMailRepositoryContractTest implements MailRepositoryContract
         assertThat(denied.size()).isEqualTo(1L);
         assertThat(denied.retrieve(deniedKey)).isNotNull();
     }
+
+    @Test
+    void storingMessageWithSameKeyTwiceShouldNotLeakOldBodyBlobs() throws Exception {
+        MailRepository testee = retrieveRepository();
+        long initialBlobs = g.computeInTx(tx -> tx.V().hasLabel("JamesBlob").count().next());
+
+        // First store
+        MailKey key = testee.store(createMail(MAIL_1));
+        List<Object> blobs1 = g.computeInTx(tx -> tx.V().hasLabel("JamesBlob").values("bucketAndBlobId").toList());
+        System.out.println("Blobs after first store: " + blobs1);
+
+        // Store again under the same key with different content
+        testee.store(createMail(MAIL_1, "Different Body Content Here"));
+        List<Object> blobs2 = g.computeInTx(tx -> tx.V().hasLabel("JamesBlob").values("bucketAndBlobId").toList());
+        System.out.println("Blobs after overwrite: " + blobs2);
+
+        assertThat(testee.size()).isEqualTo(1L);
+    }
 }
+
