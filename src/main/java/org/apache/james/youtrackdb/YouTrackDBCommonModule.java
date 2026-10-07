@@ -150,6 +150,21 @@ public class YouTrackDBCommonModule extends AbstractModule {
             return traversalSource;
         }
 
+        public static void executeStrictTx(YTDBGraphTraversalSource g, java.util.function.Consumer<YTDBGraphTraversalSource> action) {
+            g.executeInTx(tx -> {
+                action.accept(tx);
+                tx.tx().commit();
+            });
+        }
+
+        public static <R> R computeStrictTx(YTDBGraphTraversalSource g, java.util.function.Function<YTDBGraphTraversalSource, R> action) {
+            return g.computeInTx(tx -> {
+                R result = action.apply(tx);
+                tx.tx().commit();
+                return result;
+            });
+        }
+
         @Override
         @PreDestroy
         public void close() {

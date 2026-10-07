@@ -33,15 +33,17 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
     private final YTDBGraphTraversalSource g;
     private Algorithm algo;
 
+    public static final String DEFAULT_ALGORITHM = "PBKDF2-SHA512-210000";
+
     @Inject
     public YouTrackDBUsersDAO(YTDBGraphTraversalSource g) {
         this.g = g;
-        this.algo = Algorithm.of("PBKDF2");
+        this.algo = Algorithm.of(DEFAULT_ALGORITHM);
     }
 
     @Override
     public void configure(HierarchicalConfiguration<ImmutableNode> config) {
-        algo = Algorithm.of(config.getString("algorithm", "PBKDF2"), config.getString("hashingMode", PLAIN.name()));
+        algo = Algorithm.of(config.getString("algorithm", DEFAULT_ALGORITHM), config.getString("hashingMode", PLAIN.name()));
     }
 
     @Override

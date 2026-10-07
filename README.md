@@ -61,7 +61,7 @@ Storage is dynamically partitioned based on payload dimensions:
 
 #### 4. Zero-Data-Loss ACID Durability (CAS Write-Ahead Log)
 * **Strict ACID Compliance**: Every mail queue item and blob metadata record is written to YouTrackDB's append-only CAS Write-Ahead Log (`commitTimeout = 50ms`) before acknowledging SMTP `250 OK`.
-* **Power-Loss & Crash Resilient**: Passes rigorous ACID power-cut simulation tests (`YouTrackDBAcidCrashTest`) with zero corrupted records.
+* **Crash & Contention Resilient**: Validated by extensive stress tests under concurrency, abrupt thread deaths, and abrupt network dropouts (`YouTrackDBAcidCrashTest`) with zero corrupted records.
 * **Non-Blocking Dispatch**: Uses an in-memory `DelayQueue` for microsecond dispatching while persisting the backing state on disk.
 
 #### 5. Online Hot Backups via MVCC Snapshots
@@ -273,7 +273,7 @@ youtrackdb.statement.cacheSize=500
 
 #### 4. Полная сохранность данных по стандарту ACID (CAS Write-Ahead Log)
 * **Строгое соответствие ACID**: Каждое сообщение очереди и метаданные блобов фиксируются в журнале предзаписи YouTrackDB (`commitTimeout = 50ms`) до возврата SMTP ответа `250 OK`.
-* **Устойчивость к сбоям питания и падениям**: Сервер успешно проходит стресс-тесты аварийного отключения (`YouTrackDBAcidCrashTest`) с нулевой потерей данных.
+* **Устойчивость к сбоям и высокой конкурентности**: Сервер проверен серией стресс-тестов в условиях конкурентной записи, аварийного завершения потоков и сетевых обрывов (`YouTrackDBAcidCrashTest`) с гарантированным сохранением целостности данных.
 * **Неблокирующая диспетчеризация**: В памяти используется `DelayQueue` для субмиллисекундной диспетчеризации с синхронным дисковым бэкендом.
 
 #### 5. Горячее онлайн-резервное копирование через MVCC-снимки
