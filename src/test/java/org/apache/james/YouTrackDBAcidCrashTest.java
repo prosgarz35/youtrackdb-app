@@ -426,11 +426,20 @@ public class YouTrackDBAcidCrashTest {
                 assertThat(item.getMail().getName()).isEqualTo("mail-roundtrip-test-01");
                 assertThat(item.getMail().getMaybeSender().asOptional().map(Object::toString)).contains("sender@acid.local");
                 assertThat(item.getMail().getMessage().getSubject()).isEqualTo("Test Persistence Across Restart");
+                assertThat(item.getMail().getMessage().getContent().toString().trim()).isEqualTo("This is an ACID persisted mail item.");
                 assertThat(item.getMail().getAttribute(org.apache.mailet.AttributeName.of("org.apache.james.testAttribute")))
                     .isPresent();
 
                 item.done(org.apache.james.queue.api.MailQueue.MailQueueItem.CompletionStatus.SUCCESS);
                 queueFactory.clean();
+
+                // Wait shortly for async DB deletion scheduled on boundedElastic to commit
+                org.awaitility.Awaitility.await()
+                    .atMost(java.time.Duration.ofSeconds(5))
+                    .untilAsserted(() -> {
+                        long remaining = g.computeInTx(tx -> tx.V().hasLabel("JamesQueueItem").count().next());
+                        assertThat(remaining).isEqualTo(0L);
+                    });
             }
         }
     }

@@ -12,7 +12,6 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
@@ -40,7 +39,6 @@ import org.apache.james.queue.api.MailQueueName;
 import org.apache.james.queue.api.ManageableMailQueue;
 import org.apache.james.server.core.MailImpl;
 import org.apache.mailet.Mail;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.reactivestreams.Publisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -301,6 +299,8 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             return baos.toByteArray();
         }
 
+        private static final int MAX_MIME_PAYLOAD_SIZE = 100 * 1024 * 1024; // 100 MB max message size safety guard
+
         private static Mail deserializeMail(byte[] bytes) throws Exception {
             try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
                 ois.setObjectInputFilter(java.io.ObjectInputFilter.Config.createFilter(
@@ -310,10 +310,13 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 boolean hasMessage = ois.readBoolean();
                 if (hasMessage) {
                     int len = ois.readInt();
+                    if (len < 0 || len > MAX_MIME_PAYLOAD_SIZE) {
+                        throw new java.io.IOException("Corrupted or excessive serialized MIME message length: " + len);
+                    }
                     byte[] msgBytes = new byte[len];
                     ois.readFully(msgBytes);
                     MimeMessage mimeMessage = new MimeMessage(
-                        Session.getDefaultInstance(new Properties()),
+                        Session.getInstance(new Properties()),
                         new ByteArrayInputStream(msgBytes));
                     mail.setMessage(mimeMessage);
                 }
@@ -417,7 +420,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         private void markProcessingAsFinished(YouTrackDBMailQueueItem item, MailQueue.MailQueueItem.CompletionStatus status) {
             inProcessingMailItems.remove(item);
             if (status == MailQueue.MailQueueItem.CompletionStatus.SUCCESS) {
-                Schedulers.boundedElastic().schedule(() -> deleteFromDatabase(item.getMail().getName()));
+                deleteFromDatabase(item.getMail().getName());
             } else if (status == MailQueue.MailQueueItem.CompletionStatus.RETRY) {
                 try {
                     enQueue(item.getMail());
@@ -426,7 +429,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 }
             } else {
                 // Any other termination status (e.g. discard/error) -> purge from database so it doesn't resurrect on restart
-                Schedulers.boundedElastic().schedule(() -> deleteFromDatabase(item.getMail().getName()));
+                deleteFromDatabase(item.getMail().getName());
             }
         }
 

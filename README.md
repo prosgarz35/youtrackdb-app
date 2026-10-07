@@ -45,13 +45,13 @@ It provides a modern appliance architecture: **zero external database dependenci
   * `DELETE VERTEX JamesBlob WHERE bucketAndBlobId = ?`
   * `DELETE VERTEX JamesQueueItem WHERE queueName = ?` (Bulk queue purge)
   * `SELECT 1` (Zero-allocation engine health-check ping)
-* **Strict RFC FIFO Spooler with Composite B-Tree Index**:
-  * Persistent spooler queue is backed by a composite index:
-    `CREATE INDEX JamesQueueItem.queueAndDelivery NOTUNIQUE queueName, nextDelivery`
-  * Startup recovery is executed in strict FIFO order using index-ordered streaming:
-    `SELECT serializedMail, nextDelivery FROM JamesQueueItem WHERE queueName = :qName ORDER BY nextDelivery ASC`
+* **Strict RFC FIFO Spooler with In-Memory DelayQueue & YouTrackDB WAL**:
+  * Persistent spooler queue stores all queue items as `JamesQueueItem` vertices in YouTrackDB with composite indices:
+    `CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) UNIQUE`
+    `CREATE INDEX JamesQueueItem.queueAndDelivery IF NOT EXISTS ON JamesQueueItem (queueName, nextDelivery) NOTUNIQUE`
+  * Startup recovery restores pending messages directly via Gremlin vertex traversal, hydrating them into an in-memory `DelayQueue` ordered by `nextDelivery` timestamp for microsecond dispatch latency.
   * RFC 5321 exponential retry backoffs (`enQueue(mail, delay)`) are handled seamlessly without stalling head-of-line messages.
-  * Batch removal `remove(Type, value)` executes in a single atomic transaction `executeInTx`, minimizing page locks and WAL overhead.
+  * Batch removal `remove(Type, value)` and successful completions execute in atomic transactions (`executeInTx`), keeping database state synchronized with minimal WAL overhead.
 
 #### 3. Tiered Hybrid Blob Storage Pipeline
 Storage is dynamically partitioned based on payload dimensions:
@@ -257,13 +257,13 @@ youtrackdb.statement.cacheSize=500
   * `DELETE VERTEX JamesBlob WHERE bucketAndBlobId = ?`
   * `DELETE VERTEX JamesQueueItem WHERE queueName = ?` (Массовая очистка очереди)
   * `SELECT 1` (Легковесный пинг готовности базы без аллокаций)
-* **Строгий RFC FIFO спулер с составным индексом B-Tree**:
-  * Очередь сообщений оптимизирована составным индексом:
-    `CREATE INDEX JamesQueueItem.queueAndDelivery NOTUNIQUE queueName, nextDelivery`
-  * Восстановление при старте гарантирует строгий FIFO порядок:
-    `SELECT serializedMail, nextDelivery FROM JamesQueueItem WHERE queueName = :qName ORDER BY nextDelivery ASC`
+* **Строгий RFC FIFO спулер с гибридным In-Memory DelayQueue и YouTrackDB WAL**:
+  * Очередь сообщений сохраняет вершины `JamesQueueItem` в YouTrackDB с составными индексами:
+    `CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) UNIQUE`
+    `CREATE INDEX JamesQueueItem.queueAndDelivery IF NOT EXISTS ON JamesQueueItem (queueName, nextDelivery) NOTUNIQUE`
+  * Восстановление при старте загружает сохранённые вершины через Gremlin-траверсал, гидрируя их в in-memory структуру `DelayQueue`, упорядоченную по метке времени `nextDelivery` для диспетчеризации с микросекундной задержкой.
   * Экспоненциальные повторные отправки (RFC 5321 `enQueue(mail, delay)`) обслуживаются без задержки очереди.
-  * Пакетное удаление `remove(Type, value)` выполняется в одной атомарной транзакции `executeInTx`, минимизируя блокировки страниц и нагрузку на WAL.
+  * Пакетное удаление `remove(Type, value)` и завершение обработки сообщений выполняются в атомарных транзакциях (`executeInTx`), поддерживая консистентность состояния базы с минимальной нагрузкой на WAL.
 
 #### 3. Трёхуровневое гибридное хранилище блобов (Tiered Storage)
 Данные динамически разделяются в зависимости от размера полезной нагрузки:
