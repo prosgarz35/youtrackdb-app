@@ -15,7 +15,7 @@
 
 **Apache James YouTrackDB Server** is an enterprise-grade, self-contained mail server engineered on top of **JetBrains YouTrackDB** — a next-generation multi-model embedded database engine combining TinkerPop graph traversal, document storage, unique B-Tree indexing, direct memory management, and declarative **YQL (YouTrackDB SQL)** queries.
 
-It provides a modern appliance architecture: **zero external database dependencies**, **zero DBA maintenance overhead**, instant deployment, transparent Zstd compression with deduplication, strict ACID durability (CAS WAL), and **more than 2.4x throughput over PostgreSQL 17** while maintaining predictable, ultra-low sub-millisecond to sub-20ms tail latencies.
+It provides a modern appliance architecture: **zero external database dependencies**, **zero DBA maintenance overhead**, instant deployment, transparent Zstd compression for message bodies, strict ACID durability (CAS WAL), and **more than 2.4x throughput over PostgreSQL 17** while maintaining predictable, low tail latencies.
 
 ---
 
@@ -32,7 +32,7 @@ It provides a modern appliance architecture: **zero external database dependenci
 
 #### 2. Multi-Model Hybrid Storage (Graph + Relational YQL + Key-Value)
 * **B-Tree Point Lookups via Gremlin DSL**: Single-entity reads and writes (`save`, `readBytes`, `enQueue`) utilize direct TinkerPop traversal without SQL lexing/parsing overhead.
-* **Direct YQL Set-Based & Projection Acceleration**: Hot path lookups, administrative queries, and bulk operations execute with native C++ efficiency directly via parameterized YQL:
+* **Direct YQL Set-Based & Projection Acceleration**: Hot path lookups, administrative queries, and bulk operations execute directly via parameterized YQL:
   * `SELECT password, algorithm FROM JamesUser WHERE username = :uname LIMIT 1` (Fast authentication lookup)
   * `SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1` (Instant $O(1)$ user existence check)
   * `SELECT 1 FROM JamesDomain WHERE domain = :domain LIMIT 1` (Instant $O(1)$ domain existence check)
@@ -56,7 +56,7 @@ It provides a modern appliance architecture: **zero external database dependenci
 #### 3. Tiered Hybrid Blob Storage Pipeline
 Storage is dynamically partitioned based on payload dimensions:
 * **Tier 1 (< 4 KB)**: Small headers and raw metadata are written directly into YouTrackDB data pages ($O(1)$ key lookup, zero file I/O).
-* **Tier 2 (4 KB .. 64 KB)**: High-speed Zstandard (level 1) compression with deduplication stored inside database pages.
+* **Tier 2 (4 KB .. 64 KB)**: High-speed Zstandard (level 1) compression stored inside database pages.
 * **Tier 3 (> 64 KB)**: **Direct Zero-Copy Streaming** — payloads larger than 64 KB are streamed directly from the input stream into `ZstdOutputStream` on disk, bypassing JVM Heap allocations and eliminating Garbage Collection pauses. Files are organized using 3-level directory sharding (`var/blobs/{bucket}/ab/cd/ef/{blobId}`) with atomic durability (`ATOMIC_MOVE` + `fsync`), eliminating database fragmentation and WAL bloat.
 
 #### 4. Zero-Data-Loss ACID Durability (CAS Write-Ahead Log)
@@ -100,14 +100,14 @@ A head-to-head load benchmark was executed on the same hardware environment unde
 ### 🛠️ Technology Stack & RFC Standards
 
 * **Database Engine**: JetBrains YouTrackDB (`io.youtrackdb:youtrackdb-core:0.5.0-SNAPSHOT`) with Apache TinkerPop Gremlin DSL and declarative YQL.
-* **Authentication & Users**: `YouTrackDBUsersDAO` with PBKDF2 / Argon2 password hashing and unique B-Tree indexing on `JamesUser.username`.
+* **Authentication & Users**: `YouTrackDBUsersDAO` with PBKDF2 password hashing and unique B-Tree indexing on `JamesUser.username`.
 * **Domain Management**: `YouTrackDBDomainList` enforcing standard domain normalization.
 * **Virtual Aliases**: `YouTrackDBRecipientRewriteTable` supporting alias, regex, error, forward, and group mapping rules with direct YQL projections.
 * **Full-Text Search**: Embedded Apache Lucene (`LuceneSearchMailboxModule`).
 * **Supported RFC Standards**:
   * **SMTP / SMTPS**: RFC 5321, RFC 4954, RFC 3207 (Ports 25, 465, 587).
   * **Email Format**: RFC 5322 (Internet Message Format) & MIME RFC 2045–2049.
-  * **IMAP4rev1 / IMAP4rev2**: RFC 3501, RFC 9051 (Ports 143, 993).
+  * **IMAP4rev1**: RFC 3501 (Ports 143, 993).
   * **ManageSieve**: RFC 5804 (Port 4190).
   * **WebAdmin API**: Administrative REST API (Port 8000).
 
@@ -142,7 +142,7 @@ mvn test -Dcheckstyle.skip=true -Dtest=YouTrackDBBenchmarkTest
 
 #### Launch the Server
 ```bash
-java -Dworking.directory=. -jar target/james-server-youtrackdb-app-3.10.0-SNAPSHOT.jar
+java -Dworking.directory=. -jar target/james-server-youtrackdb-app.jar
 ```
 
 ---
@@ -227,7 +227,7 @@ youtrackdb.statement.cacheSize=500
 
 **Apache James YouTrackDB Server** — это высокопроизводительный, полностью автономный почтовый сервер корпоративного уровня, разработанный на базе встраиваемой мультимодельной СУБД **JetBrains YouTrackDB**. Архитектура объединяет возможности графовых обходов Apache TinkerPop Gremlin, документного хранилища, уникальных B-Tree индексов, прямого управления off-heap памятью и декларативных запросов **YQL (YouTrackDB SQL)**.
 
-Сервер функционирует как законченное монолитное решение («appliance»): **без внешних серверов баз данных**, **без затрат на администрирование DBA**, с мгновенным развёртыванием, прозрачным сжатием Zstd с дедупликацией, строгими гарантиями ACID (WAL с CAS) и **превосходством по пропускной способности над PostgreSQL 17 более чем в 2.4 раза** при стабильно предсказуемых задержках sub-millisecond и sub-20ms.
+Сервер функционирует как законченное монолитное решение («appliance»): **без внешних серверов баз данных**, **без затрат на администрирование DBA**, с мгновенным развёртыванием, прозрачным сжатием Zstd для тел сообщений, строгими гарантиями ACID (WAL с CAS) и **превосходством по пропускной способности над PostgreSQL 17 более чем в 2.4 раза** при стабильно предсказуемых задержках sub-millisecond и sub-20ms.
 
 ---
 
@@ -244,7 +244,7 @@ youtrackdb.statement.cacheSize=500
 
 #### 2. Мультимодельное гибридное хранилище (Граф + Реляционный YQL + Key-Value)
 * **Точечный B-Tree доступ через Gremlin DSL**: Точечные операции чтения и записи (`save`, `readBytes`, `enQueue`) обращаются напрямую к B-Tree индексам без накладных расходов на парсинг SQL-строк.
-* **Ускорение на уровне ядра через прямые запросы YQL**: Горячие поисковые пути, административные выборки и массовые операции выполняются на C++ скорости напрямую через параметризованные YQL-запросы:
+* **Ускорение на уровне ядра через прямые запросы YQL**: Горячие поисковые пути, административные выборки и массовые операции выполняются напрямую через параметризованные YQL-запросы:
   * `SELECT password, algorithm FROM JamesUser WHERE username = :uname LIMIT 1` (Быстрая аутентификация без гидратации вершин)
   * `SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1` (Индексная проверка наличия пользователя за $O(1)$)
   * `SELECT 1 FROM JamesDomain WHERE domain = :domain LIMIT 1` (Индексная проверка наличия домена за $O(1)$)
@@ -268,7 +268,7 @@ youtrackdb.statement.cacheSize=500
 #### 3. Трёхуровневое гибридное хранилище блобов (Tiered Storage)
 Данные динамически разделяются в зависимости от размера полезной нагрузки:
 * **Тир 1 (< 4 КБ)**: Заголовки и метаданные записываются прямо в страницы YouTrackDB ($O(1)$ лукап, нулевой файловый ввод-вывод).
-* **Тир 2 (4 КБ .. 64 КБ)**: Высокоскоростное сжатие Zstandard (уровень 1) с дедупликацией внутри страниц базы данных.
+* **Тир 2 (4 КБ .. 64 КБ)**: Высокоскоростное сжатие Zstandard (уровень 1) внутри страниц базы данных.
 * **Тир 3 (> 64 КБ)**: **Прямой потоковый Zero-Copy стриминг** — полезная нагрузка более 64 КБ передаётся напрямую из входящего потока в `ZstdOutputStream` на диске. Это исключает аллокацию больших массивов в Heap и полностью устраняет паузы Garbage Collector. Файлы хранятся в 3-уровневой структуре каталогов (`var/blobs/{bucket}/ab/cd/ef/{blobId}`) с атомарной гарантией (`ATOMIC_MOVE` + `fsync`), предотвращая фрагментацию страниц базы и раздувание WAL.
 
 #### 4. Полная сохранность данных по стандарту ACID (CAS Write-Ahead Log)
@@ -312,14 +312,14 @@ youtrackdb.statement.cacheSize=500
 ### 🛠️ Стек технологий и стандарты RFC
 
 * **Движок СУБД**: JetBrains YouTrackDB (`io.youtrackdb:youtrackdb-core:0.5.0-SNAPSHOT`) с интерфейсом TinkerPop Gremlin и декларативным YQL.
-* **Аутентификация и пользователи**: `YouTrackDBUsersDAO` с хешированием PBKDF2 / Argon2 и уникальным B-Tree индексом на `JamesUser.username`.
+* **Аутентификация и пользователи**: `YouTrackDBUsersDAO` с хешированием PBKDF2 и уникальным B-Tree индексом на `JamesUser.username`.
 * **Управление доменами**: `YouTrackDBDomainList` со стандартизированной нормализацией доменных имён.
 * **Таблица алиасов и пересылок**: `YouTrackDBRecipientRewriteTable` с поддержкой правил regex, error, forward и group mapping через прямые выборки YQL.
 * **Полнотекстовый поиск**: Встроенный Apache Lucene (`LuceneSearchMailboxModule`).
 * **Поддерживаемые стандарты RFC**:
   * **SMTP / SMTPS**: RFC 5321, RFC 4954, RFC 3207 (Порты 25, 465, 587).
   * **Формат сообщений**: RFC 5322 (Internet Message Format) и MIME RFC 2045–2049.
-  * **IMAP4rev1 / IMAP4rev2**: RFC 3501, RFC 9051 (Порты 143, 993).
+  * **IMAP4rev1**: RFC 3501 (Порты 143, 993).
   * **ManageSieve**: RFC 5804 (Порт 4190).
   * **WebAdmin API**: Административный REST API (Порт 8000).
 
@@ -354,7 +354,7 @@ mvn test -Dcheckstyle.skip=true -Dtest=YouTrackDBBenchmarkTest
 
 #### Запуск сервера
 ```bash
-java -Dworking.directory=. -jar target/james-server-youtrackdb-app-3.10.0-SNAPSHOT.jar
+java -Dworking.directory=. -jar target/james-server-youtrackdb-app.jar
 ```
 
 ---

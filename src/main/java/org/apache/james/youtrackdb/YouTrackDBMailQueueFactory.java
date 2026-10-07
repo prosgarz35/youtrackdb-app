@@ -292,6 +292,9 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
         private static Mail deserializeMail(byte[] bytes) throws Exception {
             try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
+                ois.setObjectInputFilter(java.io.ObjectInputFilter.Config.createFilter(
+                    "java.base/*;java.lang.*;java.util.*;java.time.*;org.apache.james.**;!*"
+                ));
                 return (Mail) ois.readObject();
             }
         }

@@ -93,8 +93,13 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
      * Also checks flat legacy location (var/blobs/{bucket}/{blobId}) for backward compatibility.
      */
     private File getFileForBlob(BucketName bucketName, BlobId blobId) {
-        File bucketDir = new File(blobsDirectory, bucketName.asString());
+        String bucketStr = bucketName.asString();
         String id = blobId.asString();
+        if (bucketStr.contains("..") || bucketStr.contains("/") || bucketStr.contains("\\")
+            || id.contains("..") || id.contains("/") || id.contains("\\")) {
+            throw new IllegalArgumentException("Invalid bucketName or blobId containing path traversal characters");
+        }
+        File bucketDir = new File(blobsDirectory, bucketStr);
 
         if (id.length() >= 6) {
             String p1 = id.substring(0, 2);

@@ -38,8 +38,8 @@ public class YouTrackDBCommonModule extends AbstractModule {
         @Inject
         public YouTrackDBHolder(ConfigurationProvider configurationProvider, FileSystem fileSystem) throws FileNotFoundException {
             String path = DEFAULT_PATH;
-            String dbUser = "admin";
-            String dbPass = "admin";
+            String dbUser = DB_USER;
+            String dbPass = DB_PASS;
             Configuration ytdbConfig = new org.apache.commons.configuration2.BaseConfiguration();
             // High-throughput storage defaults for mail workloads (strict ACID, zero loss)
             ytdbConfig.setProperty("youtrackdb.storage.diskCache.bufferSize", 2048);
@@ -57,8 +57,8 @@ public class YouTrackDBCommonModule extends AbstractModule {
             try {
                 Configuration conf = configurationProvider.getConfiguration("youtrackdb");
                 path = conf.getString("youtrackdb.path", DEFAULT_PATH);
-                dbUser = conf.getString("youtrackdb.user", "admin");
-                dbPass = conf.getString("youtrackdb.password", "admin");
+                dbUser = conf.getString("youtrackdb.user", DB_USER);
+                dbPass = conf.getString("youtrackdb.password", DB_PASS);
                 // Merge overrides from configuration file
                 var keys = conf.getKeys();
                 while (keys.hasNext()) {

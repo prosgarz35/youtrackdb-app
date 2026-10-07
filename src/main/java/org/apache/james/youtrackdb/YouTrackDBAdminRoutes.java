@@ -64,11 +64,12 @@ public class YouTrackDBAdminRoutes implements Routes {
         File baseDir = fileSystem.getBasedir();
         File backupDir;
         if (backupDirParam != null && !backupDirParam.isBlank()) {
-            if (backupDirParam.contains("..")) {
-                throw new IllegalArgumentException("Path traversal not allowed in backupDir");
+            java.nio.file.Path basePath = baseDir.toPath().toAbsolutePath().normalize();
+            java.nio.file.Path targetPath = basePath.resolve(backupDirParam).normalize();
+            if (!targetPath.startsWith(basePath)) {
+                throw new IllegalArgumentException("Path traversal not allowed: backupDir must be within server base directory");
             }
-            File requested = new File(backupDirParam);
-            backupDir = requested.isAbsolute() ? requested : new File(baseDir, backupDirParam);
+            backupDir = targetPath.toFile();
         } else {
             backupDir = new File(baseDir, "var/backups");
         }
