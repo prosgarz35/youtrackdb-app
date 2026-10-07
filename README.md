@@ -174,7 +174,7 @@ Includes the native `YouTrackDBHealthCheck` component reporting the live operati
 ```bash
 curl -X POST "http://localhost:8000/youtrackdb/backup?backupDir=var/backups"
 ```
-The server will create a consistent snapshot of all graph structures, mail metadata, and BLOB payloads in the background without locking concurrent readers or writers.
+The server executes a live background backup of graph structures, mail metadata, and BLOB payloads without locking concurrent readers or writers.
 
 #### Blobs Garbage Collection (Orphan Blobs GC)
 ```bash
@@ -227,7 +227,7 @@ youtrackdb.statement.cacheSize=500
 
 **Apache James YouTrackDB Server** — это высокопроизводительный, полностью автономный почтовый сервер корпоративного уровня, разработанный на базе встраиваемой мультимодельной СУБД **JetBrains YouTrackDB**. Архитектура объединяет возможности графовых обходов Apache TinkerPop Gremlin, документного хранилища, уникальных B-Tree индексов, прямого управления off-heap памятью и декларативных запросов **YQL (YouTrackDB SQL)**.
 
-Сервер функционирует как законченное монолитное решение («appliance»): **без внешних серверов баз данных**, **без затрат на администрирование DBA**, с мгновенным развёртыванием, прозрачным сжатием Zstd для тел сообщений, строгими гарантиями ACID (WAL с CAS) и **превосходством по пропускной способности над PostgreSQL 17 более чем в 2.4 раза** при стабильно предсказуемых задержках sub-millisecond и sub-20ms.
+Сервер функционирует как законченное монолитное решение («appliance»): **без внешних серверов баз данных**, **без затрат на администрирование DBA**, с мгновенным развёртыванием, прозрачным сжатием Zstd для тел сообщений, строгими гарантиями ACID (WAL с CAS) и **превосходством по пропускной способности над PostgreSQL 17 более чем в 2.4 раза** при стабильно предсказуемых низких задержках.
 
 ---
 
@@ -345,7 +345,7 @@ mvn clean package -Dcheckstyle.skip=true -DskipTests
 
 #### Запуск тестов и бенчмарков
 ```bash
-# Запуск всех модульных и интеграционных тестов (20 из 20 тестов успешно)
+# Запуск всех модульных и интеграционных тестов (все тесты успешно)
 mvn clean test -Dcheckstyle.skip=true
 
 # Запуск нагрузочного бенчмарка на 5 000 сообщений
@@ -386,7 +386,7 @@ curl -X GET http://localhost:8000/healthcheck
 ```bash
 curl -X POST "http://localhost:8000/youtrackdb/backup?backupDir=var/backups"
 ```
-Сервер создаёт консистентный моментальный снимок всех структур графа, почтовых метаданных и бинарных блобов в фоновом режиме без блокировки входящих и исходящих соединений.
+Сервер выполняет горячее резервное копирование структур графа, почтовых метаданных и бинарных блобов в фоновом режиме без блокировки читателей и писателей.
 
 #### Очистка потерянных блобов (Orphan Blobs GC)
 ```bash

@@ -286,7 +286,6 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         Preconditions.checkNotNull(blob);
         return Mono.<Void>fromRunnable(() -> {
             try {
-                String key = buildKey(bucketName, blobId);
                 try (InputStream in = blob.asInputStream().payload()) {
                     // Read up to TIER2_DB_THRESHOLD + 1 bytes to determine tier without buffering huge payloads
                     byte[] initialBuffer = new byte[TIER2_DB_THRESHOLD + 1];
