@@ -29,22 +29,11 @@ public class YouTrackDBDomainList extends AbstractDomainList {
     public void addDomain(Domain domain) throws DomainListException {
         try {
             YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                boolean exists = false;
-                try {
-                    exists = !tx.yql("SELECT 1 FROM JamesDomain WHERE domain = :domain LIMIT 1", "domain", domain.asString()).toList().isEmpty();
-                } catch (Exception e) {
-                    if (e.getMessage() == null || !e.getMessage().contains("Class not found")) {
-                        throw e;
-                    }
-                }
-                if (exists) {
-                    throw new RuntimeException(new DomainListException(domain.name() + " already exists."));
-                }
                 tx.addV(CLASS_NAME).property(PROP_DOMAIN, domain.asString()).iterate();
             });
         } catch (Exception e) {
-            if (e.getCause() instanceof DomainListException) {
-                throw (DomainListException) e.getCause();
+            if (YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)) {
+                throw new DomainListException(domain.name() + " already exists.");
             }
             throw new DomainListException("Failed to add domain " + domain.name(), e);
         }
@@ -53,26 +42,15 @@ public class YouTrackDBDomainList extends AbstractDomainList {
     @Override
     protected List<Domain> getDomainListInternal() throws DomainListException {
         try {
-            return g.computeInTx(tx -> {
-                List<Domain> list = new ArrayList<>();
-                try {
-                    var results = tx.yql("SELECT domain FROM JamesDomain").toList();
-                    for (Object item : results) {
-                        if (item instanceof java.util.Map<?, ?> m) {
-                            Object d = m.get(PROP_DOMAIN);
-                            if (d != null) {
-                                list.add(Domain.of(d.toString()));
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    if (e.getMessage() != null && e.getMessage().contains("Class not found")) {
-                        return list;
-                    }
-                    throw e;
+            List<java.util.Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, "SELECT domain FROM JamesDomain");
+            List<Domain> list = new ArrayList<>(rows.size());
+            for (java.util.Map<String, Object> m : rows) {
+                Object d = m.get(PROP_DOMAIN);
+                if (d != null) {
+                    list.add(Domain.of(d.toString()));
                 }
-                return list;
-            });
+            }
+            return list;
         } catch (Exception e) {
             throw new DomainListException("Failed to fetch domain list", e);
         }
@@ -81,17 +59,9 @@ public class YouTrackDBDomainList extends AbstractDomainList {
     @Override
     protected boolean containsDomainInternal(Domain domain) throws DomainListException {
         try {
-            return g.computeInTx(tx -> {
-                try {
-                    var res = tx.yql("SELECT 1 FROM JamesDomain WHERE domain = :domain LIMIT 1", "domain", domain.asString()).toList();
-                    return !res.isEmpty();
-                } catch (Exception e) {
-                    if (e.getMessage() != null && e.getMessage().contains("Class not found")) {
-                        return false;
-                    }
-                    throw e;
-                }
-            });
+            List<java.util.Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT 1 FROM JamesDomain WHERE domain = :domain LIMIT 1", "domain", domain.asString());
+            return !rows.isEmpty();
         } catch (Exception e) {
             throw new DomainListException("Failed to check if domain exists: " + domain.name(), e);
         }

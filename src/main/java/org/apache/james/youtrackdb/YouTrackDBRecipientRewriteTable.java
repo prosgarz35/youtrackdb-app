@@ -32,18 +32,15 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
     public void addMapping(MappingSource source, Mapping mapping) {
         try {
             YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME)
-                    .has(PROP_SOURCE, source.asString())
-                    .has(PROP_MAPPING, mapping.asString());
-                if (traversal.hasNext()) {
-                    return; // already exists
-                }
                 tx.addV(CLASS_NAME)
                     .property(PROP_SOURCE, source.asString())
                     .property(PROP_MAPPING, mapping.asString())
                     .iterate();
             });
         } catch (Exception e) {
+            if (YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)) {
+                return; // already exists (idempotent add)
+            }
             throw new RuntimeException("Failed to add mapping: " + source.asString() + " -> " + mapping.asString(), e);
         }
     }
@@ -63,22 +60,14 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
     public Mappings getStoredMappings(MappingSource source) {
         try {
             return g.computeInTx(tx -> {
-                List<Mapping> list = new ArrayList<>();
-                try {
-                    var results = tx.yql("SELECT mapping FROM JamesRRTMapping WHERE source = :src", "src", source.asString()).toList();
-                    for (Object item : results) {
-                        if (item instanceof Map<?, ?> m) {
-                            Object mappingObj = m.get(PROP_MAPPING);
-                            if (mappingObj != null) {
-                                list.add(Mapping.of(mappingObj.toString()));
-                            }
-                        }
+                List<java.util.Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                    "SELECT mapping FROM JamesRRTMapping WHERE source = :src", "src", source.asString());
+                List<Mapping> list = new ArrayList<>(rows.size());
+                for (java.util.Map<String, Object> m : rows) {
+                    Object mappingObj = m.get(PROP_MAPPING);
+                    if (mappingObj != null) {
+                        list.add(Mapping.of(mappingObj.toString()));
                     }
-                } catch (Exception e) {
-                    if (e.getMessage() != null && e.getMessage().contains("Class not found")) {
-                        return MappingsImpl.empty();
-                    }
-                    throw e;
                 }
                 return MappingsImpl.fromMappings(list.stream());
             });
@@ -92,23 +81,14 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
         try {
             return g.computeInTx(tx -> {
                 Map<MappingSource, List<Mapping>> map = new HashMap<>();
-                try {
-                    var list = tx.yql("SELECT source, mapping FROM JamesRRTMapping").toList();
-                    for (Object item : list) {
-                        if (item instanceof Map<?, ?> m) {
-                            Object srcObj = m.get("source");
-                            Object mappingObj = m.get("mapping");
-                            if (srcObj != null && mappingObj != null) {
-                                MappingSource source = MappingSource.parse(srcObj.toString());
-                                map.computeIfAbsent(source, s -> new ArrayList<>()).add(Mapping.of(mappingObj.toString()));
-                            }
-                        }
+                List<java.util.Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, "SELECT source, mapping FROM JamesRRTMapping");
+                for (java.util.Map<String, Object> m : rows) {
+                    Object srcObj = m.get("source");
+                    Object mappingObj = m.get("mapping");
+                    if (srcObj != null && mappingObj != null) {
+                        MappingSource source = MappingSource.parse(srcObj.toString());
+                        map.computeIfAbsent(source, s -> new ArrayList<>()).add(Mapping.of(mappingObj.toString()));
                     }
-                } catch (Exception e) {
-                    if (e.getMessage() != null && e.getMessage().contains("Class not found")) {
-                        return Map.of();
-                    }
-                    throw e;
                 }
                 Map<MappingSource, Mappings> result = new HashMap<>();
                 map.forEach((k, v) -> result.put(k, MappingsImpl.fromMappings(v.stream())));

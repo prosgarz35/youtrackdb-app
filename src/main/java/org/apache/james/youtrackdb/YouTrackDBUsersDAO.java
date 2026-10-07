@@ -53,17 +53,6 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
 
         try {
             YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                boolean exists = false;
-                try {
-                    exists = !tx.yql("SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1", "uname", username.asString()).toList().isEmpty();
-                } catch (Exception e) {
-                    if (e.getMessage() == null || !e.getMessage().contains("Class not found")) {
-                        throw e;
-                    }
-                }
-                if (exists) {
-                    throw new RuntimeException(new AlreadyExistInUsersRepositoryException("User " + username.asString() + " already exists"));
-                }
                 tx.addV(CLASS_NAME)
                     .property(PROP_USERNAME, username.asString())
                     .property(PROP_PASSWORD, user.getHashedPassword())
@@ -71,8 +60,8 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
                     .iterate();
             });
         } catch (Exception e) {
-            if (e.getCause() instanceof UsersRepositoryException) {
-                throw (UsersRepositoryException) e.getCause();
+            if (YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)) {
+                throw new AlreadyExistInUsersRepositoryException("User " + username.asString() + " already exists");
             }
             throw new UsersRepositoryException("Failed to add user " + username.asString(), e);
         }

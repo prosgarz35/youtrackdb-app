@@ -55,4 +55,19 @@ public final class YouTrackDBTransactions {
         }
         return false;
     }
+/** Executes a YQL query and extracts all rows as a list of Maps (DRY). */
+    public static java.util.List<java.util.Map<String, Object>> queryRows(YTDBGraphTraversalSource g, String query, Object... params) {
+        return g.computeInTx(tx -> {
+            var list = tx.yql(query, params).toList();
+            java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>(list.size());
+            for (Object item : list) {
+                if (item instanceof java.util.Map<?, ?> m) {
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, Object> casted = (java.util.Map<String, Object>) m;
+                    rows.add(casted);
+                }
+            }
+            return rows;
+        });
+    }
 }

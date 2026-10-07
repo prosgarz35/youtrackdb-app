@@ -162,53 +162,60 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     public Publisher<InputStreamBlob> readReactive(BucketName bucketName, BlobId blobId) {
         return Mono.fromCallable(() -> {
             String key = buildKey(bucketName, blobId);
-            return g.computeInTx(tx -> {
+            record BlobMeta(String storageType, byte[] payload) {}
+            BlobMeta meta = g.computeInTx(tx -> {
                 var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
                 if (!traversal.hasNext()) {
                     return null;
                 }
                 Vertex v = traversal.next();
-                String storageType = v.property(PROP_STORAGE_TYPE).isPresent() ? v.value(PROP_STORAGE_TYPE) : STORAGE_INLINE_RAW;
-
-                if (STORAGE_FILE_ZSTD.equals(storageType) || LEGACY_STORAGE_FILE.equals(storageType)) {
-                    File file = getFileForBlob(bucketName, blobId);
-                    if (!file.exists()) {
-                        throw new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath());
-                    }
-                    InputStream in = null;
-                    try {
-                        in = new FileInputStream(file);
-                        if (STORAGE_FILE_ZSTD.equals(storageType)) {
-                            return InputStreamBlob.of(new com.github.luben.zstd.ZstdInputStream(in));
-                        }
-                        return InputStreamBlob.of(in);
-                    } catch (IOException e) {
-                        if (in != null) {
-                            try {
-                                in.close();
-                            } catch (IOException ignored) {}
-                        }
-                        throw new ObjectStoreIOException("Error opening blob file: " + file.getAbsolutePath(), e);
-                    }
-                } else if (STORAGE_INLINE_ZSTD.equals(storageType)) {
-                    byte[] compressed = v.value(PROP_PAYLOAD);
-                    if (compressed == null || compressed.length == 0) {
-                        return InputStreamBlob.of(new ByteArrayInputStream(new byte[0]));
-                    }
-                    try {
-                        return InputStreamBlob.of(new com.github.luben.zstd.ZstdInputStream(new ByteArrayInputStream(compressed)));
-                    } catch (Exception e) {
-                        throw new ObjectStoreIOException("Error decompressing inline blob: " + key, e);
-                    }
-                } else {
-                    // STORAGE_INLINE_RAW or LEGACY_STORAGE_INLINE
-                    byte[] bytes = v.value(PROP_PAYLOAD);
-                    if (bytes == null) {
-                        bytes = new byte[0];
-                    }
-                    return InputStreamBlob.of(new ByteArrayInputStream(bytes));
-                }
+                String st = v.property(PROP_STORAGE_TYPE).isPresent() ? v.value(PROP_STORAGE_TYPE) : STORAGE_INLINE_RAW;
+                byte[] payload = v.value(PROP_PAYLOAD);
+                return new BlobMeta(st, payload);
             });
+
+            if (meta == null) {
+                return null;
+            }
+
+            String storageType = meta.storageType();
+            if (STORAGE_FILE_ZSTD.equals(storageType) || LEGACY_STORAGE_FILE.equals(storageType)) {
+                File file = getFileForBlob(bucketName, blobId);
+                if (!file.exists()) {
+                    throw new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath());
+                }
+                InputStream in = null;
+                try {
+                    in = new FileInputStream(file);
+                    if (STORAGE_FILE_ZSTD.equals(storageType)) {
+                        return InputStreamBlob.of(new com.github.luben.zstd.ZstdInputStream(in));
+                    }
+                    return InputStreamBlob.of(in);
+                } catch (IOException e) {
+                    if (in != null) {
+                        try {
+                            in.close();
+                        } catch (IOException ignored) {}
+                    }
+                    throw new ObjectStoreIOException("Error opening blob file: " + file.getAbsolutePath(), e);
+                }
+            } else if (STORAGE_INLINE_ZSTD.equals(storageType)) {
+                byte[] compressed = meta.payload();
+                if (compressed == null || compressed.length == 0) {
+                    return InputStreamBlob.of(new ByteArrayInputStream(new byte[0]));
+                }
+                try {
+                    return InputStreamBlob.of(new com.github.luben.zstd.ZstdInputStream(new ByteArrayInputStream(compressed)));
+                } catch (Exception e) {
+                    throw new ObjectStoreIOException("Error decompressing inline blob: " + key, e);
+                }
+            } else {
+                byte[] bytes = meta.payload();
+                if (bytes == null) {
+                    bytes = new byte[0];
+                }
+                return InputStreamBlob.of(new ByteArrayInputStream(bytes));
+            }
         })
         .switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
@@ -218,50 +225,58 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     public Publisher<BytesBlob> readBytes(BucketName bucketName, BlobId blobId) {
         return Mono.fromCallable(() -> {
             String key = buildKey(bucketName, blobId);
-            return g.computeInTx(tx -> {
+            record BlobMeta(String storageType, byte[] payload) {}
+            BlobMeta meta = g.computeInTx(tx -> {
                 var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
                 if (!traversal.hasNext()) {
                     return null;
                 }
                 Vertex v = traversal.next();
-                String storageType = v.property(PROP_STORAGE_TYPE).isPresent() ? v.value(PROP_STORAGE_TYPE) : STORAGE_INLINE_RAW;
-
-                if (STORAGE_INLINE_RAW.equals(storageType) || LEGACY_STORAGE_INLINE.equals(storageType)) {
-                    byte[] bytes = v.value(PROP_PAYLOAD);
-                    return BytesBlob.of(bytes != null ? bytes : new byte[0]);
-                } else if (STORAGE_INLINE_ZSTD.equals(storageType)) {
-                    byte[] compressed = v.value(PROP_PAYLOAD);
-                    if (compressed == null || compressed.length == 0) {
-                        return BytesBlob.of(new byte[0]);
-                    }
-                    long decompressedSize = com.github.luben.zstd.Zstd.decompressedSize(compressed);
-                    if (decompressedSize > 0 && decompressedSize <= TIER2_DB_THRESHOLD * 2) {
-                        byte[] decompressed = com.github.luben.zstd.Zstd.decompress(compressed, (int) decompressedSize);
-                        return BytesBlob.of(decompressed);
-                    }
-                    try (var is = new com.github.luben.zstd.ZstdInputStream(new ByteArrayInputStream(compressed))) {
-                        return BytesBlob.of(is.readAllBytes());
-                    } catch (IOException e) {
-                        throw new ObjectStoreIOException("Error decompressing inline blob: " + key, e);
-                    }
-                } else if (STORAGE_FILE_ZSTD.equals(storageType) || LEGACY_STORAGE_FILE.equals(storageType)) {
-                    File file = getFileForBlob(bucketName, blobId);
-                    if (!file.exists()) {
-                        throw new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath());
-                    }
-                    try (InputStream in = new FileInputStream(file)) {
-                        if (STORAGE_FILE_ZSTD.equals(storageType)) {
-                            try (var zis = new com.github.luben.zstd.ZstdInputStream(in)) {
-                                return BytesBlob.of(zis.readAllBytes());
-                            }
-                        }
-                        return BytesBlob.of(in.readAllBytes());
-                    } catch (IOException e) {
-                        throw new ObjectStoreIOException("Error reading blob file: " + file.getAbsolutePath(), e);
-                    }
-                }
-                return BytesBlob.of(new byte[0]);
+                String st = v.property(PROP_STORAGE_TYPE).isPresent() ? v.value(PROP_STORAGE_TYPE) : STORAGE_INLINE_RAW;
+                byte[] payload = v.value(PROP_PAYLOAD);
+                return new BlobMeta(st, payload);
             });
+
+            if (meta == null) {
+                return null;
+            }
+
+            String storageType = meta.storageType();
+            if (STORAGE_INLINE_RAW.equals(storageType) || LEGACY_STORAGE_INLINE.equals(storageType)) {
+                byte[] bytes = meta.payload();
+                return BytesBlob.of(bytes != null ? bytes : new byte[0]);
+            } else if (STORAGE_INLINE_ZSTD.equals(storageType)) {
+                byte[] compressed = meta.payload();
+                if (compressed == null || compressed.length == 0) {
+                    return BytesBlob.of(new byte[0]);
+                }
+                long decompressedSize = com.github.luben.zstd.Zstd.decompressedSize(compressed);
+                if (decompressedSize > 0 && decompressedSize <= TIER2_DB_THRESHOLD * 2) {
+                    byte[] decompressed = com.github.luben.zstd.Zstd.decompress(compressed, (int) decompressedSize);
+                    return BytesBlob.of(decompressed);
+                }
+                try (var is = new com.github.luben.zstd.ZstdInputStream(new ByteArrayInputStream(compressed))) {
+                    return BytesBlob.of(is.readAllBytes());
+                } catch (IOException e) {
+                    throw new ObjectStoreIOException("Error decompressing inline blob: " + key, e);
+                }
+            } else if (STORAGE_FILE_ZSTD.equals(storageType) || LEGACY_STORAGE_FILE.equals(storageType)) {
+                File file = getFileForBlob(bucketName, blobId);
+                if (!file.exists()) {
+                    throw new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath());
+                }
+                try (InputStream in = new FileInputStream(file)) {
+                    if (STORAGE_FILE_ZSTD.equals(storageType)) {
+                        try (var zis = new com.github.luben.zstd.ZstdInputStream(in)) {
+                            return BytesBlob.of(zis.readAllBytes());
+                        }
+                    }
+                    return BytesBlob.of(in.readAllBytes());
+                } catch (IOException e) {
+                    throw new ObjectStoreIOException("Error reading blob file: " + file.getAbsolutePath(), e);
+                }
+            }
+            return BytesBlob.of(new byte[0]);
         })
         .switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
