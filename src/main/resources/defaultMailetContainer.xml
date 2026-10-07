@@ -17,7 +17,7 @@
   under the License.
  -->
 
-<processors>
+<processors enableJmx="false">
     <processor state="root" enableJmx="false">
         <mailet match="All" class="PostmasterAlias"/>
         <mailet match="RelayLimit=30" class="Null"/>

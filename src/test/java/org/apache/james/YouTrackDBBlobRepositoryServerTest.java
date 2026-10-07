@@ -52,6 +52,7 @@ class YouTrackDBBlobRepositoryServerTest {
         message.setText("body");
         message.saveChanges();
 
+        probe.getMailRepositoryStore().select(ERROR).removeAll();
         MailKey key = probe.getMailRepositoryStore().select(ERROR).store(MailImpl.builder()
             .name("e2e-mail")
             .sender("sender@james.local")
@@ -61,5 +62,30 @@ class YouTrackDBBlobRepositoryServerTest {
 
         assertThat(probe.getRepositoryMailCount(ERROR)).isEqualTo(1L);
         assertThat(probe.getMail(ERROR, key).getMessage().getSubject()).isEqualTo("stored in blob");
+        probe.getMailRepositoryStore().select(ERROR).removeAll();
+    }
+
+    @Test
+    void mailShouldSurviveServerRestart(GuiceJamesServer server) throws Exception {
+        MailRepositoryProbeImpl probe = server.getProbe(MailRepositoryProbeImpl.class);
+        MimeMessage message = new MimeMessage(Session.getDefaultInstance(new Properties()));
+        message.setSubject("survive server restart");
+        message.setText("content across guice server restart");
+        message.saveChanges();
+
+        MailKey key = probe.getMailRepositoryStore().select(ERROR).store(MailImpl.builder()
+            .name("restart-mail")
+            .sender("sender@james.local")
+            .addRecipient("rcpt@james.local")
+            .mimeMessage(message)
+            .build());
+
+        server.stop();
+        server.start();
+
+        MailRepositoryProbeImpl restartedProbe = server.getProbe(MailRepositoryProbeImpl.class);
+        assertThat(restartedProbe.getRepositoryMailCount(ERROR)).isGreaterThanOrEqualTo(1L);
+        assertThat(restartedProbe.getMail(ERROR, key).getMessage().getSubject()).isEqualTo("survive server restart");
     }
 }
+
