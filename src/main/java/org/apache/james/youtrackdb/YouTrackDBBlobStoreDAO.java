@@ -587,8 +587,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         }
         return prefix.replace("\\", "\\\\")
                      .replace("%", "\\%")
-                     .replace("?", "\\?")
-                     .replace("_", "\\_");
+                     .replace("?", "\\?");
     }
 }
 

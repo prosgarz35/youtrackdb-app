@@ -156,5 +156,37 @@ class YouTrackDBBlobMailRepositoryContractTest implements MailRepositoryContract
         assertThat(blobsAfterOverwrite).isEqualTo(blobsAfterFirstStore);
         assertThat(testee.size()).isEqualTo(1L);
     }
+
+    @Test
+    void likeWildcardEscapingShouldNotMatchOtherRepositories() throws Exception {
+        MailRepository repoA_B = repositoryAt(MailRepositoryPath.from("var/mail/a_b"));
+        MailRepository repoAxB = repositoryAt(MailRepositoryPath.from("var/mail/axb"));
+
+        repoA_B.store(createMail(MAIL_1));
+        repoAxB.store(createMail(MAIL_2));
+
+        assertThat(repoA_B.size()).isEqualTo(1L);
+        assertThat(repoAxB.size()).isEqualTo(1L);
+
+        List<MailKey> keysA_B = new ArrayList<>();
+        repoA_B.list().forEachRemaining(keysA_B::add);
+        assertThat(keysA_B).hasSize(1);
+
+        List<MailKey> keysAxB = new ArrayList<>();
+        repoAxB.list().forEachRemaining(keysAxB::add);
+        assertThat(keysAxB).hasSize(1);
+    }
+
+    @Test
+    void metadataPrefixTrailingSlashIsolation() throws Exception {
+        MailRepository repo1 = repositoryAt(MailRepositoryPath.from("var/mail/repo"));
+        MailRepository repo2 = repositoryAt(MailRepositoryPath.from("var/mail/repo-extended"));
+
+        repo1.store(createMail(MAIL_1));
+        repo2.store(createMail(MAIL_2));
+
+        assertThat(repo1.size()).isEqualTo(1L);
+        assertThat(repo2.size()).isEqualTo(1L);
+    }
 }
 
