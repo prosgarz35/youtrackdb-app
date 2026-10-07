@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.DelayQueue;
@@ -26,6 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
 import jakarta.mail.MessagingException;
+import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 
 import org.apache.commons.lang3.NotImplementedException;
@@ -162,21 +164,20 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             try {
                 List<YouTrackDBMailQueueItem> recovered = g.computeInTx(tx -> {
                     List<YouTrackDBMailQueueItem> items = new ArrayList<>();
-                    var results = tx.yql("SELECT serializedMail, nextDelivery FROM JamesQueueItem WHERE queueName = :qName ORDER BY nextDelivery ASC", "qName", name.asString()).toList();
-                    for (Object item : results) {
-                        if (item instanceof Map<?, ?> m) {
-                            try {
-                                Object dataObj = m.get(PROP_SERIALIZED_MAIL);
-                                if (dataObj instanceof byte[] data) {
-                                    Object nextDelObj = m.get(PROP_NEXT_DELIVERY);
-                                    long nextDeliveryMillis = (nextDelObj instanceof Number n) ? n.longValue() : 0L;
-                                    Mail mail = deserializeMail(data);
-                                    ZonedDateTime delivery = Instant.ofEpochMilli(nextDeliveryMillis).atZone(ZoneId.of("UTC"));
-                                    items.add(new YouTrackDBMailQueueItem(mail, this, clock, delivery));
-                                }
-                            } catch (Exception e) {
-                                LOGGER.error("Failed to recover mail item for queue {}", name.asString(), e);
+                    var vertices = tx.V().hasLabel(CLASS_NAME)
+                        .has(PROP_QUEUE_NAME, name.asString())
+                        .toList();
+                    for (var v : vertices) {
+                        try {
+                            byte[] data = v.value(PROP_SERIALIZED_MAIL);
+                            Long nextDeliveryMillis = v.property(PROP_NEXT_DELIVERY).isPresent() ? v.<Long>value(PROP_NEXT_DELIVERY) : 0L;
+                            if (data != null && data.length > 0) {
+                                Mail mail = deserializeMail(data);
+                                ZonedDateTime delivery = Instant.ofEpochMilli(nextDeliveryMillis != null ? nextDeliveryMillis : 0L).atZone(ZoneId.of("UTC"));
+                                items.add(new YouTrackDBMailQueueItem(mail, this, clock, delivery));
                             }
+                        } catch (Exception e) {
+                            LOGGER.error("Failed to recover mail item for queue {}", name.asString(), e);
                         }
                     }
                     return items;
@@ -286,6 +287,16 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
                 oos.writeObject(mail);
+                if (mail.getMessage() != null) {
+                    oos.writeBoolean(true);
+                    ByteArrayOutputStream msgBaos = new ByteArrayOutputStream();
+                    mail.getMessage().writeTo(msgBaos);
+                    byte[] msgBytes = msgBaos.toByteArray();
+                    oos.writeInt(msgBytes.length);
+                    oos.write(msgBytes);
+                } else {
+                    oos.writeBoolean(false);
+                }
             }
             return baos.toByteArray();
         }
@@ -293,9 +304,20 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         private static Mail deserializeMail(byte[] bytes) throws Exception {
             try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
                 ois.setObjectInputFilter(java.io.ObjectInputFilter.Config.createFilter(
-                    "java.base/*;java.lang.*;java.util.*;java.time.*;org.apache.james.**;!*"
+                    "java.base/*;java.lang.*;java.util.*;java.time.*;com.google.common.**;org.apache.james.**;org.apache.mailet.**;!*"
                 ));
-                return (Mail) ois.readObject();
+                Mail mail = (Mail) ois.readObject();
+                boolean hasMessage = ois.readBoolean();
+                if (hasMessage) {
+                    int len = ois.readInt();
+                    byte[] msgBytes = new byte[len];
+                    ois.readFully(msgBytes);
+                    MimeMessage mimeMessage = new MimeMessage(
+                        Session.getDefaultInstance(new Properties()),
+                        new ByteArrayInputStream(msgBytes));
+                    mail.setMessage(mimeMessage);
+                }
+                return mail;
             }
         }
 

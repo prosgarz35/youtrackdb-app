@@ -337,6 +337,104 @@ public class YouTrackDBAcidCrashTest {
         }
     }
 
+    /**
+     * 5. QUEUE PERSISTENCE & DESERIALIZATION ROUNDTRIP TEST
+     * Verifies that mails with attributes, recipients and MIME headers can be enqueued,
+     * survive a complete server/database restart, and successfully deserialize via ObjectInputFilter.
+     */
+    @Test
+    @DisplayName("Queue Recovery: Persisted queue items survive restart and deserialize safely via ObjectInputFilter")
+    void shouldRecoverAndDeserializeQueueItemsAfterRestart(@TempDir Path workingDir) throws Exception {
+        File dbDir = workingDir.resolve("var").resolve("youtrackdb").toFile();
+        dbDir.mkdirs();
+
+        // Phase 1: Initialize DB schema, instantiate queue and enqueue a real mail
+        try (YouTrackDB youTrackDB = YourTracks.instance(dbDir.getAbsolutePath())) {
+            youTrackDB.createIfNotExists("james", DatabaseType.DISK, "admin", "admin", "admin");
+            try (YTDBGraphTraversalSource g = youTrackDB.openTraversal("james", "admin", "admin")) {
+                g.executeInTx(tx -> {
+                    tx.command("CREATE CLASS JamesQueueItem IF NOT EXISTS EXTENDS V");
+                    tx.command("CREATE PROPERTY JamesQueueItem.queueName IF NOT EXISTS STRING");
+                    tx.command("CREATE PROPERTY JamesQueueItem.mailName IF NOT EXISTS STRING");
+                    tx.command("CREATE PROPERTY JamesQueueItem.nextDelivery IF NOT EXISTS LONG");
+                    tx.command("CREATE PROPERTY JamesQueueItem.serializedMail IF NOT EXISTS BINARY");
+                    tx.command("CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) UNIQUE");
+                    tx.command("CREATE INDEX JamesQueueItem.queueAndDelivery IF NOT EXISTS ON JamesQueueItem (queueName, nextDelivery) NOTUNIQUE");
+                });
+
+                org.apache.james.queue.api.MailQueueName queueName = org.apache.james.queue.api.MailQueueName.of("spool");
+                org.apache.james.youtrackdb.YouTrackDBMailQueueFactory queueFactory = 
+                    new org.apache.james.youtrackdb.YouTrackDBMailQueueFactory(
+                        (queueItem, mailQueueName) -> new org.apache.james.queue.api.MailQueueItemDecoratorFactory.MailQueueItemDecorator(queueItem) {
+                            @Override
+                            public org.apache.mailet.Mail getMail() {
+                                return mailQueueItem.getMail();
+                            }
+                            @Override
+                            public void done(org.apache.james.queue.api.MailQueue.MailQueueItem.CompletionStatus status) throws org.apache.james.queue.api.MailQueue.MailQueueException {
+                                mailQueueItem.done(status);
+                            }
+                        }, g);
+                org.apache.james.queue.api.MailQueue queue = queueFactory.createQueue(queueName);
+
+                org.apache.james.server.core.MailImpl mail = org.apache.james.server.core.MailImpl.builder()
+                    .name("mail-roundtrip-test-01")
+                    .sender("sender@acid.local")
+                    .addRecipient("recipient@acid.local")
+                    .addAttribute(new org.apache.mailet.Attribute(
+                        org.apache.mailet.AttributeName.of("org.apache.james.testAttribute"),
+                        org.apache.mailet.AttributeValue.of("verifiedValue")
+                    ))
+                    .mimeMessage(org.apache.james.core.builder.MimeMessageBuilder.mimeMessageBuilder()
+                        .setSubject("Test Persistence Across Restart")
+                        .setText("This is an ACID persisted mail item."))
+                    .build();
+
+                queue.enQueue(mail);
+                queueFactory.clean();
+            }
+        }
+
+        // Phase 2: Re-open DB in a brand new process/session, instantiate factory and dequeue
+        try (YouTrackDB youTrackDB = YourTracks.instance(dbDir.getAbsolutePath())) {
+            try (YTDBGraphTraversalSource g = youTrackDB.openTraversal("james", "admin", "admin")) {
+                long dbItemCount = g.computeInTx(tx -> tx.V().hasLabel("JamesQueueItem").count().next());
+                LOGGER.info("Direct DB JamesQueueItem count before queue creation: {}", dbItemCount);
+
+                org.apache.james.queue.api.MailQueueName queueName = org.apache.james.queue.api.MailQueueName.of("spool");
+                org.apache.james.youtrackdb.YouTrackDBMailQueueFactory queueFactory = 
+                    new org.apache.james.youtrackdb.YouTrackDBMailQueueFactory(
+                        (queueItem, mailQueueName) -> new org.apache.james.queue.api.MailQueueItemDecoratorFactory.MailQueueItemDecorator(queueItem) {
+                            @Override
+                            public org.apache.mailet.Mail getMail() {
+                                return mailQueueItem.getMail();
+                            }
+                            @Override
+                            public void done(org.apache.james.queue.api.MailQueue.MailQueueItem.CompletionStatus status) throws org.apache.james.queue.api.MailQueue.MailQueueException {
+                                mailQueueItem.done(status);
+                            }
+                        }, g);
+                org.apache.james.queue.api.ManageableMailQueue queue = queueFactory.createQueue(queueName);
+
+                LOGGER.info("Queue size after recovery: {}", queue.getSize());
+                assertThat(queue.getSize()).isEqualTo(1L);
+
+                org.apache.james.queue.api.MailQueue.MailQueueItem item = 
+                    reactor.core.publisher.Mono.from(queue.deQueue()).block(java.time.Duration.ofSeconds(10));
+
+                assertThat(item).isNotNull();
+                assertThat(item.getMail().getName()).isEqualTo("mail-roundtrip-test-01");
+                assertThat(item.getMail().getMaybeSender().asOptional().map(Object::toString)).contains("sender@acid.local");
+                assertThat(item.getMail().getMessage().getSubject()).isEqualTo("Test Persistence Across Restart");
+                assertThat(item.getMail().getAttribute(org.apache.mailet.AttributeName.of("org.apache.james.testAttribute")))
+                    .isPresent();
+
+                item.done(org.apache.james.queue.api.MailQueue.MailQueueItem.CompletionStatus.SUCCESS);
+                queueFactory.clean();
+            }
+        }
+    }
+
     private void sendValidMessage(int smtpPort, String subject) throws Exception {
         try (Socket socket = new Socket("127.0.0.1", smtpPort);
              BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
