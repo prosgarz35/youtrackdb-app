@@ -32,18 +32,21 @@ public class YouTrackDBAdminRoutes implements Routes {
     private final FileSystem fileSystem;
     private final TaskManager taskManager;
     private final JsonTransformer jsonTransformer;
+    private final YouTrackDBMimePartsGc mimePartsGc;
 
     @Inject
     public YouTrackDBAdminRoutes(YouTrackDB youTrackDB,
                                 YTDBGraphTraversalSource traversalSource,
                                 FileSystem fileSystem,
                                 TaskManager taskManager,
-                                JsonTransformer jsonTransformer) {
+                                JsonTransformer jsonTransformer,
+                                YouTrackDBMimePartsGc mimePartsGc) {
         this.youTrackDB = youTrackDB;
         this.traversalSource = traversalSource;
         this.fileSystem = fileSystem;
         this.taskManager = taskManager;
         this.jsonTransformer = jsonTransformer;
+        this.mimePartsGc = mimePartsGc;
     }
 
     @Override
@@ -56,6 +59,7 @@ public class YouTrackDBAdminRoutes implements Routes {
         TaskFromRequest backupTaskFromRequest = this::createBackupTask;
         service.post(YOUTRACKDB_BASE_PATH + "/backup", backupTaskFromRequest.asRoute(taskManager), jsonTransformer);
         service.post(YOUTRACKDB_BASE_PATH + "/blobs/gc", this::cleanupOrphanBlobs, jsonTransformer);
+        service.post(YOUTRACKDB_BASE_PATH + "/mime-parts/gc", this::cleanupOrphanMimeParts, jsonTransformer);
         service.get(YOUTRACKDB_BASE_PATH + "/check", this::checkIntegrity, jsonTransformer);
     }
 
@@ -108,6 +112,27 @@ public class YouTrackDBAdminRoutes implements Routes {
                 .statusCode(HttpStatus.INTERNAL_SERVER_ERROR_500)
                 .type(ErrorResponder.ErrorType.SERVER_ERROR)
                 .message("Check failed: " + e.getMessage())
+                .haltError();
+        }
+    }
+
+    /** Run twice, a few minutes apart: the first run only reports what it would delete (pendingOrphanParts). */
+    private Object cleanupOrphanMimeParts(Request request, Response response) {
+        try {
+            YouTrackDBMimePartsGc.Result gcResult = mimePartsGc.collect();
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "COMPLETED");
+            result.put("referencedParts", gcResult.referencedParts());
+            result.put("deletedOrphanParts", gcResult.deletedParts());
+            result.put("pendingOrphanParts", gcResult.pendingParts());
+            response.status(HttpStatus.OK_200);
+            return result;
+        } catch (Exception e) {
+            LOGGER.error("Failed to run MIME parts cleanup", e);
+            throw ErrorResponder.builder()
+                .statusCode(HttpStatus.INTERNAL_SERVER_ERROR_500)
+                .type(ErrorResponder.ErrorType.SERVER_ERROR)
+                .message("MIME parts GC failed: " + e.getMessage())
                 .haltError();
         }
     }

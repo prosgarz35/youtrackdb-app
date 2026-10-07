@@ -31,7 +31,7 @@
         <errorRepository>blob://var/mail/error/</errorRepository>
     </spooler>
 
-    <processors>
+    <processors enableJmx="false">
         <processor state="root">
             <mailet match="All" class="PostmasterAlias"/>
             <mailet match="RelayLimit=30" class="ToRepository">

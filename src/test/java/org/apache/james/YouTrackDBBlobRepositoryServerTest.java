@@ -68,6 +68,8 @@ class YouTrackDBBlobRepositoryServerTest {
     @Test
     void mailShouldSurviveServerRestart(GuiceJamesServer server) throws Exception {
         MailRepositoryProbeImpl probe = server.getProbe(MailRepositoryProbeImpl.class);
+        probe.getMailRepositoryStore().select(ERROR).removeAll();
+
         MimeMessage message = new MimeMessage(Session.getDefaultInstance(new Properties()));
         message.setSubject("survive server restart");
         message.setText("content across guice server restart");
@@ -84,8 +86,9 @@ class YouTrackDBBlobRepositoryServerTest {
         server.start();
 
         MailRepositoryProbeImpl restartedProbe = server.getProbe(MailRepositoryProbeImpl.class);
-        assertThat(restartedProbe.getRepositoryMailCount(ERROR)).isGreaterThanOrEqualTo(1L);
+        assertThat(restartedProbe.getRepositoryMailCount(ERROR)).isEqualTo(1L);
         assertThat(restartedProbe.getMail(ERROR, key).getMessage().getSubject()).isEqualTo("survive server restart");
+        restartedProbe.getMailRepositoryStore().select(ERROR).removeAll();
     }
 }
 
