@@ -533,61 +533,47 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         return listBlobs(bucketName, null);
     }
 
+    /**
+     * Blobs whose id starts with {@code prefix}, as a range scan on the (bucket, blobId) index: no LIKE, so no
+     * wildcard characters to escape. A null or empty prefix lists the whole bucket.
+     */
     public Publisher<BlobId> listBlobs(BucketName bucketName, String prefix) {
-        return Mono.fromCallable(() -> {
-            return g.computeInTx(tx -> {
+        return Mono.fromCallable(() -> g.computeInTx(tx -> {
                 Set<BlobId> blobIds = new HashSet<>();
-                String query = (prefix == null || prefix.isEmpty())
-                    ? "SELECT blobId FROM JamesBlob WHERE bucket = :bucket"
-                    : "SELECT blobId FROM JamesBlob WHERE bucket = :bucket AND blobId LIKE :prefix";
-                var queryParams = (prefix == null || prefix.isEmpty())
-                    ? new Object[]{"bucket", bucketName.asString()}
-                    : new Object[]{"bucket", bucketName.asString(), "prefix", escapeLikePrefix(prefix) + "%"};
-
-                var results = tx.yql(query, queryParams).toList();
-                for (Object item : results) {
-                    if (item instanceof Map<?, ?> m) {
-                        Object bId = m.get(PROP_BLOB_ID);
-                        if (bId != null) {
-                            blobIds.add(blobIdFactory.of(bId.toString()));
-                        }
+                for (Object item : prefixQuery(tx, "blobId", bucketName, prefix)) {
+                    if (item instanceof Map<?, ?> m && m.get(PROP_BLOB_ID) != null) {
+                        blobIds.add(blobIdFactory.of(m.get(PROP_BLOB_ID).toString()));
                     }
                 }
                 return blobIds;
-            });
-        }).flatMapMany(Flux::fromIterable)
-        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+            }))
+            .flatMapMany(Flux::fromIterable)
+            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     public Mono<Long> countBlobs(BucketName bucketName, String prefix) {
-        return Mono.fromCallable(() -> {
-            return g.computeInTx(tx -> {
-                String query = (prefix == null || prefix.isEmpty())
-                    ? "SELECT count(*) AS cnt FROM JamesBlob WHERE bucket = :bucket"
-                    : "SELECT count(*) AS cnt FROM JamesBlob WHERE bucket = :bucket AND blobId LIKE :prefix";
-                var queryParams = (prefix == null || prefix.isEmpty())
-                    ? new Object[]{"bucket", bucketName.asString()}
-                    : new Object[]{"bucket", bucketName.asString(), "prefix", escapeLikePrefix(prefix) + "%"};
-
-                var results = tx.yql(query, queryParams).toList();
-                if (!results.isEmpty() && results.getFirst() instanceof Map<?, ?> m) {
-                    Object count = m.get("cnt");
-                    if (count instanceof Number n) {
-                        return n.longValue();
-                    }
+        return Mono.fromCallable(() -> g.computeInTx(tx -> {
+                var results = prefixQuery(tx, "count(*) AS cnt", bucketName, prefix);
+                if (!results.isEmpty() && results.getFirst() instanceof Map<?, ?> m && m.get("cnt") instanceof Number n) {
+                    return n.longValue();
                 }
                 return 0L;
-            });
-        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+            }))
+            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
-    private static String escapeLikePrefix(String prefix) {
-        if (prefix == null) {
-            return "";
+    private static java.util.List<?> prefixQuery(YTDBGraphTraversalSource tx, String projection, BucketName bucketName, String prefix) {
+        String select = "SELECT " + projection + " FROM JamesBlob WHERE bucket = :bucket";
+        if (prefix == null || prefix.isEmpty()) {
+            return tx.yql(select, "bucket", bucketName.asString()).toList();
         }
-        return prefix.replace("\\", "\\\\")
-                     .replace("%", "\\%")
-                     .replace("?", "\\?");
+        return tx.yql(select + " AND blobId >= :lo AND blobId < :hi",
+            "bucket", bucketName.asString(), "lo", prefix, "hi", prefixUpperBound(prefix)).toList();
+    }
+
+    /** The smallest string greater than every string starting with {@code prefix}. */
+    static String prefixUpperBound(String prefix) {
+        int last = prefix.length() - 1;
+        return prefix.substring(0, last) + (char) (prefix.charAt(last) + 1);
     }
 }
-

@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.james.blob.api.BlobId;
 import org.apache.james.blob.api.BucketName;
 import org.apache.james.blob.api.PlainBlobId;
 import org.apache.james.filesystem.api.FileSystem;
@@ -21,24 +22,28 @@ import org.apache.james.mailrepository.api.Protocol;
 import org.apache.james.youtrackdb.YouTrackDBBlobMailRepositoryFactory;
 import org.apache.james.youtrackdb.YouTrackDBBlobStoreDAO;
 import org.apache.james.youtrackdb.YouTrackDBTransactions;
+import org.apache.mailet.Mail;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import org.reactivestreams.Publisher;
+
 import com.jetbrains.youtrackdb.api.DatabaseType;
 import com.jetbrains.youtrackdb.api.YouTrackDB;
 import com.jetbrains.youtrackdb.api.YourTracks;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
+import reactor.core.publisher.Mono;
+
 /**
  * James' own MailRepository contract, run against BlobMailRepository on top of the YouTrackDB blob store.
  * It is the same wiring as BlobMailRepositoryTest in James, with the in-memory DAO replaced.
  *
- * NOT RUN YET. It needs the patched YouTrackDBBlobStoreDAO (blob_repo_wiring/patched): the contract tests
- * "storingMessageWithSameKeyTwiceShouldUpdate..." are expected to fail with the DAO that ignores a second save
- * of the same id.
+ * Besides the contract: isolation of repositories with similar or wildcard-looking paths, the index used by the
+ * prefix queries, and the overwrite of a mail whose old parts cannot be deleted.
  */
 class YouTrackDBBlobMailRepositoryContractTest implements MailRepositoryContract {
 
@@ -48,6 +53,8 @@ class YouTrackDBBlobMailRepositoryContractTest implements MailRepositoryContract
     private YouTrackDB youTrackDB;
     private YTDBGraphTraversalSource g;
     private YouTrackDBBlobMailRepositoryFactory factory;
+    private FileSystem fileSystem;
+    private PlainBlobId.Factory blobIdFactory;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -64,8 +71,9 @@ class YouTrackDBBlobMailRepositoryContractTest implements MailRepositoryContract
             tx.command("CREATE PROPERTY JamesBlob.storageType IF NOT EXISTS STRING");
             tx.command("CREATE PROPERTY JamesBlob.payload IF NOT EXISTS BINARY");
             tx.command("CREATE INDEX JamesBlob.bucketAndBlobId IF NOT EXISTS UNIQUE");
+            tx.command("CREATE INDEX JamesBlob.bucketAndBlobIdRange IF NOT EXISTS ON JamesBlob (bucket, blobId) NOTUNIQUE");
         });
-        FileSystem fileSystem = new FileSystem() {
+        fileSystem = new FileSystem() {
             @Override
             public InputStream getResource(String url) {
                 throw new UnsupportedOperationException();
@@ -81,7 +89,7 @@ class YouTrackDBBlobMailRepositoryContractTest implements MailRepositoryContract
                 return baseDir.toFile();
             }
         };
-        PlainBlobId.Factory blobIdFactory = new PlainBlobId.Factory();
+        blobIdFactory = new PlainBlobId.Factory();
         factory = new YouTrackDBBlobMailRepositoryFactory(
             new YouTrackDBBlobStoreDAO(g, blobIdFactory, fileSystem), blobIdFactory, BucketName.DEFAULT);
     }
@@ -139,54 +147,82 @@ class YouTrackDBBlobMailRepositoryContractTest implements MailRepositoryContract
         assertThat(denied.retrieve(deniedKey)).isNotNull();
     }
 
+    private void assertIsolated(String pathA, String pathB) throws Exception {
+        MailRepository a = repositoryAt(MailRepositoryPath.from(pathA));
+        MailRepository b = repositoryAt(MailRepositoryPath.from(pathB));
+        MailKey keyA = a.store(createMail(MAIL_1));
+        MailKey keyB = b.store(createMail(MAIL_2));
+
+        assertThat(a.size()).as(pathA).isEqualTo(1L);
+        assertThat(b.size()).as(pathB).isEqualTo(1L);
+        List<MailKey> listedA = new ArrayList<>();
+        a.list().forEachRemaining(listedA::add);
+        List<MailKey> listedB = new ArrayList<>();
+        b.list().forEachRemaining(listedB::add);
+        assertThat(listedA).containsExactly(keyA);
+        assertThat(listedB).containsExactly(keyB);
+
+        a.removeAll();
+        assertThat(a.size()).isZero();
+        assertThat(b.size()).isEqualTo(1L);
+    }
+
+    @Test
+    void repositoriesWithSimilarPathsShouldBeIsolated() throws Exception {
+        assertIsolated("var/mail/repo", "var/mail/repo-extended");
+        assertIsolated("var/mail/a_b", "var/mail/axb");
+        assertIsolated("var/mail/Case", "var/mail/case");
+    }
+
+    /** '%' and '?' are wildcards of LIKE: the prefix query must not interpret them. */
+    @Test
+    void repositoriesWithWildcardCharactersInTheirPathShouldBeIsolated() throws Exception {
+        assertIsolated("var/mail/a%b", "var/mail/axxb");
+        assertIsolated("var/mail/c?d", "var/mail/cxd");
+    }
+
+    /** The point of the (bucket, blobId) index. The plan format is the engine's: the test prints it on failure. */
+    @Test
+    void prefixQueryShouldUseTheRangeIndex() {
+        List<?> results = g.computeInTx(tx -> tx.yql(
+            "EXPLAIN SELECT blobId FROM JamesBlob WHERE bucket = :bucket AND blobId >= :lo AND blobId < :hi",
+            "bucket", "default", "lo", "var/mail/error/", "hi", "var/mail/error0").toList());
+        String plan = String.valueOf(results);
+
+        assertThat(plan).as("plan: " + plan).contains("JamesBlob.bucketAndBlobIdRange");
+    }
+
+    @Test
+    void overwriteShouldSucceedWhenDeletingTheOldPartsFails() throws Exception {
+        YouTrackDBBlobStoreDAO failingDelete = new YouTrackDBBlobStoreDAO(g, blobIdFactory, fileSystem) {
+            @Override
+            public Publisher<Void> delete(BucketName bucketName, BlobId blobId) {
+                return Mono.error(new IllegalStateException("disk failure"));
+            }
+        };
+        MailRepository testee = new YouTrackDBBlobMailRepositoryFactory(failingDelete, blobIdFactory, BucketName.DEFAULT)
+            .create(MailRepositoryUrl.fromPathAndProtocol(new Protocol("blob"), MailRepositoryPath.from("var/mail/error")));
+        MailKey key = testee.store(createMail(MAIL_1));
+
+        Mail updated = createMail(MAIL_1, "modified content");
+        testee.store(updated);
+
+        assertThat(testee.size()).isEqualTo(1L);
+        assertThat(testee.retrieve(key)).satisfies(actual -> checkMailEquality(actual, updated));
+    }
+
     @Test
     void storingMessageWithSameKeyTwiceShouldNotLeakOldBodyBlobs() throws Exception {
         MailRepository testee = retrieveRepository();
 
-        // First store: should create 3 blobs (metadata, header, body)
-        MailKey key = testee.store(createMail(MAIL_1));
+        testee.store(createMail(MAIL_1));
         long blobsAfterFirstStore = g.computeInTx(tx -> tx.V().hasLabel("JamesBlob").count().next());
         assertThat(blobsAfterFirstStore).isEqualTo(3L);
 
-        // Store again under the same key with different content
         testee.store(createMail(MAIL_1, "Different Body Content Here"));
         long blobsAfterOverwrite = g.computeInTx(tx -> tx.V().hasLabel("JamesBlob").count().next());
 
-        // Overwrite must replace metadata and clean up old header/body parts, leaving exactly 3 blobs
         assertThat(blobsAfterOverwrite).isEqualTo(blobsAfterFirstStore);
         assertThat(testee.size()).isEqualTo(1L);
     }
-
-    @Test
-    void likeWildcardEscapingShouldNotMatchOtherRepositories() throws Exception {
-        MailRepository repoA_B = repositoryAt(MailRepositoryPath.from("var/mail/a_b"));
-        MailRepository repoAxB = repositoryAt(MailRepositoryPath.from("var/mail/axb"));
-
-        repoA_B.store(createMail(MAIL_1));
-        repoAxB.store(createMail(MAIL_2));
-
-        assertThat(repoA_B.size()).isEqualTo(1L);
-        assertThat(repoAxB.size()).isEqualTo(1L);
-
-        List<MailKey> keysA_B = new ArrayList<>();
-        repoA_B.list().forEachRemaining(keysA_B::add);
-        assertThat(keysA_B).hasSize(1);
-
-        List<MailKey> keysAxB = new ArrayList<>();
-        repoAxB.list().forEachRemaining(keysAxB::add);
-        assertThat(keysAxB).hasSize(1);
-    }
-
-    @Test
-    void metadataPrefixTrailingSlashIsolation() throws Exception {
-        MailRepository repo1 = repositoryAt(MailRepositoryPath.from("var/mail/repo"));
-        MailRepository repo2 = repositoryAt(MailRepositoryPath.from("var/mail/repo-extended"));
-
-        repo1.store(createMail(MAIL_1));
-        repo2.store(createMail(MAIL_2));
-
-        assertThat(repo1.size()).isEqualTo(1L);
-        assertThat(repo2.size()).isEqualTo(1L);
-    }
 }
-

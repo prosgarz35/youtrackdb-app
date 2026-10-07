@@ -14,12 +14,22 @@ import org.apache.james.blob.api.BlobId;
 import org.apache.james.blob.api.BlobStore;
 import org.apache.james.blob.api.BlobStoreDAO;
 import org.apache.james.blob.api.BucketName;
+import org.apache.james.blob.api.ObjectNotFoundException;
+import org.apache.james.blob.api.PlainBlobId;
 import org.apache.james.mailrepository.api.MailKey;
 import org.apache.james.mailrepository.api.MailRepository;
 import org.apache.james.mailrepository.api.MailRepositoryFactory;
 import org.apache.james.mailrepository.api.MailRepositoryUrl;
 import org.apache.james.mailrepository.blob.BlobMailRepositoryFactory;
 import org.apache.mailet.Mail;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Creates the blob mail repositories on top of the YouTrackDB blob store.
@@ -29,6 +39,9 @@ import org.apache.mailet.Mail;
  * from {@code list()}, which is filtered by repository. Drop this wrapper once removeAll() is fixed upstream.
  */
 public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactory {
+    private static final Logger LOGGER = LoggerFactory.getLogger(YouTrackDBBlobMailRepositoryFactory.class);
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     private final BlobMailRepositoryFactory delegate;
     private final BlobStoreDAO blobStoreDAO;
     private final BucketName defaultBucketName;
@@ -79,6 +92,10 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
             return delegate.size();
         }
 
+        /**
+         * The new mail is stored first, the parts of the previous version are deleted afterwards: a crash in
+         * between leaves orphaned parts, never a lost mail.
+         */
         @Override
         public MailKey store(Mail mail) throws MessagingException {
             MailKey key = MailKey.forMail(mail);
@@ -93,22 +110,19 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
         private List<BlobId> findMimePartsForMailKey(MailKey key) {
             List<BlobId> parts = new ArrayList<>();
             try {
-                String metaBlobPath = metadataPrefix() + key.asString();
-                var bytesBlob = reactor.core.publisher.Mono.from(
-                    blobStoreDAO.readBytes(defaultBucketName, new org.apache.james.blob.api.PlainBlobId(metaBlobPath))
-                ).block();
-                if (bytesBlob != null && bytesBlob.payload() != null && bytesBlob.payload().length > 0) {
-                    com.fasterxml.jackson.databind.JsonNode root =
-                        new com.fasterxml.jackson.databind.ObjectMapper().readTree(bytesBlob.payload());
-                    if (root.has("headerBlobId") && root.get("headerBlobId").isTextual()) {
-                        parts.add(new org.apache.james.blob.api.PlainBlobId(root.get("headerBlobId").asText()));
-                    }
-                    if (root.has("bodyBlobId") && root.get("bodyBlobId").isTextual()) {
-                        parts.add(new org.apache.james.blob.api.PlainBlobId(root.get("bodyBlobId").asText()));
+                var metadata = Mono.from(blobStoreDAO.readBytes(defaultBucketName, new PlainBlobId(metadataPrefix() + key.asString()))).block();
+                if (metadata != null && metadata.payload() != null && metadata.payload().length > 0) {
+                    JsonNode json = JSON.readTree(metadata.payload());
+                    for (String field : List.of("headerBlobId", "bodyBlobId")) {
+                        if (json.path(field).isTextual()) {
+                            parts.add(new PlainBlobId(json.get(field).asText()));
+                        }
                     }
                 }
-            } catch (Exception ignored) {
-                // If previous metadata doesn't exist or is not readable, no old parts to delete
+            } catch (ObjectNotFoundException e) {
+                // First time this key is stored: nothing to clean up.
+            } catch (Exception e) {
+                LOGGER.warn("Cannot read the previous parts of mail {}: they will stay in the blob store", key.asString(), e);
             }
             return parts;
         }
@@ -116,8 +130,9 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
         private void cleanOldMimeParts(List<BlobId> oldParts) {
             for (BlobId partId : oldParts) {
                 try {
-                    reactor.core.publisher.Mono.from(blobStoreDAO.delete(defaultBucketName, partId)).block();
-                } catch (Exception ignored) {
+                    Mono.from(blobStoreDAO.delete(defaultBucketName, partId)).block();
+                } catch (Exception e) {
+                    LOGGER.warn("Cannot delete the replaced blob {}: it is now orphaned", partId.asString(), e);
                 }
             }
         }
@@ -125,7 +140,7 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
         @Override
         public Iterator<MailKey> list() throws MessagingException {
             if (blobStoreDAO instanceof YouTrackDBBlobStoreDAO ytdbDao) {
-                return reactor.core.publisher.Flux.from(ytdbDao.listBlobs(defaultBucketName, metadataPrefix()))
+                return Flux.from(ytdbDao.listBlobs(defaultBucketName, metadataPrefix()))
                     .map(blobId -> new MailKey(blobId.asString()))
                     .toIterable()
                     .iterator();
