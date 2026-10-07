@@ -351,9 +351,8 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             int size = mailItems.size();
             mailItems.clear();
             // Remove from YouTrackDB via set-based YQL deletion
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                tx.command("DELETE VERTEX JamesQueueItem WHERE queueName = ?", name.asString());
-            });
+            YouTrackDBTransactions.executeStrictTx(g, tx ->
+                tx.command("DELETE VERTEX JamesQueueItem WHERE queueName = :queue", "queue", name.asString()));
             return size;
         }
 

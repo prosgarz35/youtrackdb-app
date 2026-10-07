@@ -353,13 +353,13 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         return Mono.<Void>fromRunnable(() -> {
             String key = buildKey(bucketName, blobId);
             File file = getFileForBlob(bucketName, blobId);
+            // Database first: a failure leaves an orphan file (collected by GC), not a record pointing to a missing file.
+            YouTrackDBTransactions.executeStrictTx(g, tx ->
+                tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = :key", "key", key));
             if (file.exists()) {
                 file.delete();
                 pruneEmptyParentDirectories(file, new File(blobsDirectory, bucketName.asString()));
             }
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = ?", key);
-            });
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
@@ -367,19 +367,21 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     public Publisher<Void> delete(BucketName bucketName, Collection<BlobId> blobIds) {
         return Mono.<Void>fromRunnable(() -> {
             File bucketDir = new File(blobsDirectory, bucketName.asString());
+            Map<BlobId, File> files = new java.util.LinkedHashMap<>();
             for (BlobId blobId : blobIds) {
-                File file = getFileForBlob(bucketName, blobId);
+                files.put(blobId, getFileForBlob(bucketName, blobId));
+            }
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                for (BlobId blobId : blobIds) {
+                    tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = :key", "key", buildKey(bucketName, blobId));
+                }
+            });
+            for (File file : files.values()) {
                 if (file.exists()) {
                     file.delete();
                     pruneEmptyParentDirectories(file, bucketDir);
                 }
             }
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                for (BlobId blobId : blobIds) {
-                    String key = buildKey(bucketName, blobId);
-                    tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = ?", key);
-                }
-            });
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
@@ -387,6 +389,8 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     public Publisher<Void> deleteBucket(BucketName bucketName) {
         return Mono.<Void>fromRunnable(() -> {
             File bucketDir = new File(blobsDirectory, bucketName.asString());
+            YouTrackDBTransactions.executeStrictTx(g, tx ->
+                tx.command("DELETE VERTEX JamesBlob WHERE bucket = :bucket", "bucket", bucketName.asString()));
             if (bucketDir.exists()) {
                 try (var stream = Files.walk(bucketDir.toPath())) {
                     stream.map(java.nio.file.Path::toFile)
@@ -395,9 +399,6 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 } catch (Exception ignored) {
                 }
             }
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                tx.command("DELETE VERTEX JamesBlob WHERE bucket = ?", bucketName.asString());
-            });
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 

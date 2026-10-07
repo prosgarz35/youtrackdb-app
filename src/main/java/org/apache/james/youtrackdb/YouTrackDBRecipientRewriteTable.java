@@ -51,9 +51,9 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
     @Override
     public void removeMapping(MappingSource source, Mapping mapping) {
         try {
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                tx.command("DELETE VERTEX JamesRRTMapping WHERE source = ? AND mapping = ?", source.asString(), mapping.asString());
-            });
+            YouTrackDBTransactions.executeStrictTx(g, tx ->
+                tx.command("DELETE VERTEX JamesRRTMapping WHERE source = :source AND mapping = :mapping",
+                    "source", source.asString(), "mapping", mapping.asString()));
         } catch (Exception e) {
             throw new RuntimeException("Failed to remove mapping: " + source.asString() + " -> " + mapping.asString(), e);
         }
