@@ -65,11 +65,15 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
             this.defaultBucketName = defaultBucketName;
         }
 
+        private String metadataPrefix() {
+            String path = url.subUrl("mailMetadata").getPath().asString();
+            return path.endsWith("/") ? path : path + "/";
+        }
+
         @Override
         public long size() throws MessagingException {
             if (blobStoreDAO instanceof YouTrackDBBlobStoreDAO ytdbDao) {
-                String prefix = url.subUrl("mailMetadata").getPath().asString();
-                Long count = ytdbDao.countBlobs(defaultBucketName, prefix).block();
+                Long count = ytdbDao.countBlobs(defaultBucketName, metadataPrefix()).block();
                 return count != null ? count : 0L;
             }
             return delegate.size();
@@ -78,17 +82,50 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
         @Override
         public MailKey store(Mail mail) throws MessagingException {
             MailKey key = MailKey.forMail(mail);
-            if (delegate.retrieve(key) != null) {
-                delegate.remove(key);
+            List<BlobId> oldParts = findMimePartsForMailKey(key);
+            MailKey storedKey = delegate.store(mail);
+            if (!oldParts.isEmpty()) {
+                cleanOldMimeParts(oldParts);
             }
-            return delegate.store(mail);
+            return storedKey;
+        }
+
+        private List<BlobId> findMimePartsForMailKey(MailKey key) {
+            List<BlobId> parts = new ArrayList<>();
+            try {
+                String metaBlobPath = metadataPrefix() + key.asString();
+                var bytesBlob = reactor.core.publisher.Mono.from(
+                    blobStoreDAO.readBytes(defaultBucketName, new org.apache.james.blob.api.PlainBlobId(metaBlobPath))
+                ).block();
+                if (bytesBlob != null && bytesBlob.payload() != null && bytesBlob.payload().length > 0) {
+                    com.fasterxml.jackson.databind.JsonNode root =
+                        new com.fasterxml.jackson.databind.ObjectMapper().readTree(bytesBlob.payload());
+                    if (root.has("headerBlobId") && root.get("headerBlobId").isTextual()) {
+                        parts.add(new org.apache.james.blob.api.PlainBlobId(root.get("headerBlobId").asText()));
+                    }
+                    if (root.has("bodyBlobId") && root.get("bodyBlobId").isTextual()) {
+                        parts.add(new org.apache.james.blob.api.PlainBlobId(root.get("bodyBlobId").asText()));
+                    }
+                }
+            } catch (Exception ignored) {
+                // If previous metadata doesn't exist or is not readable, no old parts to delete
+            }
+            return parts;
+        }
+
+        private void cleanOldMimeParts(List<BlobId> oldParts) {
+            for (BlobId partId : oldParts) {
+                try {
+                    reactor.core.publisher.Mono.from(blobStoreDAO.delete(defaultBucketName, partId)).block();
+                } catch (Exception ignored) {
+                }
+            }
         }
 
         @Override
         public Iterator<MailKey> list() throws MessagingException {
             if (blobStoreDAO instanceof YouTrackDBBlobStoreDAO ytdbDao) {
-                String prefix = url.subUrl("mailMetadata").getPath().asString();
-                return reactor.core.publisher.Flux.from(ytdbDao.listBlobs(defaultBucketName, prefix))
+                return reactor.core.publisher.Flux.from(ytdbDao.listBlobs(defaultBucketName, metadataPrefix()))
                     .map(blobId -> new MailKey(blobId.asString()))
                     .toIterable()
                     .iterator();

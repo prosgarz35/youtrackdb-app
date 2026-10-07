@@ -542,7 +542,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     : "SELECT blobId FROM JamesBlob WHERE bucket = :bucket AND blobId LIKE :prefix";
                 var queryParams = (prefix == null || prefix.isEmpty())
                     ? new Object[]{"bucket", bucketName.asString()}
-                    : new Object[]{"bucket", bucketName.asString(), "prefix", prefix + "%"};
+                    : new Object[]{"bucket", bucketName.asString(), "prefix", escapeLikePrefix(prefix) + "%"};
 
                 var results = tx.yql(query, queryParams).toList();
                 for (Object item : results) {
@@ -567,7 +567,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     : "SELECT count(*) AS cnt FROM JamesBlob WHERE bucket = :bucket AND blobId LIKE :prefix";
                 var queryParams = (prefix == null || prefix.isEmpty())
                     ? new Object[]{"bucket", bucketName.asString()}
-                    : new Object[]{"bucket", bucketName.asString(), "prefix", prefix + "%"};
+                    : new Object[]{"bucket", bucketName.asString(), "prefix", escapeLikePrefix(prefix) + "%"};
 
                 var results = tx.yql(query, queryParams).toList();
                 if (!results.isEmpty() && results.getFirst() instanceof Map<?, ?> m) {
@@ -579,6 +579,16 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 return 0L;
             });
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+    }
+
+    private static String escapeLikePrefix(String prefix) {
+        if (prefix == null) {
+            return "";
+        }
+        return prefix.replace("\\", "\\\\")
+                     .replace("%", "\\%")
+                     .replace("?", "\\?")
+                     .replace("_", "\\_");
     }
 }
 

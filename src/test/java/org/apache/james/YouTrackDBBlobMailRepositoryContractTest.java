@@ -142,18 +142,18 @@ class YouTrackDBBlobMailRepositoryContractTest implements MailRepositoryContract
     @Test
     void storingMessageWithSameKeyTwiceShouldNotLeakOldBodyBlobs() throws Exception {
         MailRepository testee = retrieveRepository();
-        long initialBlobs = g.computeInTx(tx -> tx.V().hasLabel("JamesBlob").count().next());
 
-        // First store
+        // First store: should create 3 blobs (metadata, header, body)
         MailKey key = testee.store(createMail(MAIL_1));
-        List<Object> blobs1 = g.computeInTx(tx -> tx.V().hasLabel("JamesBlob").values("bucketAndBlobId").toList());
-        System.out.println("Blobs after first store: " + blobs1);
+        long blobsAfterFirstStore = g.computeInTx(tx -> tx.V().hasLabel("JamesBlob").count().next());
+        assertThat(blobsAfterFirstStore).isEqualTo(3L);
 
         // Store again under the same key with different content
         testee.store(createMail(MAIL_1, "Different Body Content Here"));
-        List<Object> blobs2 = g.computeInTx(tx -> tx.V().hasLabel("JamesBlob").values("bucketAndBlobId").toList());
-        System.out.println("Blobs after overwrite: " + blobs2);
+        long blobsAfterOverwrite = g.computeInTx(tx -> tx.V().hasLabel("JamesBlob").count().next());
 
+        // Overwrite must replace metadata and clean up old header/body parts, leaving exactly 3 blobs
+        assertThat(blobsAfterOverwrite).isEqualTo(blobsAfterFirstStore);
         assertThat(testee.size()).isEqualTo(1L);
     }
 }
