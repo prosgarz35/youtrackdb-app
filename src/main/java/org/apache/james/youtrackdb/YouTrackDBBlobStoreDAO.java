@@ -31,10 +31,14 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Hybrid BlobStoreDAO for YouTrackDB:
- * - Small payloads (<= 16 KB) are stored directly inside YouTrackDB pages as inline byte arrays (low latency, 0 file IO).
- * - Large payloads (> 16 KB) are streamed to structured file storage (var/blobs/{bucket}/{blobId}), preventing
- *   WAL bloat, memory copy overhead and page fragmentation inside the database engine.
+ * Tiered BlobStoreDAO for YouTrackDB. The tier is chosen from the payload size:
+ * - up to 4 KB: stored raw in a {@code JamesBlob} vertex (INLINE_RAW);
+ * - 4 KB to 64 KB: Zstd-compressed (level 1) in the vertex (INLINE_ZSTD);
+ * - above 64 KB: streamed as Zstd to {@code var/blobs/{bucket}/ab/cd/ef/{blobId}} (FILE_ZSTD); the vertex only
+ *   keeps the storage type. Heap usage stays bounded: a 64 KB probe buffer plus an 8 KB transfer buffer.
+ *
+ * Identifiers are expected to be content hashes (DeDuplicationBlobStore), so saving an id that already exists
+ * is treated as a no-op.
  */
 public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     static final String CLASS_NAME = "JamesBlob";
@@ -206,15 +210,6 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 }
             });
         })
-        .onErrorResume(e -> {
-            if (e.getCause() instanceof ObjectNotFoundException) {
-                return Mono.error(e.getCause());
-            }
-            if (e.getCause() instanceof ObjectStoreIOException) {
-                return Mono.error(e.getCause());
-            }
-            return Mono.error(e);
-        })
         .switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
@@ -268,15 +263,6 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 return BytesBlob.of(new byte[0]);
             });
         })
-        .onErrorResume(e -> {
-            if (e.getCause() instanceof ObjectNotFoundException) {
-                return Mono.error(e.getCause());
-            }
-            if (e.getCause() instanceof ObjectStoreIOException) {
-                return Mono.error(e.getCause());
-            }
-            return Mono.error(e);
-        })
         .switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
@@ -299,7 +285,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     }
 
                     if (totalRead <= TIER1_RAW_THRESHOLD) {
-                        // Tier 1: < 4 KB -> Inline raw into YouTrackDB
+                        // Tier 1: <= 4 KB -> Inline raw into YouTrackDB
                         byte[] data = java.util.Arrays.copyOf(initialBuffer, totalRead);
                         insertBlobRecord(bucketName, blobId, STORAGE_INLINE_RAW, data);
                     } else if (totalRead <= TIER2_DB_THRESHOLD) {
@@ -308,7 +294,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                         byte[] compressed = com.github.luben.zstd.Zstd.compress(data, 1);
                         insertBlobRecord(bucketName, blobId, STORAGE_INLINE_ZSTD, compressed);
                     } else {
-                        // Tier 3: > 64 KB -> Direct Zero-Copy Streaming to file storage with Zstd compression
+                        // Tier 3: > 64 KB -> Stream to file storage with Zstd compression
                         File file = getFileForBlob(bucketName, blobId);
                         File parent = file.getParentFile();
                         if (!parent.exists()) {
