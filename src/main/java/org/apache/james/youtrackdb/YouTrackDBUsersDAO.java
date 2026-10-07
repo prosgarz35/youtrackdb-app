@@ -52,7 +52,7 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
         user.setPassword(password);
 
         try {
-            g.executeInTx(tx -> {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
                 boolean exists = false;
                 try {
                     exists = !tx.yql("SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1", "uname", username.asString()).toList().isEmpty();
@@ -117,7 +117,7 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
         Username username = user.getUserName();
 
         try {
-            g.executeInTx(tx -> {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
                 var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_USERNAME, username.asString());
                 if (!traversal.hasNext()) {
                     throw new RuntimeException(new UsersRepositoryException("User " + username.asString() + " not found to update"));
@@ -137,7 +137,7 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
     @Override
     public void removeUser(Username name) throws UsersRepositoryException {
         try {
-            boolean removed = g.computeInTx(tx -> {
+            boolean removed = YouTrackDBTransactions.computeStrictTx(g, tx -> {
                 var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_USERNAME, name.asString());
                 if (traversal.hasNext()) {
                     traversal.next().remove();

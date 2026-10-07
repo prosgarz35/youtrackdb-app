@@ -23,6 +23,7 @@ import org.apache.james.filesystem.api.FileSystem;
 import org.reactivestreams.Publisher;
 
 import com.google.common.base.Preconditions;
+import com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 
@@ -75,16 +76,24 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         return bucketName.asString() + "/" + blobId.asString();
     }
 
-    private static boolean isDuplicateKey(Throwable t) {
-        while (t != null) {
-            String msg = t.getMessage();
-            if (msg != null && (msg.contains("duplicat") || msg.contains("Duplicat") || msg.contains("unique") || msg.contains("Unique"))) {
-                return true;
+    private void insertBlobRecord(BucketName bucketName, BlobId blobId, String storageType, byte[] payload) {
+        String key = buildKey(bucketName, blobId);
+        try {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> tx.addV(CLASS_NAME)
+                .property(PROP_BUCKET, bucketName.asString())
+                .property(PROP_BLOB_ID, blobId.asString())
+                .property(PROP_KEY, key)
+                .property(PROP_STORAGE_TYPE, storageType)
+                .property(PROP_PAYLOAD, payload)
+                .iterate());
+        } catch (RuntimeException e) {
+            if (!YouTrackDBTransactions.hasCause(e, RecordDuplicatedException.class)) {
+                throw e;
             }
-            t = t.getCause();
+            // Content-addressed id (DeDuplicationBlobStore): the same blob is already stored.
         }
-        return false;
     }
+
 
     /**
      * Resolves the filesystem location for a blob using 3-level directory sharding:
@@ -293,40 +302,12 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     if (totalRead <= TIER1_RAW_THRESHOLD) {
                         // Tier 1: < 4 KB -> Inline raw into YouTrackDB
                         byte[] data = java.util.Arrays.copyOf(initialBuffer, totalRead);
-                        g.executeInTx(tx -> {
-                            try {
-                                tx.addV(CLASS_NAME)
-                                    .property(PROP_BUCKET, bucketName.asString())
-                                    .property(PROP_BLOB_ID, blobId.asString())
-                                    .property(PROP_KEY, key)
-                                    .property(PROP_STORAGE_TYPE, STORAGE_INLINE_RAW)
-                                    .property(PROP_PAYLOAD, data)
-                                    .iterate();
-                            } catch (Exception e) {
-                                if (!isDuplicateKey(e)) {
-                                    throw e;
-                                }
-                            }
-                        });
+                        insertBlobRecord(bucketName, blobId, STORAGE_INLINE_RAW, data);
                     } else if (totalRead <= TIER2_DB_THRESHOLD) {
                         // Tier 2: 4 KB .. 64 KB -> Compress (Zstd level 1) and insert into DB
                         byte[] data = java.util.Arrays.copyOf(initialBuffer, totalRead);
                         byte[] compressed = com.github.luben.zstd.Zstd.compress(data, 1);
-                        g.executeInTx(tx -> {
-                            try {
-                                tx.addV(CLASS_NAME)
-                                    .property(PROP_BUCKET, bucketName.asString())
-                                    .property(PROP_BLOB_ID, blobId.asString())
-                                    .property(PROP_KEY, key)
-                                    .property(PROP_STORAGE_TYPE, STORAGE_INLINE_ZSTD)
-                                    .property(PROP_PAYLOAD, compressed)
-                                    .iterate();
-                            } catch (Exception e) {
-                                if (!isDuplicateKey(e)) {
-                                    throw e;
-                                }
-                            }
-                        });
+                        insertBlobRecord(bucketName, blobId, STORAGE_INLINE_ZSTD, compressed);
                     } else {
                         // Tier 3: > 64 KB -> Direct Zero-Copy Streaming to file storage with Zstd compression
                         File file = getFileForBlob(bucketName, blobId);
@@ -359,21 +340,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                             }
                         }
 
-                        g.executeInTx(tx -> {
-                            try {
-                                tx.addV(CLASS_NAME)
-                                    .property(PROP_BUCKET, bucketName.asString())
-                                    .property(PROP_BLOB_ID, blobId.asString())
-                                    .property(PROP_KEY, key)
-                                    .property(PROP_STORAGE_TYPE, STORAGE_FILE_ZSTD)
-                                    .property(PROP_PAYLOAD, new byte[0])
-                                    .iterate();
-                            } catch (Exception e) {
-                                if (!isDuplicateKey(e)) {
-                                    throw e;
-                                }
-                            }
-                        });
+                        insertBlobRecord(bucketName, blobId, STORAGE_FILE_ZSTD, new byte[0]);
                     }
                 }
             } catch (Exception e) {
@@ -391,7 +358,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 file.delete();
                 pruneEmptyParentDirectories(file, new File(blobsDirectory, bucketName.asString()));
             }
-            g.executeInTx(tx -> {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
                 tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = ?", key);
             });
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
@@ -408,7 +375,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     pruneEmptyParentDirectories(file, bucketDir);
                 }
             }
-            g.executeInTx(tx -> {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
                 for (BlobId blobId : blobIds) {
                     String key = buildKey(bucketName, blobId);
                     tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = ?", key);
@@ -429,7 +396,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 } catch (Exception ignored) {
                 }
             }
-            g.executeInTx(tx -> {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
                 tx.command("DELETE VERTEX JamesBlob WHERE bucket = ?", bucketName.asString());
             });
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());

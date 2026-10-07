@@ -28,7 +28,7 @@ public class YouTrackDBDomainList extends AbstractDomainList {
     @Override
     public void addDomain(Domain domain) throws DomainListException {
         try {
-            g.executeInTx(tx -> {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
                 boolean exists = false;
                 try {
                     exists = !tx.yql("SELECT 1 FROM JamesDomain WHERE domain = :domain LIMIT 1", "domain", domain.asString()).toList().isEmpty();
@@ -100,7 +100,7 @@ public class YouTrackDBDomainList extends AbstractDomainList {
     @Override
     protected void doRemoveDomain(Domain domain) throws DomainListException {
         try {
-            boolean removed = g.computeInTx(tx -> {
+            boolean removed = YouTrackDBTransactions.computeStrictTx(g, tx -> {
                 var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_DOMAIN, domain.asString());
                 if (traversal.hasNext()) {
                     traversal.next().remove();

@@ -220,7 +220,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 byte[] serialized = serializeMail(cloned);
 
                 // Persist into YouTrackDB transactionally (upsert semantics to safely handle RETRY / re-enqueues)
-                g.executeInTx(tx -> {
+                YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     var existing = tx.V().hasLabel(CLASS_NAME)
                         .has(PROP_QUEUE_NAME, name.asString())
                         .has(PROP_MAIL_NAME, cloned.getName());
@@ -351,7 +351,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             int size = mailItems.size();
             mailItems.clear();
             // Remove from YouTrackDB via set-based YQL deletion
-            g.executeInTx(tx -> {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
                 tx.command("DELETE VERTEX JamesQueueItem WHERE queueName = ?", name.asString());
             });
             return size;
@@ -366,7 +366,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 toBeRemoved.forEach(mailItems::remove);
                 if (!closed) {
                     try {
-                        g.executeInTx(tx -> {
+                        YouTrackDBTransactions.executeStrictTx(g, tx -> {
                             for (YouTrackDBMailQueueItem item : toBeRemoved) {
                                 var traversal = tx.V().hasLabel(CLASS_NAME)
                                     .has(PROP_QUEUE_NAME, name.asString())
@@ -389,7 +389,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 return;
             }
             try {
-                g.executeInTx(tx -> {
+                YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     var traversal = tx.V().hasLabel(CLASS_NAME)
                         .has(PROP_QUEUE_NAME, name.asString())
                         .has(PROP_MAIL_NAME, mailName);

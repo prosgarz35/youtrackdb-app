@@ -31,7 +31,7 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
     @Override
     public void addMapping(MappingSource source, Mapping mapping) {
         try {
-            g.executeInTx(tx -> {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
                 var traversal = tx.V().hasLabel(CLASS_NAME)
                     .has(PROP_SOURCE, source.asString())
                     .has(PROP_MAPPING, mapping.asString());
@@ -51,7 +51,7 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
     @Override
     public void removeMapping(MappingSource source, Mapping mapping) {
         try {
-            g.executeInTx(tx -> {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
                 tx.command("DELETE VERTEX JamesRRTMapping WHERE source = ? AND mapping = ?", source.asString(), mapping.asString());
             });
         } catch (Exception e) {
