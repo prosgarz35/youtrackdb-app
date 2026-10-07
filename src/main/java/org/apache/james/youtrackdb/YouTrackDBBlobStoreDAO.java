@@ -6,9 +6,13 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.Set;
 
@@ -25,7 +29,6 @@ import org.reactivestreams.Publisher;
 import com.google.common.base.Preconditions;
 import com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -37,8 +40,8 @@ import reactor.core.publisher.Mono;
  * - above 64 KB: streamed as Zstd to {@code var/blobs/{bucket}/ab/cd/ef/{blobId}} (FILE_ZSTD); the vertex only
  *   keeps the storage type. Heap usage stays bounded: a 64 KB probe buffer plus an 8 KB transfer buffer.
  *
- * Identifiers are expected to be content hashes (DeDuplicationBlobStore), so saving an id that already exists
- * is treated as a no-op.
+ * Plain identifiers are expected to be content hashes (DeDuplicationBlobStore), so saving one that already exists
+ * is a no-op. Identifiers chosen by the caller (not plain path segments) are overwritten when saved again.
  */
 public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     static final String CLASS_NAME = "JamesBlob";
@@ -80,39 +83,133 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         return bucketName.asString() + "/" + blobId.asString();
     }
 
+    /**
+     * A plain id is a content hash (DeDuplicationBlobStore): saving it again is a no-op. Any other id is chosen
+     * by the caller (a mail repository stores the same mail name again with new content): saving it again
+     * replaces the stored content, like the memory, S3 and Cassandra implementations do.
+     */
+    private static boolean isOverwritable(BlobId blobId) {
+        return !isPlainSegment(blobId.asString());
+    }
+
     private void insertBlobRecord(BucketName bucketName, BlobId blobId, String storageType, byte[] payload) {
         String key = buildKey(bucketName, blobId);
         try {
-            YouTrackDBTransactions.executeStrictTx(g, tx -> tx.addV(CLASS_NAME)
-                .property(PROP_BUCKET, bucketName.asString())
-                .property(PROP_BLOB_ID, blobId.asString())
-                .property(PROP_KEY, key)
-                .property(PROP_STORAGE_TYPE, storageType)
-                .property(PROP_PAYLOAD, payload)
-                .iterate());
+            YouTrackDBTransactions.executeStrictTx(g, tx -> addBlobVertex(tx, bucketName, blobId, key, storageType, payload));
         } catch (RuntimeException e) {
             if (!YouTrackDBTransactions.hasCause(e, RecordDuplicatedException.class)) {
                 throw e;
             }
-            // Content-addressed id (DeDuplicationBlobStore): the same blob is already stored.
+            if (isOverwritable(blobId)) {
+                YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                    var existing = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
+                    if (existing.hasNext()) {
+                        var vertex = existing.next();
+                        vertex.property(PROP_STORAGE_TYPE, storageType);
+                        vertex.property(PROP_PAYLOAD, payload);
+                    } else {
+                        addBlobVertex(tx, bucketName, blobId, key, storageType, payload);
+                    }
+                });
+            }
         }
     }
 
+    private static void addBlobVertex(YTDBGraphTraversalSource tx, BucketName bucketName, BlobId blobId, String key,
+                                      String storageType, byte[] payload) {
+        tx.addV(CLASS_NAME)
+            .property(PROP_BUCKET, bucketName.asString())
+            .property(PROP_BLOB_ID, blobId.asString())
+            .property(PROP_KEY, key)
+            .property(PROP_STORAGE_TYPE, storageType)
+            .property(PROP_PAYLOAD, payload)
+            .iterate();
+    }
+
+    /** An overwritten blob that moved from the file tier to an inline tier must not leave its old file behind. */
+    private void deleteStaleFile(BucketName bucketName, BlobId blobId) {
+        if (isOverwritable(blobId)) {
+            File stale = getFileForBlob(bucketName, blobId);
+            if (stale.exists() && stale.delete()) {
+                pruneEmptyParentDirectories(stale, pruneStopDir(bucketName, blobId));
+            }
+        }
+    }
+
+    /** Root (under var/blobs) of the files whose names cannot be used as path segments. */
+    static final String HASHED_ROOT = ".hashed";
+
+    /** A name is used as a path segment only if it cannot leave its directory or be mistaken for one. */
+    private static boolean isPlainSegment(String name) {
+        return !name.isEmpty()
+            && !".".equals(name)
+            && !name.contains("..")
+            && name.indexOf('/') < 0
+            && name.indexOf('\\') < 0
+            && name.indexOf('\0') < 0;
+    }
+
+    private static boolean isPlainBucket(String bucket) {
+        return isPlainSegment(bucket) && !HASHED_ROOT.equals(bucket);
+    }
+
+    static String sha256Hex(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required by the JDK", e);
+        }
+    }
 
     /**
-     * Resolves the filesystem location for a blob using 3-level directory sharding:
-     * var/blobs/{bucket}/{p1}/{p2}/{p3}/{blobId}
-     * For example, blob "abcdef123456" -> var/blobs/{bucket}/ab/cd/ef/abcdef123456
-     * Also checks flat legacy location (var/blobs/{bucket}/{blobId}) for backward compatibility.
+     * Names of the files that must be kept by the orphan garbage collection: the plain blob ids, and the
+     * hashed names used for ids that cannot be path segments (for example "var/mail/error/mailMetadata/x").
+     */
+    public static java.util.Set<String> fileNamesToKeep(Collection<String> blobIds) {
+        java.util.Set<String> names = new HashSet<>();
+        for (String blobId : blobIds) {
+            names.add(blobId);
+            names.add(sha256Hex(blobId));
+        }
+        return names;
+    }
+
+    /** var/blobs/{bucket}; a bucket that is not a plain segment gets a hashed directory instead of a traversal. */
+    private File bucketDirOf(BucketName bucketName) {
+        String bucket = bucketName.asString();
+        if (isPlainBucket(bucket)) {
+            return new File(blobsDirectory, bucket);
+        }
+        return new File(new File(blobsDirectory, HASHED_ROOT), "h-" + sha256Hex(bucket));
+    }
+
+    /** var/blobs/.hashed/{p-bucket | h-hash}: where the files of non-plain ids of this bucket live. */
+    private File hashedBucketDirOf(BucketName bucketName) {
+        String bucket = bucketName.asString();
+        String bucketKey = isPlainBucket(bucket) ? "p-" + bucket : "h-" + sha256Hex(bucket);
+        return new File(new File(blobsDirectory, HASHED_ROOT), bucketKey);
+    }
+
+    /** Directory above which empty parents are not pruned. */
+    private File pruneStopDir(BucketName bucketName, BlobId blobId) {
+        return isPlainSegment(blobId.asString()) ? bucketDirOf(bucketName) : hashedBucketDirOf(bucketName);
+    }
+
+    /**
+     * Resolves the filesystem location for a blob.
+     * A plain id uses 3-level directory sharding: var/blobs/{bucket}/{p1}/{p2}/{p3}/{blobId}
+     * (blob "abcdef123456" -> var/blobs/{bucket}/ab/cd/ef/abcdef123456), and the flat legacy location
+     * var/blobs/{bucket}/{blobId} is still read.
+     * An id that cannot be a path segment (it contains "/", "\\" or ".."; the blob id factory of a mail
+     * repository builds ids like "var/mail/error/mailMetadata/{name}") is stored under
+     * var/blobs/.hashed/{bucket}/{sha256(id)}, so it can never leave the blobs directory.
      */
     private File getFileForBlob(BucketName bucketName, BlobId blobId) {
-        String bucketStr = bucketName.asString();
         String id = blobId.asString();
-        if (bucketStr.contains("..") || bucketStr.contains("/") || bucketStr.contains("\\")
-            || id.contains("..") || id.contains("/") || id.contains("\\")) {
-            throw new IllegalArgumentException("Invalid bucketName or blobId containing path traversal characters");
+        if (!isPlainSegment(id)) {
+            return new File(hashedBucketDirOf(bucketName), sha256Hex(id));
         }
-        File bucketDir = new File(blobsDirectory, bucketStr);
+        File bucketDir = bucketDirOf(bucketName);
 
         if (id.length() >= 6) {
             String p1 = id.substring(0, 2);
@@ -135,6 +232,18 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         return new File(bucketDir, id);
     }
 
+    private static void deleteTree(File dir) {
+        if (!dir.exists()) {
+            return;
+        }
+        try (var stream = Files.walk(dir.toPath())) {
+            stream.map(java.nio.file.Path::toFile)
+                .sorted((o1, o2) -> -o1.compareTo(o2))
+                .forEach(File::delete);
+        } catch (Exception ignored) {
+        }
+    }
+
     private void pruneEmptyParentDirectories(File file, File stopDir) {
         try {
             File parent = file.getParentFile();
@@ -153,6 +262,23 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         }
     }
 
+    private record BlobMeta(String storageType, byte[] payload) {
+    }
+
+    /** Reads the vertex in a short transaction; disk IO and decompression happen after it is closed. */
+    private BlobMeta loadMeta(String key) {
+        return g.computeInTx(tx -> {
+            var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
+            if (!traversal.hasNext()) {
+                return null;
+            }
+            var vertex = traversal.next();
+            String storageType = vertex.property(PROP_STORAGE_TYPE).isPresent() ? vertex.value(PROP_STORAGE_TYPE) : STORAGE_INLINE_RAW;
+            byte[] payload = vertex.value(PROP_PAYLOAD);
+            return new BlobMeta(storageType, payload);
+        });
+    }
+
     @Override
     public InputStreamBlob read(BucketName bucketName, BlobId blobId) throws ObjectStoreIOException, ObjectNotFoundException {
         return Mono.from(readReactive(bucketName, blobId)).block();
@@ -162,17 +288,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     public Publisher<InputStreamBlob> readReactive(BucketName bucketName, BlobId blobId) {
         return Mono.fromCallable(() -> {
             String key = buildKey(bucketName, blobId);
-            record BlobMeta(String storageType, byte[] payload) {}
-            BlobMeta meta = g.computeInTx(tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                if (!traversal.hasNext()) {
-                    return null;
-                }
-                Vertex v = traversal.next();
-                String st = v.property(PROP_STORAGE_TYPE).isPresent() ? v.value(PROP_STORAGE_TYPE) : STORAGE_INLINE_RAW;
-                byte[] payload = v.value(PROP_PAYLOAD);
-                return new BlobMeta(st, payload);
-            });
+            BlobMeta meta = loadMeta(key);
 
             if (meta == null) {
                 return null;
@@ -225,17 +341,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     public Publisher<BytesBlob> readBytes(BucketName bucketName, BlobId blobId) {
         return Mono.fromCallable(() -> {
             String key = buildKey(bucketName, blobId);
-            record BlobMeta(String storageType, byte[] payload) {}
-            BlobMeta meta = g.computeInTx(tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                if (!traversal.hasNext()) {
-                    return null;
-                }
-                Vertex v = traversal.next();
-                String st = v.property(PROP_STORAGE_TYPE).isPresent() ? v.value(PROP_STORAGE_TYPE) : STORAGE_INLINE_RAW;
-                byte[] payload = v.value(PROP_PAYLOAD);
-                return new BlobMeta(st, payload);
-            });
+            BlobMeta meta = loadMeta(key);
 
             if (meta == null) {
                 return null;
@@ -303,11 +409,13 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                         // Tier 1: <= 4 KB -> Inline raw into YouTrackDB
                         byte[] data = java.util.Arrays.copyOf(initialBuffer, totalRead);
                         insertBlobRecord(bucketName, blobId, STORAGE_INLINE_RAW, data);
+                        deleteStaleFile(bucketName, blobId);
                     } else if (totalRead <= TIER2_DB_THRESHOLD) {
                         // Tier 2: 4 KB .. 64 KB -> Compress (Zstd level 1) and insert into DB
                         byte[] data = java.util.Arrays.copyOf(initialBuffer, totalRead);
                         byte[] compressed = com.github.luben.zstd.Zstd.compress(data, 1);
                         insertBlobRecord(bucketName, blobId, STORAGE_INLINE_ZSTD, compressed);
+                        deleteStaleFile(bucketName, blobId);
                     } else {
                         // Tier 3: > 64 KB -> Stream to file storage with Zstd compression
                         File file = getFileForBlob(bucketName, blobId);
@@ -316,8 +424,9 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                             parent.mkdirs();
                         }
 
-                        if (!file.exists()) {
-                            File tempFile = new File(parent, blobId.asString() + ".tmp." + Thread.currentThread().threadId());
+                        boolean overwrite = isOverwritable(blobId);
+                        if (overwrite || !file.exists()) {
+                            File tempFile = new File(parent, file.getName() + ".tmp." + Thread.currentThread().threadId());
                             try (FileOutputStream fos = new FileOutputStream(tempFile);
                                  com.github.luben.zstd.ZstdOutputStream zos = new com.github.luben.zstd.ZstdOutputStream(fos, 1)) {
                                 zos.write(initialBuffer, 0, totalRead);
@@ -332,6 +441,10 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                             try {
                                 Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                             } catch (Exception e) {
+                                if (overwrite) {
+                                    tempFile.delete();
+                                    throw e;
+                                }
                                 if (!file.exists()) {
                                     Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                                 } else {
@@ -359,7 +472,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = :key", "key", key));
             if (file.exists()) {
                 file.delete();
-                pruneEmptyParentDirectories(file, new File(blobsDirectory, bucketName.asString()));
+                pruneEmptyParentDirectories(file, pruneStopDir(bucketName, blobId));
             }
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
@@ -367,7 +480,6 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     @Override
     public Publisher<Void> delete(BucketName bucketName, Collection<BlobId> blobIds) {
         return Mono.<Void>fromRunnable(() -> {
-            File bucketDir = new File(blobsDirectory, bucketName.asString());
             Map<BlobId, File> files = new java.util.LinkedHashMap<>();
             for (BlobId blobId : blobIds) {
                 files.put(blobId, getFileForBlob(bucketName, blobId));
@@ -377,29 +489,22 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = :key", "key", buildKey(bucketName, blobId));
                 }
             });
-            for (File file : files.values()) {
+            files.forEach((blobId, file) -> {
                 if (file.exists()) {
                     file.delete();
-                    pruneEmptyParentDirectories(file, bucketDir);
+                    pruneEmptyParentDirectories(file, pruneStopDir(bucketName, blobId));
                 }
-            }
+            });
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override
     public Publisher<Void> deleteBucket(BucketName bucketName) {
         return Mono.<Void>fromRunnable(() -> {
-            File bucketDir = new File(blobsDirectory, bucketName.asString());
             YouTrackDBTransactions.executeStrictTx(g, tx ->
                 tx.command("DELETE VERTEX JamesBlob WHERE bucket = :bucket", "bucket", bucketName.asString()));
-            if (bucketDir.exists()) {
-                try (var stream = Files.walk(bucketDir.toPath())) {
-                    stream.map(java.nio.file.Path::toFile)
-                        .sorted((o1, o2) -> -o1.compareTo(o2))
-                        .forEach(File::delete);
-                } catch (Exception ignored) {
-                }
-            }
+            deleteTree(bucketDirOf(bucketName));
+            deleteTree(hashedBucketDirOf(bucketName));
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 

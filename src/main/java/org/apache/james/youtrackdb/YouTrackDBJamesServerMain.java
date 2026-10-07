@@ -56,7 +56,7 @@ public class YouTrackDBJamesServerMain implements JamesServerMain {
         new SMTPServerModule());
 
     public static final Module YOUTRACKDB_SERVER_MODULE = Modules.combine(
-        new MailetProcessingModule(),
+        Modules.override(new MailetProcessingModule()).with(new YouTrackDBMailRepositoryModule()),
         new org.apache.james.modules.data.MemoryDelegationStoreModule(),
         new YouTrackDBBlobModule(),
         new BlobExportMechanismModule(),

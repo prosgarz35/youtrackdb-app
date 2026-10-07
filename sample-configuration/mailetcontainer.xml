@@ -28,14 +28,14 @@
 
     <spooler>
         <threads>8</threads>
-        <errorRepository>memory://var/mail/error/</errorRepository>
+        <errorRepository>blob://var/mail/error/</errorRepository>
     </spooler>
 
     <processors>
         <processor state="root">
             <mailet match="All" class="PostmasterAlias"/>
             <mailet match="RelayLimit=30" class="ToRepository">
-                <repositoryPath>memory://var/mail/relay-limit-exceeded/</repositoryPath>
+                <repositoryPath>blob://var/mail/relay-limit-exceeded/</repositoryPath>
             </mailet>
             <mailet match="All" class="ToProcessor">
                 <processor>transport</processor>
@@ -50,7 +50,7 @@
                 <onMailetException>ignore</onMailetException>
             </mailet>
             <mailet match="All" class="ToRepository">
-                <repositoryPath>memory://var/mail/error/</repositoryPath>
+                <repositoryPath>blob://var/mail/error/</repositoryPath>
                 <onMailetException>propagate</onMailetException>
             </mailet>
         </processor>
@@ -114,7 +114,7 @@
                 <attachment>none</attachment>
             </mailet>
             <mailet match="All" class="ToRepository">
-                <repositoryPath>memory://var/mail/address-error/</repositoryPath>
+                <repositoryPath>blob://var/mail/address-error/</repositoryPath>
             </mailet>
         </processor>
 
@@ -126,7 +126,7 @@
                 <attachment>none</attachment>
             </mailet>
             <mailet match="All" class="ToRepository">
-                <repositoryPath>memory://var/mail/relay-denied/</repositoryPath>
+                <repositoryPath>blob://var/mail/relay-denied/</repositoryPath>
                 <notice>Warning: You are sending an e-mail to a remote server. You must be authenticated to perform such an operation</notice>
             </mailet>
         </processor>
@@ -142,7 +142,7 @@
 
         <processor state="rrt-error">
             <mailet match="All" class="ToRepository">
-                <repositoryPath>memory://var/mail/rrt-error/</repositoryPath>
+                <repositoryPath>blob://var/mail/rrt-error/</repositoryPath>
                 <passThrough>true</passThrough>
             </mailet>
             <mailet match="IsSenderInRRTLoop" class="Null"/>

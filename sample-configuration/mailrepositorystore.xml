@@ -19,8 +19,13 @@
  -->
 
 <mailrepositorystore>
-    <defaultProtocol>memory</defaultProtocol>
+    <defaultProtocol>blob</defaultProtocol>
     <mailrepositories>
+        <mailrepository class="org.apache.james.mailrepository.blob.BlobMailRepository">
+            <protocols>
+                <protocol>blob</protocol>
+            </protocols>
+        </mailrepository>
         <mailrepository class="org.apache.james.mailrepository.memory.MemoryMailRepository">
             <protocols>
                 <protocol>memory</protocol>

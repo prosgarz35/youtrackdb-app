@@ -131,12 +131,13 @@ public class YouTrackDBAdminRoutes implements Routes {
                     return set;
                 });
 
+                java.util.Set<String> keepNames = YouTrackDBBlobStoreDAO.fileNamesToKeep(activeBlobIds);
                 long gracePeriodCutoff = System.currentTimeMillis() - java.time.Duration.ofHours(1).toMillis();
                 try (var stream = java.nio.file.Files.walk(blobsSourceDir.toPath())) {
                     stream.filter(java.nio.file.Files::isRegularFile)
                         .forEach(path -> {
                             String fileName = path.getFileName().toString();
-                            if (!fileName.contains(".tmp.") && !activeBlobIds.contains(fileName)) {
+                            if (!fileName.contains(".tmp.") && !keepNames.contains(fileName)) {
                                 try {
                                     long lastModified = java.nio.file.Files.getLastModifiedTime(path).toMillis();
                                     // Only delete if older than grace period to protect active/in-flight writes

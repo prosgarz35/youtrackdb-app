@@ -7,14 +7,15 @@ import java.util.Map;
 
 import jakarta.inject.Inject;
 
+import org.apache.james.rrt.api.RecipientRewriteTableException;
 import org.apache.james.rrt.lib.AbstractRecipientRewriteTable;
 import org.apache.james.rrt.lib.Mapping;
 import org.apache.james.rrt.lib.MappingSource;
 import org.apache.james.rrt.lib.Mappings;
 import org.apache.james.rrt.lib.MappingsImpl;
 
+import com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
 
 public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTable {
     private static final String CLASS_NAME = "JamesRRTMapping";
@@ -29,73 +30,66 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
     }
 
     @Override
-    public void addMapping(MappingSource source, Mapping mapping) {
+    public void addMapping(MappingSource source, Mapping mapping) throws RecipientRewriteTableException {
         try {
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                tx.addV(CLASS_NAME)
-                    .property(PROP_SOURCE, source.asString())
-                    .property(PROP_MAPPING, mapping.asString())
-                    .iterate();
-            });
+            YouTrackDBTransactions.executeStrictTx(g, tx -> tx.addV(CLASS_NAME)
+                .property(PROP_SOURCE, source.asString())
+                .property(PROP_MAPPING, mapping.asString())
+                .iterate());
         } catch (Exception e) {
-            if (YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)) {
+            if (YouTrackDBTransactions.hasCause(e, RecordDuplicatedException.class)) {
                 return; // already exists (idempotent add)
             }
-            throw new RuntimeException("Failed to add mapping: " + source.asString() + " -> " + mapping.asString(), e);
+            throw new RecipientRewriteTableException("Failed to add mapping: " + source.asString() + " -> " + mapping.asString(), e);
         }
     }
 
     @Override
-    public void removeMapping(MappingSource source, Mapping mapping) {
+    public void removeMapping(MappingSource source, Mapping mapping) throws RecipientRewriteTableException {
         try {
             YouTrackDBTransactions.executeStrictTx(g, tx ->
                 tx.command("DELETE VERTEX JamesRRTMapping WHERE source = :source AND mapping = :mapping",
                     "source", source.asString(), "mapping", mapping.asString()));
         } catch (Exception e) {
-            throw new RuntimeException("Failed to remove mapping: " + source.asString() + " -> " + mapping.asString(), e);
+            throw new RecipientRewriteTableException("Failed to remove mapping: " + source.asString() + " -> " + mapping.asString(), e);
         }
     }
 
     @Override
-    public Mappings getStoredMappings(MappingSource source) {
+    public Mappings getStoredMappings(MappingSource source) throws RecipientRewriteTableException {
         try {
-            return g.computeInTx(tx -> {
-                List<java.util.Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                    "SELECT mapping FROM JamesRRTMapping WHERE source = :src", "src", source.asString());
-                List<Mapping> list = new ArrayList<>(rows.size());
-                for (java.util.Map<String, Object> m : rows) {
-                    Object mappingObj = m.get(PROP_MAPPING);
-                    if (mappingObj != null) {
-                        list.add(Mapping.of(mappingObj.toString()));
-                    }
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT mapping FROM JamesRRTMapping WHERE source = :src", "src", source.asString());
+            List<Mapping> mappings = new ArrayList<>(rows.size());
+            for (Map<String, Object> row : rows) {
+                Object stored = row.get(PROP_MAPPING);
+                if (stored != null) {
+                    mappings.add(Mapping.of(stored.toString()));
                 }
-                return MappingsImpl.fromMappings(list.stream());
-            });
+            }
+            return MappingsImpl.fromMappings(mappings.stream());
         } catch (Exception e) {
-            throw new RuntimeException("Failed to get stored mappings for " + source.asString(), e);
+            throw new RecipientRewriteTableException("Failed to get stored mappings for " + source.asString(), e);
         }
     }
 
     @Override
-    public Map<MappingSource, Mappings> getAllMappings() {
+    public Map<MappingSource, Mappings> getAllMappings() throws RecipientRewriteTableException {
         try {
-            return g.computeInTx(tx -> {
-                Map<MappingSource, List<Mapping>> map = new HashMap<>();
-                List<java.util.Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, "SELECT source, mapping FROM JamesRRTMapping");
-                for (java.util.Map<String, Object> m : rows) {
-                    Object srcObj = m.get("source");
-                    Object mappingObj = m.get("mapping");
-                    if (srcObj != null && mappingObj != null) {
-                        MappingSource source = MappingSource.parse(srcObj.toString());
-                        map.computeIfAbsent(source, s -> new ArrayList<>()).add(Mapping.of(mappingObj.toString()));
-                    }
+            Map<MappingSource, List<Mapping>> grouped = new HashMap<>();
+            for (Map<String, Object> row : YouTrackDBTransactions.queryRows(g, "SELECT source, mapping FROM JamesRRTMapping")) {
+                Object storedSource = row.get(PROP_SOURCE);
+                Object storedMapping = row.get(PROP_MAPPING);
+                if (storedSource != null && storedMapping != null) {
+                    grouped.computeIfAbsent(MappingSource.parse(storedSource.toString()), s -> new ArrayList<>())
+                        .add(Mapping.of(storedMapping.toString()));
                 }
-                Map<MappingSource, Mappings> result = new HashMap<>();
-                map.forEach((k, v) -> result.put(k, MappingsImpl.fromMappings(v.stream())));
-                return result;
-            });
+            }
+            Map<MappingSource, Mappings> result = new HashMap<>();
+            grouped.forEach((source, mappings) -> result.put(source, MappingsImpl.fromMappings(mappings.stream())));
+            return result;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to get all mappings", e);
+            throw new RecipientRewriteTableException("Failed to get all mappings", e);
         }
     }
 }

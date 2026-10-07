@@ -2,6 +2,7 @@ package org.apache.james.youtrackdb;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.time.Clock;
@@ -42,11 +43,11 @@ import org.apache.mailet.Mail;
 import org.reactivestreams.Publisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.threeten.extra.Temporals;
 
 import com.github.fge.lambdas.Throwing;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
 import reactor.core.publisher.Flux;
@@ -55,11 +56,12 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * ACID Persistent MailQueue backed by YouTrackDB:
- * - Every enqueued mail is stored in YouTrackDB (under JamesQueueItem class) ensuring zero loss across crashes/restarts.
- * - In-memory DelayQueue provides ultra-low latency dequeue dispatch matching MemoryMailQueue speed.
- * - On deQueue completion, the record is atomically deleted from YouTrackDB.
- * - On server startup, any pending in-flight messages in YouTrackDB are loaded back into memory.
+ * Persistent MailQueue backed by YouTrackDB (at-least-once delivery):
+ * - Every enqueued mail is committed to YouTrackDB (JamesQueueItem vertices) before enQueue returns.
+ * - An in-memory DelayQueue dispatches mails, like MemoryMailQueue.
+ * - When processing completes, the record is deleted from YouTrackDB; a mail whose completion was not
+ *   recorded before a crash is delivered again after the restart.
+ * - On startup, the pending records are loaded back into memory.
  */
 public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMailQueueFactory.YouTrackDBMailQueue> {
     private static final Logger LOGGER = LoggerFactory.getLogger(YouTrackDBMailQueueFactory.class);
@@ -216,29 +218,49 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         public void enQueue(Mail mail, Duration delay) throws MailQueueException {
             ZonedDateTime nextDelivery = calculateNextDelivery(delay);
             try {
-                Mail cloned = cloneMail(mail);
-                byte[] serialized = serializeMail(cloned);
+                // The MIME message is written once; the in-memory copy and the persisted bytes come from it.
+                byte[] mime = mail.getMessage() == null ? null : toBytes(mail.getMessage());
+                Mail cloned = cloneMail(mail, mime);
+                byte[] serialized = serializeMail(cloned, mime);
 
-                // Persist into YouTrackDB transactionally (upsert semantics to safely handle RETRY / re-enqueues)
-                YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                    var existing = tx.V().hasLabel(CLASS_NAME)
-                        .has(PROP_QUEUE_NAME, name.asString())
-                        .has(PROP_MAIL_NAME, cloned.getName());
-                    if (existing.hasNext()) {
-                        existing.next().remove();
-                    }
-                    tx.addV(CLASS_NAME)
-                        .property(PROP_QUEUE_NAME, name.asString())
-                        .property(PROP_MAIL_NAME, cloned.getName())
-                        .property(PROP_NEXT_DELIVERY, nextDelivery.toInstant().toEpochMilli())
-                        .property(PROP_SERIALIZED_MAIL, serialized)
-                        .iterate();
-                });
+                persist(cloned.getName(), nextDelivery, serialized);
 
                 mailItems.put(new YouTrackDBMailQueueItem(cloned, this, clock, nextDelivery));
             } catch (Exception e) {
                 throw new MailQueueException("Error while enqueuing mail " + mail.getName() + " to YouTrackDB queue", e);
             }
+        }
+
+        /**
+         * A first enqueue is a plain insert (no lookup). Only a re-enqueue of an existing name (RETRY)
+         * pays for replacing the previous record, in a single transaction.
+         */
+        private void persist(String mailName, ZonedDateTime nextDelivery, byte[] serialized) {
+            try {
+                YouTrackDBTransactions.executeStrictTx(g, tx -> insertItem(tx, mailName, nextDelivery, serialized));
+            } catch (RuntimeException e) {
+                if (!YouTrackDBTransactions.hasCause(e, RecordDuplicatedException.class)) {
+                    throw e;
+                }
+                YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                    var existing = tx.V().hasLabel(CLASS_NAME)
+                        .has(PROP_QUEUE_NAME, name.asString())
+                        .has(PROP_MAIL_NAME, mailName);
+                    if (existing.hasNext()) {
+                        existing.next().remove();
+                    }
+                    insertItem(tx, mailName, nextDelivery, serialized);
+                });
+            }
+        }
+
+        private void insertItem(YTDBGraphTraversalSource tx, String mailName, ZonedDateTime nextDelivery, byte[] serialized) {
+            tx.addV(CLASS_NAME)
+                .property(PROP_QUEUE_NAME, name.asString())
+                .property(PROP_MAIL_NAME, mailName)
+                .property(PROP_NEXT_DELIVERY, nextDelivery.toInstant().toEpochMilli())
+                .property(PROP_SERIALIZED_MAIL, serialized)
+                .iterate();
         }
 
         @Override
@@ -271,29 +293,36 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             enQueue(mail, Duration.ZERO);
         }
 
-        private Mail cloneMail(Mail mail) throws MessagingException {
+        private static byte[] toBytes(MimeMessage message) throws IOException, MessagingException {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            message.writeTo(out);
+            return out.toByteArray();
+        }
+
+        private static MimeMessage parseMime(byte[] mime) throws MessagingException {
+            return new MimeMessage(Session.getInstance(new Properties()), new ByteArrayInputStream(mime));
+        }
+
+        private Mail cloneMail(Mail mail, byte[] mime) throws MessagingException {
             MailImpl mailImpl = MailImpl.duplicate(mail);
             mailImpl.setName(mail.getName());
             mailImpl.setState(mail.getState());
             mailImpl.addAllSpecificHeaderForRecipient(mail.getPerRecipientSpecificHeaders());
-            Optional.ofNullable(mail.getMessage())
-                .ifPresent(Throwing.consumer(message -> mailImpl.setMessage(new MimeMessage(message))));
+            if (mime != null) {
+                mailImpl.setMessage(parseMime(mime));
+            }
             return mailImpl;
         }
 
-        private byte[] serializeMail(Mail mail) throws Exception {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        /** Same layout as before: the Mail object, a presence flag, then the length-prefixed MIME bytes. */
+        private byte[] serializeMail(Mail mail, byte[] mime) throws IOException {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream(mime == null ? 1024 : mime.length + 1024);
             try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
                 oos.writeObject(mail);
-                if (mail.getMessage() != null) {
-                    oos.writeBoolean(true);
-                    ByteArrayOutputStream msgBaos = new ByteArrayOutputStream();
-                    mail.getMessage().writeTo(msgBaos);
-                    byte[] msgBytes = msgBaos.toByteArray();
-                    oos.writeInt(msgBytes.length);
-                    oos.write(msgBytes);
-                } else {
-                    oos.writeBoolean(false);
+                oos.writeBoolean(mime != null);
+                if (mime != null) {
+                    oos.writeInt(mime.length);
+                    oos.write(mime);
                 }
             }
             return baos.toByteArray();
@@ -311,14 +340,11 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 if (hasMessage) {
                     int len = ois.readInt();
                     if (len < 0 || len > MAX_MIME_PAYLOAD_SIZE) {
-                        throw new java.io.IOException("Corrupted or excessive serialized MIME message length: " + len);
+                        throw new IOException("Corrupted or excessive serialized MIME message length: " + len);
                     }
                     byte[] msgBytes = new byte[len];
                     ois.readFully(msgBytes);
-                    MimeMessage mimeMessage = new MimeMessage(
-                        Session.getInstance(new Properties()),
-                        new ByteArrayInputStream(msgBytes));
-                    mail.setMessage(mimeMessage);
+                    mail.setMessage(parseMime(msgBytes));
                 }
                 return mail;
             }
@@ -336,11 +362,33 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
         @Override
         public long flush() throws MailQueueException {
-            int count = 0;
-            for (YouTrackDBMailQueueItem item : mailItems) {
+            List<YouTrackDBMailQueueItem> snapshot = new ArrayList<>(mailItems);
+            if (snapshot.isEmpty()) {
+                return 0;
+            }
+            long now = clock.millis();
+            try {
+                // Database first: if it fails, the in-memory queue is left untouched.
+                YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                    for (YouTrackDBMailQueueItem item : snapshot) {
+                        var traversal = tx.V().hasLabel(CLASS_NAME)
+                            .has(PROP_QUEUE_NAME, name.asString())
+                            .has(PROP_MAIL_NAME, item.getMail().getName());
+                        if (traversal.hasNext()) {
+                            traversal.next().property(PROP_NEXT_DELIVERY, now);
+                        }
+                    }
+                });
+            } catch (RuntimeException e) {
+                throw new MailQueueException("Error while flushing queue " + name.asString(), e);
+            }
+            ZonedDateTime delivery = Instant.ofEpochMilli(now).atZone(ZoneId.of("UTC"));
+            long count = 0;
+            for (YouTrackDBMailQueueItem item : snapshot) {
+                // An item taken by a consumer meanwhile is no longer in the queue and is skipped.
                 if (mailItems.remove(item)) {
-                    enQueue(item.getMail());
-                    count += 1;
+                    mailItems.put(new YouTrackDBMailQueueItem(item.getMail(), this, clock, delivery));
+                    count++;
                 }
             }
             return count;
@@ -476,12 +524,22 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         private final YouTrackDBMailQueue queue;
         private final Clock clock;
         private final ZonedDateTime delivery;
+        private final long deliveryMillis;
 
         public YouTrackDBMailQueueItem(Mail mail, YouTrackDBMailQueue queue, Clock clock, ZonedDateTime delivery) {
             this.mail = mail;
             this.queue = queue;
             this.clock = clock;
             this.delivery = delivery;
+            this.deliveryMillis = toEpochMillisSaturated(delivery);
+        }
+
+        private static long toEpochMillisSaturated(ZonedDateTime time) {
+            try {
+                return time.toInstant().toEpochMilli();
+            } catch (ArithmeticException e) {
+                return Long.MAX_VALUE;
+            }
         }
 
         @Override
@@ -496,16 +554,15 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
         @Override
         public long getDelay(TimeUnit unit) {
-            try {
-                return ZonedDateTime.now(clock).until(delivery, Temporals.chronoUnit(unit));
-            } catch (ArithmeticException e) {
-                return Long.MAX_VALUE;
-            }
+            return unit.convert(deliveryMillis - clock.millis(), TimeUnit.MILLISECONDS);
         }
 
         @Override
-        public int compareTo(Delayed o) {
-            return Long.compare(getDelay(TimeUnit.MILLISECONDS), o.getDelay(TimeUnit.MILLISECONDS));
+        public int compareTo(Delayed other) {
+            if (other instanceof YouTrackDBMailQueueItem item) {
+                return Long.compare(deliveryMillis, item.deliveryMillis);
+            }
+            return Long.compare(getDelay(TimeUnit.MILLISECONDS), other.getDelay(TimeUnit.MILLISECONDS));
         }
     }
 }
