@@ -220,8 +220,14 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 Mail cloned = cloneMail(mail);
                 byte[] serialized = serializeMail(cloned);
 
-                // Persist into YouTrackDB transactionally
+                // Persist into YouTrackDB transactionally (upsert semantics to safely handle RETRY / re-enqueues)
                 g.executeInTx(tx -> {
+                    var existing = tx.V().hasLabel(CLASS_NAME)
+                        .has(PROP_QUEUE_NAME, name.asString())
+                        .has(PROP_MAIL_NAME, cloned.getName());
+                    if (existing.hasNext()) {
+                        existing.next().remove();
+                    }
                     tx.addV(CLASS_NAME)
                         .property(PROP_QUEUE_NAME, name.asString())
                         .property(PROP_MAIL_NAME, cloned.getName())
@@ -393,6 +399,9 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 } catch (Exception e) {
                     LOGGER.error("Failed to retry mail item {}", item.getMail().getName(), e);
                 }
+            } else {
+                // Any other termination status (e.g. discard/error) -> purge from database so it doesn't resurrect on restart
+                Schedulers.boundedElastic().schedule(() -> deleteFromDatabase(item.getMail().getName()));
             }
         }
 
@@ -469,7 +478,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
         @Override
         public int compareTo(Delayed o) {
-            return Math.toIntExact(getDelay(TimeUnit.MILLISECONDS) - o.getDelay(TimeUnit.MILLISECONDS));
+            return Long.compare(getDelay(TimeUnit.MILLISECONDS), o.getDelay(TimeUnit.MILLISECONDS));
         }
     }
 }

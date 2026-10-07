@@ -157,13 +157,19 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     if (!file.exists()) {
                         throw new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath());
                     }
+                    InputStream in = null;
                     try {
-                        InputStream in = new FileInputStream(file);
+                        in = new FileInputStream(file);
                         if (STORAGE_FILE_ZSTD.equals(storageType)) {
                             return InputStreamBlob.of(new com.github.luben.zstd.ZstdInputStream(in));
                         }
                         return InputStreamBlob.of(in);
                     } catch (IOException e) {
+                        if (in != null) {
+                            try {
+                                in.close();
+                            } catch (IOException ignored) {}
+                        }
                         throw new ObjectStoreIOException("Error opening blob file: " + file.getAbsolutePath(), e);
                     }
                 } else if (STORAGE_INLINE_ZSTD.equals(storageType)) {
@@ -411,9 +417,8 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         return Mono.<Void>fromRunnable(() -> {
             File bucketDir = new File(blobsDirectory, bucketName.asString());
             if (bucketDir.exists()) {
-                try {
-                    Files.walk(bucketDir.toPath())
-                        .map(java.nio.file.Path::toFile)
+                try (var stream = Files.walk(bucketDir.toPath())) {
+                    stream.map(java.nio.file.Path::toFile)
                         .sorted((o1, o2) -> -o1.compareTo(o2))
                         .forEach(File::delete);
                 } catch (Exception ignored) {

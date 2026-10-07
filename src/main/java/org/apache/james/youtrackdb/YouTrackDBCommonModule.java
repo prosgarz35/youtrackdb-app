@@ -38,6 +38,8 @@ public class YouTrackDBCommonModule extends AbstractModule {
         @Inject
         public YouTrackDBHolder(ConfigurationProvider configurationProvider, FileSystem fileSystem) throws FileNotFoundException {
             String path = DEFAULT_PATH;
+            String dbUser = "admin";
+            String dbPass = "admin";
             Configuration ytdbConfig = new org.apache.commons.configuration2.BaseConfiguration();
             // High-throughput storage defaults for mail workloads (strict ACID, zero loss)
             ytdbConfig.setProperty("youtrackdb.storage.diskCache.bufferSize", 2048);
@@ -55,6 +57,8 @@ public class YouTrackDBCommonModule extends AbstractModule {
             try {
                 Configuration conf = configurationProvider.getConfiguration("youtrackdb");
                 path = conf.getString("youtrackdb.path", DEFAULT_PATH);
+                dbUser = conf.getString("youtrackdb.user", "admin");
+                dbPass = conf.getString("youtrackdb.password", "admin");
                 // Merge overrides from configuration file
                 var keys = conf.getKeys();
                 while (keys.hasNext()) {
@@ -84,8 +88,8 @@ public class YouTrackDBCommonModule extends AbstractModule {
             this.youTrackDB = YourTracks.instance(dir.getAbsolutePath(), ytdbConfig);
             
             // Create database if absent
-            this.youTrackDB.createIfNotExists(DB_NAME, DatabaseType.DISK, ytdbConfig, DB_USER, DB_PASS, "admin");
-            this.traversalSource = youTrackDB.openTraversal(DB_NAME, DB_USER, DB_PASS);
+            this.youTrackDB.createIfNotExists(DB_NAME, DatabaseType.DISK, ytdbConfig, dbUser, dbPass, "admin");
+            this.traversalSource = youTrackDB.openTraversal(DB_NAME, dbUser, dbPass);
 
             initSchema();
         }
@@ -99,19 +103,19 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesUser.username IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesUser.password IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesUser.algorithm IF NOT EXISTS STRING");
-                    g.command("CREATE INDEX IF NOT EXISTS JamesUser.username UNIQUE");
+                    g.command("CREATE INDEX JamesUser.username IF NOT EXISTS UNIQUE");
 
                     // Class for Domains
                     g.command("CREATE CLASS JamesDomain IF NOT EXISTS EXTENDS V");
                     g.command("CREATE PROPERTY JamesDomain.domain IF NOT EXISTS STRING");
-                    g.command("CREATE INDEX IF NOT EXISTS JamesDomain.domain UNIQUE");
+                    g.command("CREATE INDEX JamesDomain.domain IF NOT EXISTS UNIQUE");
 
                     // Class for RRT Mappings
                     g.command("CREATE CLASS JamesRRTMapping IF NOT EXISTS EXTENDS V");
                     g.command("CREATE PROPERTY JamesRRTMapping.source IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesRRTMapping.mapping IF NOT EXISTS STRING");
-                    g.command("CREATE INDEX IF NOT EXISTS JamesRRTMapping.source NOTUNIQUE");
-                    g.command("CREATE INDEX IF NOT EXISTS JamesRRTMapping.sourceAndMapping UNIQUE source, mapping");
+                    g.command("CREATE INDEX JamesRRTMapping.source IF NOT EXISTS NOTUNIQUE");
+                    g.command("CREATE INDEX JamesRRTMapping.sourceAndMapping IF NOT EXISTS ON JamesRRTMapping (source, mapping) UNIQUE");
 
                     // Class for Blobs
                     g.command("CREATE CLASS JamesBlob IF NOT EXISTS EXTENDS V");
@@ -120,8 +124,8 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesBlob.blobId IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesBlob.storageType IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesBlob.payload IF NOT EXISTS BINARY");
-                    g.command("CREATE INDEX IF NOT EXISTS JamesBlob.bucketAndBlobId UNIQUE");
-                    g.command("CREATE INDEX IF NOT EXISTS JamesBlob.bucket NOTUNIQUE");
+                    g.command("CREATE INDEX JamesBlob.bucketAndBlobId IF NOT EXISTS UNIQUE");
+                    g.command("CREATE INDEX JamesBlob.bucket IF NOT EXISTS NOTUNIQUE");
 
                     // Class for MailQueue Items
                     g.command("CREATE CLASS JamesQueueItem IF NOT EXISTS EXTENDS V");
@@ -129,12 +133,12 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesQueueItem.mailName IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesQueueItem.nextDelivery IF NOT EXISTS LONG");
                     g.command("CREATE PROPERTY JamesQueueItem.serializedMail IF NOT EXISTS BINARY");
-                    g.command("CREATE INDEX IF NOT EXISTS JamesQueueItem.queueAndMail UNIQUE queueName, mailName");
-                    g.command("CREATE INDEX IF NOT EXISTS JamesQueueItem.queueName NOTUNIQUE");
-                    g.command("CREATE INDEX IF NOT EXISTS JamesQueueItem.queueAndDelivery NOTUNIQUE queueName, nextDelivery");
+                    g.command("CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) UNIQUE");
+                    g.command("CREATE INDEX JamesQueueItem.queueAndDelivery IF NOT EXISTS ON JamesQueueItem (queueName, nextDelivery) NOTUNIQUE");
                 });
             } catch (Exception e) {
-                LOGGER.warn("Schema initialization noticed: {}", e.getMessage(), e);
+                LOGGER.error("Schema initialization failed in YouTrackDB: {}", e.getMessage(), e);
+                throw new RuntimeException("Fatal error: failed to initialize YouTrackDB schema", e);
             }
         }
 

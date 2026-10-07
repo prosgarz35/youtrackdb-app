@@ -23,6 +23,9 @@ It provides a modern appliance architecture: **zero external database dependenci
 
 #### 1. In-VM Zero-Copy Architecture & Direct Memory Engine
 * **Single Process / Single Directory**: The entire mail stack (SMTP, IMAP, Spooler, Queues, Mailbox, Search, and Storage) runs inside a single JVM process.
+* **Persistent vs In-Memory Subsystems (Appliance Model)**:
+  * **Strictly Persisted in YouTrackDB (ACID / WAL)**: User accounts & credentials (`JamesUser`), Domains (`JamesDomain`), Virtual Aliases & Rewrites (`JamesRRTMapping`), Spooler Queue items (`JamesQueueItem`), and Content-Addressed Blob Storage (`JamesBlob` + Tier 3 Zstd file tree). All survive full server restarts with zero data loss.
+  * **In-Memory Mailbox & Lucene Index**: IMAP message boxes and message flags utilize `InMemoryMailboxManager` paired with Lucene search indexing for ultra-low latency memory access.
 * **Direct Memory Pre-allocation**: Off-heap buffer caches with `memory.directMemory.preallocate = true` avoid on-the-fly JVM pause stalls and eliminate garbage collector pressure.
 * **No Network IPC Overhead**: Completely eliminates serialization, network socket hops, TCP connection pool starvation, and context switching found in client-server architectures like PostgreSQL, MySQL, or Cassandra.
 * **Zero DBA Footprint**: No background vacuuming stalls, no complex replication clustering, and no external schema migration scripts.
@@ -232,6 +235,9 @@ youtrackdb.statement.cacheSize=500
 
 #### 1. In-VM Архитектура с прямым доступом к памяти (Zero-Copy & Direct Memory)
 * **Единый процесс и каталог**: Весь почтовый стек (SMTP, IMAP, очереди, спулер, почтовые ящики, поиск и хранилище) выполняется внутри одного JVM-процесса.
+* **Персистентные и оперативные подсистемы (Архитектура Appliance)**:
+  * **Гарантированное сохранение в YouTrackDB (ACID / WAL)**: Учётные записи пользователей (`JamesUser`), обслуживаемые домены (`JamesDomain`), виртуальные пересылки и алиасы (`JamesRRTMapping`), очередь сообщений спулера (`JamesQueueItem`) и контентно-адресуемое хранилище блобов (`JamesBlob` + Tier 3 на диске со сжатием Zstd). Все эти данные надёжно переживают перезапуски и аварийные отключения без потери информации.
+  * **Оперативная память почтовых ящиков и индекс Lucene**: Папки IMAP (`INBOX`, `Sent` и др.) и системные флаги сообщений используют высокоскоростной `InMemoryMailboxManager` в сочетании с полнотекстовым индексом Lucene для минимальных задержек при чтении.
 * **Предварительное выделение памяти (Off-Heap)**: Параметр `memory.directMemory.preallocate = true` исключает динамические паузы выделения памяти ОС и снимает нагрузку со сборщика мусора (GC).
 * **Отсутствие сетевых накладных расходов (IPC)**: Полностью исключены задержки сериализации, TCP-соединений, пулов сокетов и переключений контекста, характерные для клиент-серверных СУБД (PostgreSQL, MySQL, Cassandra).
 * **Нулевые затраты на эксплуатацию (Zero DBA)**: Отсутствуют зависания от фонового `VACUUM`, сложные кластерные репликации и внешние миграции схем.

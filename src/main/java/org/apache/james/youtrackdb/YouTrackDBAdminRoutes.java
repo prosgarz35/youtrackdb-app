@@ -61,13 +61,18 @@ public class YouTrackDBAdminRoutes implements Routes {
 
     private YouTrackDBBackupTask createBackupTask(Request request) throws FileNotFoundException {
         String backupDirParam = request.queryParams("backupDir");
+        File baseDir = fileSystem.getBasedir();
         File backupDir;
         if (backupDirParam != null && !backupDirParam.isBlank()) {
-            backupDir = new File(backupDirParam);
+            if (backupDirParam.contains("..")) {
+                throw new IllegalArgumentException("Path traversal not allowed in backupDir");
+            }
+            File requested = new File(backupDirParam);
+            backupDir = requested.isAbsolute() ? requested : new File(baseDir, backupDirParam);
         } else {
-            backupDir = new File(fileSystem.getBasedir(), "var/backups");
+            backupDir = new File(baseDir, "var/backups");
         }
-        File blobsSourceDir = new File(fileSystem.getBasedir(), "var/blobs");
+        File blobsSourceDir = new File(baseDir, "var/blobs");
         return new YouTrackDBBackupTask(traversalSource, backupDir, blobsSourceDir);
     }
 
@@ -125,14 +130,19 @@ public class YouTrackDBAdminRoutes implements Routes {
                     return set;
                 });
 
+                long gracePeriodCutoff = System.currentTimeMillis() - java.time.Duration.ofHours(1).toMillis();
                 try (var stream = java.nio.file.Files.walk(blobsSourceDir.toPath())) {
                     stream.filter(java.nio.file.Files::isRegularFile)
                         .forEach(path -> {
                             String fileName = path.getFileName().toString();
                             if (!fileName.contains(".tmp.") && !activeBlobIds.contains(fileName)) {
                                 try {
-                                    java.nio.file.Files.deleteIfExists(path);
-                                    deleted[0]++;
+                                    long lastModified = java.nio.file.Files.getLastModifiedTime(path).toMillis();
+                                    // Only delete if older than grace period to protect active/in-flight writes
+                                    if (lastModified < gracePeriodCutoff) {
+                                        java.nio.file.Files.deleteIfExists(path);
+                                        deleted[0]++;
+                                    }
                                 } catch (Exception ignored) {
                                 }
                             }
