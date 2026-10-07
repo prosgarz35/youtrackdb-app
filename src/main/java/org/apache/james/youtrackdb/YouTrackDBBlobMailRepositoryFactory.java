@@ -107,10 +107,19 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
             return storedKey;
         }
 
+        private BlobId toMetadataBlobId(MailKey key) {
+            String keyStr = key.asString();
+            String prefix = metadataPrefix();
+            if (keyStr.startsWith(prefix)) {
+                return new PlainBlobId(keyStr);
+            }
+            return new PlainBlobId(prefix + keyStr);
+        }
+
         private List<BlobId> findMimePartsForMailKey(MailKey key) {
             List<BlobId> parts = new ArrayList<>();
             try {
-                var metadata = Mono.from(blobStoreDAO.readBytes(defaultBucketName, new PlainBlobId(metadataPrefix() + key.asString()))).block();
+                var metadata = Mono.from(blobStoreDAO.readBytes(defaultBucketName, toMetadataBlobId(key))).block();
                 if (metadata != null && metadata.payload() != null && metadata.payload().length > 0) {
                     JsonNode json = JSON.readTree(metadata.payload());
                     for (String field : List.of("headerBlobId", "bodyBlobId")) {
@@ -120,7 +129,7 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
                     }
                 }
             } catch (ObjectNotFoundException e) {
-                // First time this key is stored: nothing to clean up.
+                // First time this key is stored or already removed: nothing to clean up.
             } catch (Exception e) {
                 LOGGER.warn("Cannot read the previous parts of mail {}: they will stay in the blob store", key.asString(), e);
             }
@@ -161,12 +170,18 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
 
         @Override
         public void remove(MailKey key) throws MessagingException {
+            List<BlobId> mimeParts = findMimePartsForMailKey(key);
             delegate.remove(key);
+            if (!mimeParts.isEmpty()) {
+                cleanOldMimeParts(mimeParts);
+            }
         }
 
         @Override
         public void remove(Collection<MailKey> keys) throws MessagingException {
-            delegate.remove(keys);
+            for (MailKey key : keys) {
+                remove(key);
+            }
         }
 
         @Override
@@ -177,9 +192,9 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
         @Override
         public void removeAll(Consumer<MailKey> progressCallback) throws MessagingException {
             List<MailKey> keys = new ArrayList<>();
-            delegate.list().forEachRemaining(keys::add);
+            list().forEachRemaining(keys::add);
             for (MailKey key : keys) {
-                delegate.remove(key);
+                remove(key);
                 progressCallback.accept(key);
             }
         }
