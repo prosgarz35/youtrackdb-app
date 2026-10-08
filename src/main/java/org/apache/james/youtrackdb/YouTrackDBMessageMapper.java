@@ -71,19 +71,24 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             params.add("mbx");
             params.add(mailboxId);
 
+            boolean metadataOnly = (type == FetchType.METADATA);
+            String projection = metadataOnly
+                ? "mailboxId, messageId, uid, modSeq, internalDate, size, bodyStartOctet, flags, userFlags"
+                : "*";
+
             switch (range.getType()) {
                 case ONE:
-                    query = "SELECT FROM JamesMailboxMessage WHERE mailboxId = :mbx AND uid = :uid";
+                    query = "SELECT " + projection + " FROM JamesMailboxMessage WHERE mailboxId = :mbx AND uid = :uid";
                     params.add("uid");
                     params.add(range.getUidFrom().asLong());
                     break;
                 case FROM:
-                    query = "SELECT FROM JamesMailboxMessage WHERE mailboxId = :mbx AND uid >= :from ORDER BY uid ASC";
+                    query = "SELECT " + projection + " FROM JamesMailboxMessage WHERE mailboxId = :mbx AND uid >= :from ORDER BY uid ASC";
                     params.add("from");
                     params.add(range.getUidFrom().asLong());
                     break;
                 case RANGE:
-                    query = "SELECT FROM JamesMailboxMessage WHERE mailboxId = :mbx AND uid >= :from AND uid <= :to ORDER BY uid ASC";
+                    query = "SELECT " + projection + " FROM JamesMailboxMessage WHERE mailboxId = :mbx AND uid >= :from AND uid <= :to ORDER BY uid ASC";
                     params.add("from");
                     params.add(range.getUidFrom().asLong());
                     params.add("to");
@@ -91,7 +96,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                     break;
                 case ALL:
                 default:
-                    query = "SELECT FROM JamesMailboxMessage WHERE mailboxId = :mbx ORDER BY uid ASC";
+                    query = "SELECT " + projection + " FROM JamesMailboxMessage WHERE mailboxId = :mbx ORDER BY uid ASC";
                     break;
             }
 
