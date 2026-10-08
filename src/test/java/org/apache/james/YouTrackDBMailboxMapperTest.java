@@ -65,6 +65,15 @@ public class YouTrackDBMailboxMapperTest {
             tx.command("CREATE PROPERTY JamesSubscription.user IF NOT EXISTS STRING");
             tx.command("CREATE PROPERTY JamesSubscription.mailbox IF NOT EXISTS STRING");
             tx.command("CREATE INDEX JamesSubscription.userAndMailbox IF NOT EXISTS ON JamesSubscription (user, mailbox) UNIQUE");
+
+            tx.command("CREATE CLASS JamesMailboxAnnotation IF NOT EXISTS EXTENDS V");
+            tx.command("CREATE PROPERTY JamesMailboxAnnotation.mailboxId IF NOT EXISTS STRING");
+            tx.command("CREATE PROPERTY JamesMailboxAnnotation.key IF NOT EXISTS STRING");
+            tx.command("CREATE PROPERTY JamesMailboxAnnotation.value IF NOT EXISTS STRING");
+
+            tx.command("CREATE CLASS JamesMailboxMessage IF NOT EXISTS EXTENDS V");
+            tx.command("CREATE PROPERTY JamesMailboxMessage.mailboxId IF NOT EXISTS STRING");
+            tx.command("CREATE PROPERTY JamesMailboxMessage.uid IF NOT EXISTS LONG");
         });
 
         mailboxMapper = new YouTrackDBMailboxMapper(g);
@@ -203,5 +212,44 @@ public class YouTrackDBMailboxMapperTest {
         List<Subscription> afterDelete = subscriptionMapper.findSubscriptionsForUser(user);
         assertThat(afterDelete).extracting(Subscription::getMailbox)
             .containsExactly("Sent");
+    }
+
+    @Test
+    void deleteShouldCascadeRemoveAnnotationsAndMessages() throws Exception {
+        MailboxPath path = MailboxPath.forUser(Username.of("alice"), "Trash");
+        Mailbox created = mailboxMapper.create(path, UidValidity.of(101L)).block();
+        String mId = created.getMailboxId().serialize();
+
+        // Seed an annotation and a message for this mailbox
+        YouTrackDBTransactions.executeStrictTx(g, tx -> {
+            tx.addV("JamesMailboxAnnotation")
+                .property("mailboxId", mId)
+                .property("key", "/shared/comment")
+                .property("value", "sample-annotation")
+                .iterate();
+
+            tx.addV("JamesMailboxMessage")
+                .property("mailboxId", mId)
+                .property("uid", 1L)
+                .iterate();
+        });
+
+        // Verify they exist prior to delete
+        long annotBefore = g.computeInTx(tx -> tx.V().hasLabel("JamesMailboxAnnotation").has("mailboxId", mId).count().next());
+        long msgsBefore = g.computeInTx(tx -> tx.V().hasLabel("JamesMailboxMessage").has("mailboxId", mId).count().next());
+        assertThat(annotBefore).isEqualTo(1L);
+        assertThat(msgsBefore).isEqualTo(1L);
+
+        // Delete mailbox
+        mailboxMapper.delete(created).block();
+
+        // Verify mailbox, annotations, and messages are completely removed
+        long mboxAfter = g.computeInTx(tx -> tx.V().hasLabel("JamesMailbox").has("mailboxId", mId).count().next());
+        long annotAfter = g.computeInTx(tx -> tx.V().hasLabel("JamesMailboxAnnotation").has("mailboxId", mId).count().next());
+        long msgsAfter = g.computeInTx(tx -> tx.V().hasLabel("JamesMailboxMessage").has("mailboxId", mId).count().next());
+
+        assertThat(mboxAfter).isZero();
+        assertThat(annotAfter).isZero();
+        assertThat(msgsAfter).isZero();
     }
 }

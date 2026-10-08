@@ -162,4 +162,35 @@ class YouTrackDBAnnotationMapperTest {
         annotationMapper.insertAnnotation(mailboxId, PRIVATE_ANNOTATION);
         assertThat(annotationMapper.exist(mailboxId, PRIVATE_ANNOTATION)).isTrue();
     }
+
+    @Test
+    void concurrentInsertsShouldResolveWithoutException() throws Exception {
+        int threads = 4;
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(threads);
+        java.util.concurrent.atomic.AtomicInteger errorCount = new java.util.concurrent.atomic.AtomicInteger();
+
+        for (int i = 0; i < threads; i++) {
+            final int idx = i;
+            executor.submit(() -> {
+                try {
+                    annotationMapper.insertAnnotation(mailboxId,
+                        MailboxAnnotation.newInstance(PRIVATE_KEY, "val-" + idx));
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    errorCount.incrementAndGet();
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await(10, java.util.concurrent.TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertThat(errorCount.get()).isZero();
+        assertThat(annotationMapper.getAllAnnotations(mailboxId)).hasSize(1);
+        assertThat(annotationMapper.getAllAnnotations(mailboxId).get(0).getValue().get())
+            .startsWith("val-");
+    }
 }

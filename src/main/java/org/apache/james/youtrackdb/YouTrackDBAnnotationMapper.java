@@ -95,25 +95,9 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
         String key = mailboxAnnotation.getKey().asString();
         String val = mailboxAnnotation.getValue().orElse("");
 
-        try {
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                var existing = tx.V().hasLabel(CLASS)
-                    .has(PROP_MAILBOX_ID, mId)
-                    .has(PROP_KEY, key)
-                    .tryNext();
-                if (existing.isPresent()) {
-                    existing.get().property(PROP_VALUE, val);
-                } else {
-                    tx.addV(CLASS)
-                        .property(PROP_MAILBOX_ID, mId)
-                        .property(PROP_KEY, key)
-                        .property(PROP_VALUE, val)
-                        .iterate();
-                }
-            });
-        } catch (Exception e) {
-            if (YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)) {
-                // Concurrent insert created the vertex - update value (last-write-wins)
+        int maxRetries = 5;
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+            try {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     var existing = tx.V().hasLabel(CLASS)
                         .has(PROP_MAILBOX_ID, mId)
@@ -121,11 +105,29 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
                         .tryNext();
                     if (existing.isPresent()) {
                         existing.get().property(PROP_VALUE, val);
+                    } else {
+                        tx.addV(CLASS)
+                            .property(PROP_MAILBOX_ID, mId)
+                            .property(PROP_KEY, key)
+                            .property(PROP_VALUE, val)
+                            .iterate();
                     }
                 });
                 return;
+            } catch (Exception e) {
+                boolean isConflict = YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)
+                    || YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException.class);
+                if (isConflict && attempt < maxRetries - 1) {
+                    try {
+                        Thread.sleep(10L * (attempt + 1));
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(ie);
+                    }
+                    continue;
+                }
+                throw e;
             }
-            throw e;
         }
     }
 
