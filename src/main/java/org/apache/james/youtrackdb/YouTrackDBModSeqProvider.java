@@ -62,23 +62,24 @@ public class YouTrackDBModSeqProvider implements ModSeqProvider {
                 if (e instanceof MailboxNotFoundException) {
                     throw (MailboxNotFoundException) e;
                 }
-                if (attempt == maxRetries) {
+                boolean isRetryable = YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.internal.common.concur.NeedRetryException.class);
+                if (!isRetryable || attempt == maxRetries) {
                     if (e instanceof MailboxException) {
                         throw (MailboxException) e;
                     }
                     throw new MailboxException("Failed to allocate next MODSEQ for mailbox " + mailboxId.serialize(), e);
                 }
-                    try {
-                        long sleepMs = 5L * attempt + java.util.concurrent.ThreadLocalRandom.current().nextInt(15);
-                        Thread.sleep(sleepMs);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new MailboxException("Interrupted while allocating MODSEQ", ie);
-                    }
+                try {
+                    long sleepMs = 5L * attempt + java.util.concurrent.ThreadLocalRandom.current().nextInt(15);
+                    Thread.sleep(sleepMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new MailboxException("Interrupted while allocating MODSEQ", ie);
                 }
             }
-            throw new MailboxException("Failed to allocate next MODSEQ after retries for mailbox " + mailboxId.serialize());
         }
+        throw new MailboxException("Failed to allocate next MODSEQ after retries for mailbox " + mailboxId.serialize());
+    }
     }
 
     @Override

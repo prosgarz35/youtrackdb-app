@@ -188,4 +188,51 @@ public class YouTrackDBCountersTest {
         // Verify lastUid equals totalAllocations
         assertThat(uidProvider.lastUid(mailbox)).contains(MessageUid.of(totalAllocations));
     }
+
+    @Test
+    void concurrentModSeqAllocationShouldProduceUniqueMonotonicModSeqs() throws Exception {
+        Mailbox mailbox = mailboxMapper.create(MailboxPath.forUser(Username.of("alice"), "ConcurrentModSeqBox"), UidValidity.of(300L)).block();
+
+        int threadCount = 8;
+        int allocationsPerThread = 25;
+        int totalAllocations = threadCount * allocationsPerThread;
+
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(threadCount);
+        ConcurrentLinkedQueue<ModSeq> allocatedModSeqs = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<Throwable> errors = new ConcurrentLinkedQueue<>();
+
+        for (int i = 0; i < threadCount; i++) {
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    for (int j = 0; j < allocationsPerThread; j++) {
+                        allocatedModSeqs.add(modSeqProvider.nextModSeq(mailbox));
+                    }
+                } catch (Throwable t) {
+                    errors.add(t);
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+
+        startLatch.countDown();
+        boolean completed = doneLatch.await(30, TimeUnit.SECONDS);
+        executor.shutdown();
+        assertThat(completed).as("Threads should complete within 30 seconds").isTrue();
+
+        if (!errors.isEmpty()) {
+            errors.peek().printStackTrace();
+        }
+        assertThat(errors).isEmpty();
+        assertThat(allocatedModSeqs).hasSize(totalAllocations);
+        java.util.Set<Long> uniqueLongs = allocatedModSeqs.stream()
+            .map(ModSeq::asLong)
+            .collect(java.util.stream.Collectors.toSet());
+        assertThat(uniqueLongs).hasSize(totalAllocations);
+
+        assertThat(modSeqProvider.highestModSeq(mailbox)).isEqualTo(ModSeq.of(totalAllocations));
+    }
 }

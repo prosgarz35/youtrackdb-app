@@ -100,15 +100,21 @@ public class YouTrackDBMailboxServerRestartTest {
             // RFC 3501: Verify UIDVALIDITY is unchanged after restart
             String statusAfter = imapClient2.sendCommand("STATUS INBOX (UIDVALIDITY UIDNEXT)");
             // Extract UIDVALIDITY value
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile("UIDVALIDITY\\s+(\\d+)");
-            java.util.regex.Matcher mBefore = p.matcher(statusBefore);
-            java.util.regex.Matcher mAfter = p.matcher(statusAfter);
+            java.util.regex.Pattern pValidity = java.util.regex.Pattern.compile("UIDVALIDITY\\s+(\\d+)");
+            java.util.regex.Matcher mBefore = pValidity.matcher(statusBefore);
+            java.util.regex.Matcher mAfter = pValidity.matcher(statusAfter);
             assertThat(mBefore.find()).isTrue();
             assertThat(mAfter.find()).isTrue();
             assertThat(mAfter.group(1)).isEqualTo(mBefore.group(1));
 
-            // Verify flags survived restart
-            String fetchFlags = imapClient2.sendCommand("FETCH 1 (FLAGS)");
+            // Verify UIDNEXT before delivering 2nd message is 2
+            java.util.regex.Pattern pNext = java.util.regex.Pattern.compile("UIDNEXT\\s+(\\d+)");
+            java.util.regex.Matcher mNextAfter = pNext.matcher(statusAfter);
+            assertThat(mNextAfter.find()).isTrue();
+            assertThat(mNextAfter.group(1)).isEqualTo("2");
+
+            // Verify flags survived restart using UID FETCH (RFC 3501 UID-based check)
+            String fetchFlags = imapClient2.sendCommand("UID FETCH 1 (FLAGS)");
             assertThat(fetchFlags).contains("\\Seen");
             assertThat(fetchFlags).contains("$CustomFlag");
 
@@ -127,9 +133,15 @@ public class YouTrackDBMailboxServerRestartTest {
                 return imapClient2.getMessageCount(TestIMAPClient.INBOX) >= 2;
             });
 
+            // Exact regex matching for (UID 1) and (UID 2)
             String fetchUids = imapClient2.sendCommand("FETCH 1:2 (UID)");
-            assertThat(fetchUids).contains("UID 1");
-            assertThat(fetchUids).contains("UID 2");
+            assertThat(fetchUids).matches(java.util.regex.Pattern.compile("(?s).*\\bUID\\s+1\\b.*\\bUID\\s+2\\b.*"));
+
+            // Verify UIDNEXT after 2nd message is now 3
+            String statusAfterSecond = imapClient2.sendCommand("STATUS INBOX (UIDNEXT)");
+            java.util.regex.Matcher mNextSecond = pNext.matcher(statusAfterSecond);
+            assertThat(mNextSecond.find()).isTrue();
+            assertThat(mNextSecond.group(1)).isEqualTo("3");
 
         } finally {
             server2.stop();

@@ -63,23 +63,24 @@ public class YouTrackDBUidProvider implements UidProvider {
                 if (e instanceof MailboxNotFoundException) {
                     throw (MailboxNotFoundException) e;
                 }
-                if (attempt == maxRetries) {
+                boolean isRetryable = YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.internal.common.concur.NeedRetryException.class);
+                if (!isRetryable || attempt == maxRetries) {
                     if (e instanceof MailboxException) {
                         throw (MailboxException) e;
                     }
                     throw new MailboxException("Failed to allocate next UID for mailbox " + mailboxId.serialize(), e);
                 }
-                    try {
-                        long sleepMs = 5L * attempt + java.util.concurrent.ThreadLocalRandom.current().nextInt(15);
-                        Thread.sleep(sleepMs);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new MailboxException("Interrupted while allocating UID", ie);
-                    }
+                try {
+                    long sleepMs = 5L * attempt + java.util.concurrent.ThreadLocalRandom.current().nextInt(15);
+                    Thread.sleep(sleepMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new MailboxException("Interrupted while allocating UID", ie);
                 }
             }
-            throw new MailboxException("Failed to allocate next UID after retries for mailbox " + mailboxId.serialize());
         }
+        throw new MailboxException("Failed to allocate next UID after retries for mailbox " + mailboxId.serialize());
+    }
     }
 
     @Override
