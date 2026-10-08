@@ -17,8 +17,6 @@ import org.apache.james.blob.api.PlainBlobId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Singleton;
 
 import reactor.core.publisher.Flux;
@@ -42,7 +40,6 @@ public class YouTrackDBMimePartsGc {
     private static final Logger LOGGER = LoggerFactory.getLogger(YouTrackDBMimePartsGc.class);
     private static final Pattern METADATA = Pattern.compile("^.*/mailMetadata/[^/]+$");
     private static final Pattern PART = Pattern.compile("^.*/mimeMessagedata/[^/]+$");
-    private static final ObjectMapper JSON = new ObjectMapper();
 
     public record Result(long referencedParts, long deletedParts, long pendingParts) {
     }
@@ -98,21 +95,14 @@ public class YouTrackDBMimePartsGc {
 
     /** Empty when the metadata disappeared since the listing (its mail was removed). Fails when it cannot be read. */
     private Set<String> referencedParts(String metadataId) {
-        Set<String> parts = new HashSet<>();
         try {
             var metadata = Mono.from(blobStoreDAO.readBytes(bucketName, new PlainBlobId(metadataId))).block();
             if (metadata == null || metadata.payload() == null) {
-                return parts;
+                return Set.of();
             }
-            JsonNode json = JSON.readTree(metadata.payload());
-            for (String field : List.of("headerBlobId", "bodyBlobId")) {
-                if (json.path(field).isTextual()) {
-                    parts.add(json.get(field).asText());
-                }
-            }
-            return parts;
+            return new HashSet<>(YouTrackDBMetadataUtils.extractReferencedPartIds(metadata.payload()));
         } catch (ObjectNotFoundException e) {
-            return parts;
+            return Set.of();
         } catch (Exception e) {
             throw new IllegalStateException("Cannot read " + metadataId + ": the references are unknown, nothing is deleted", e);
         }

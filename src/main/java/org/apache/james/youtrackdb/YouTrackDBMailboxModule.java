@@ -82,7 +82,7 @@ public class YouTrackDBMailboxModule extends AbstractModule {
     protected void configure() {
         install(new DefaultEventModule());
         install(new MemoryDeadLetterModule());
-        install(new MemoryQuotaModule());
+        install(new YouTrackDBQuotaModule());
         install(new MemoryQuotaSearchModule());
         install(new org.apache.james.modules.mailbox.LuceneSearchMailboxModule());
 

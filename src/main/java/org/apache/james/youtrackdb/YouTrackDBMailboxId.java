@@ -17,7 +17,7 @@ public final class YouTrackDBMailboxId implements MailboxId {
     private final String id;
 
     private YouTrackDBMailboxId(String id) {
-        this.id = Objects.requireNonNull(id, "id must not be null");
+        this.id = Objects.requireNonNull(id, "id must not be null").toUpperCase(java.util.Locale.US);
     }
 
     public static YouTrackDBMailboxId generate() {
@@ -30,7 +30,7 @@ public final class YouTrackDBMailboxId implements MailboxId {
 
     @Override
     public String serialize() {
-        return id;
+        return id.toUpperCase(java.util.Locale.US);
     }
 
     @Override

@@ -25,9 +25,6 @@ import org.apache.mailet.Mail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -40,7 +37,6 @@ import reactor.core.publisher.Mono;
  */
 public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactory {
     private static final Logger LOGGER = LoggerFactory.getLogger(YouTrackDBBlobMailRepositoryFactory.class);
-    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final BlobMailRepositoryFactory delegate;
     private final BlobStoreDAO blobStoreDAO;
@@ -120,12 +116,9 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
             List<BlobId> parts = new ArrayList<>();
             try {
                 var metadata = Mono.from(blobStoreDAO.readBytes(defaultBucketName, toMetadataBlobId(key))).block();
-                if (metadata != null && metadata.payload() != null && metadata.payload().length > 0) {
-                    JsonNode json = JSON.readTree(metadata.payload());
-                    for (String field : List.of("headerBlobId", "bodyBlobId")) {
-                        if (json.path(field).isTextual()) {
-                            parts.add(new PlainBlobId(json.get(field).asText()));
-                        }
+                if (metadata != null && metadata.payload() != null) {
+                    for (String partId : YouTrackDBMetadataUtils.extractReferencedPartIds(metadata.payload())) {
+                        parts.add(new PlainBlobId(partId));
                     }
                 }
             } catch (ObjectNotFoundException e) {

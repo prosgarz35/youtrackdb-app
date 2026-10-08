@@ -46,6 +46,11 @@ public class YouTrackDBMailboxServerRestartTest {
                 .addDomain(DOMAIN)
                 .addUser(USER, PASSWORD);
 
+            org.apache.james.mailbox.probe.QuotaProbe quotaProbe1 = server1.getProbe(org.apache.james.modules.QuotaProbesImpl.class);
+            org.apache.james.mailbox.model.QuotaRoot bobQuotaRoot1 = quotaProbe1.getQuotaRoot(org.apache.james.mailbox.model.MailboxPath.inbox(org.apache.james.core.Username.of(USER)));
+            quotaProbe1.setMaxMessageCount(bobQuotaRoot1, org.apache.james.core.quota.QuotaCountLimit.count(100L));
+            quotaProbe1.setMaxStorage(bobQuotaRoot1, org.apache.james.core.quota.QuotaSizeLimit.size(1024000L));
+
             int imapPort1 = server1.getProbe(ImapGuiceProbe.class).getImapPort();
 
             // Create custom mailbox via IMAP
@@ -72,9 +77,14 @@ public class YouTrackDBMailboxServerRestartTest {
             // Set flags before shutdown
             checkInboxClient.setFlagsForAllMessagesInMailbox("\\Seen $CustomFlag");
 
+            // Verify SEARCH before restart
+            String searchBefore = checkInboxClient.sendCommand("SEARCH TEXT \"persistent mailbox world\"");
+
             // Capture status/UIDVALIDITY before shutdown
             statusBefore = checkInboxClient.sendCommand("STATUS INBOX (UIDVALIDITY UIDNEXT)");
             checkInboxClient.disconnect();
+
+            assertThat(searchBefore).as("searchBefore").contains("* SEARCH 1");
 
         } finally {
             server1.stop();
@@ -128,6 +138,18 @@ public class YouTrackDBMailboxServerRestartTest {
             imapClient2.select("CustomFolder");
             assertThat(imapClient2.list()).anyMatch(line -> line.contains("CustomFolder"));
 
+            // Verify Lucene SEARCH finds message delivered BEFORE restart
+            imapClient2.select(TestIMAPClient.INBOX);
+            String searchResult = imapClient2.sendCommand("SEARCH TEXT \"persistent mailbox world\"");
+            assertThat(searchResult).contains("* SEARCH 1");
+
+            // Verify Quota survived restart
+            org.apache.james.mailbox.probe.QuotaProbe quotaProbe2 = server2.getProbe(org.apache.james.modules.QuotaProbesImpl.class);
+            org.apache.james.mailbox.model.QuotaRoot bobQuotaRoot = quotaProbe2.getQuotaRoot(org.apache.james.mailbox.model.MailboxPath.inbox(org.apache.james.core.Username.of(USER)));
+            assertThat(quotaProbe2.getMaxMessageCount(bobQuotaRoot)).contains(org.apache.james.core.quota.QuotaCountLimit.count(100L));
+            assertThat(quotaProbe2.getMaxStorage(bobQuotaRoot)).contains(org.apache.james.core.quota.QuotaSizeLimit.size(1024000L));
+            assertThat(quotaProbe2.getMessageCountQuota(bobQuotaRoot).getUsed().asLong()).isEqualTo(1L);
+
             // Deliver a 2nd message after restart and verify UID increments monotonically without duplicates
             SMTPMessageSender smtpSender2 = new SMTPMessageSender(DOMAIN);
             smtpSender2.connect("127.0.0.1", server2.getProbe(SmtpGuiceProbe.class).getSmtpPort())
@@ -138,6 +160,9 @@ public class YouTrackDBMailboxServerRestartTest {
                 imapClient2.select(TestIMAPClient.INBOX);
                 return imapClient2.getMessageCount(TestIMAPClient.INBOX) >= 2;
             });
+
+            // Verify quota usage updated after second message
+            assertThat(quotaProbe2.getMessageCountQuota(bobQuotaRoot).getUsed().asLong()).isEqualTo(2L);
 
             // Exact regex matching for (UID 1) and (UID 2)
             String fetchUids = imapClient2.sendCommand("FETCH 1:2 (UID)");

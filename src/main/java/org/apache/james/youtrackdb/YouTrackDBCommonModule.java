@@ -171,6 +171,20 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesMailboxMessage.content IF NOT EXISTS BINARY");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndUid IF NOT EXISTS ON JamesMailboxMessage (mailboxId, uid) UNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxId IF NOT EXISTS NOTUNIQUE");
+
+                    // Classes for Quotas
+                    g.command("CREATE CLASS JamesQuotaLimit IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesQuotaLimit.scope IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesQuotaLimit.quotaKey IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesQuotaLimit.maxStorage IF NOT EXISTS LONG");
+                    g.command("CREATE PROPERTY JamesQuotaLimit.maxMessage IF NOT EXISTS LONG");
+                    g.command("CREATE INDEX JamesQuotaLimit.scopeAndKey IF NOT EXISTS ON JamesQuotaLimit (scope, quotaKey) UNIQUE");
+
+                    g.command("CREATE CLASS JamesQuotaUsage IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesQuotaUsage.quotaRoot IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesQuotaUsage.messageCount IF NOT EXISTS LONG");
+                    g.command("CREATE PROPERTY JamesQuotaUsage.size IF NOT EXISTS LONG");
+                    g.command("CREATE INDEX JamesQuotaUsage.quotaRoot IF NOT EXISTS ON JamesQuotaUsage (quotaRoot) UNIQUE");
                 });
             } catch (Exception e) {
                 LOGGER.error("Schema initialization failed in YouTrackDB: {}", e.getMessage(), e);
