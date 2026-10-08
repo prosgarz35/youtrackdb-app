@@ -238,9 +238,16 @@ public class YouTrackDBBackupRestoreTest {
             assertThat(restoredImapClient.getMessageCount(TestIMAPClient.INBOX)).isEqualTo(expectedTotal);
             String fetchUids = restoredImapClient.sendCommand("UID FETCH 1 (UID)");
             assertThat(fetchUids).contains("UID 1");
+
+            // Verify message content survived restore and is searchable
+            String searchSmall = restoredImapClient.sendCommand("SEARCH TEXT \"Msg 1\"");
+            assertThat(searchSmall).contains("* SEARCH 1");
+
+            String searchLarge = restoredImapClient.sendCommand("SEARCH TEXT \"Large Sharded Msg\"");
+            assertThat(searchLarge).contains("* SEARCH 6");
             restoredImapClient.disconnect();
 
-            LOGGER.info("RESTORE SUCCESSFUL: User {} and all {} messages restored and verified!", USER, expectedTotal);
+            LOGGER.info("RESTORE SUCCESSFUL: User {} and all {} messages verified including content search!", USER, expectedTotal);
         } finally {
             restoredServer.stop();
         }
