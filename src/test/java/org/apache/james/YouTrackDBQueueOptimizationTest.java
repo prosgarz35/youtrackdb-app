@@ -59,11 +59,13 @@ public class YouTrackDBQueueOptimizationTest {
             try (YTDBGraphTraversalSource g = ytdb.openTraversal("james", "admin", "admin")) {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     tx.command("CREATE CLASS JamesQueueItem IF NOT EXISTS EXTENDS V");
+                    tx.command("CREATE PROPERTY JamesQueueItem.enqueueId IF NOT EXISTS STRING");
                     tx.command("CREATE PROPERTY JamesQueueItem.queueName IF NOT EXISTS STRING");
                     tx.command("CREATE PROPERTY JamesQueueItem.mailName IF NOT EXISTS STRING");
                     tx.command("CREATE PROPERTY JamesQueueItem.nextDelivery IF NOT EXISTS LONG");
                     tx.command("CREATE PROPERTY JamesQueueItem.serializedMail IF NOT EXISTS BINARY");
-                    tx.command("CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) UNIQUE");
+                    tx.command("CREATE INDEX JamesQueueItem.enqueueId IF NOT EXISTS UNIQUE");
+                    tx.command("CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) NOTUNIQUE");
                 });
                 body.run(g);
             }
@@ -158,7 +160,7 @@ public class YouTrackDBQueueOptimizationTest {
     }
 
     @Test
-    @DisplayName("Enqueueing the same name twice keeps a single record and does not fail")
+    @DisplayName("Enqueueing the same name twice creates distinct records by enqueueId and does not fail")
     void sameNameTwiceKeepsSingleRecord(@TempDir Path workingDir) throws Exception {
         byte[] raw = emlBytes();
         withDb(workingDir, g -> {
@@ -168,7 +170,7 @@ public class YouTrackDBQueueOptimizationTest {
             queue.enQueue(mail("dup", parse(raw)));
             queue.enQueue(mail("dup", parse(raw)));
 
-            assertThat(count(g)).isEqualTo(1L);
+            assertThat(count(g)).isEqualTo(2L);
             factory.clean();
         });
     }

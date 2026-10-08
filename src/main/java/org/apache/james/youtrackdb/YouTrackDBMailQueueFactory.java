@@ -17,10 +17,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.Delayed;
-import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -116,15 +116,17 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
     public static class YouTrackDBMailQueue implements ManageableMailQueue {
         static final String CLASS_NAME = "JamesQueueItem";
+        static final String PROP_ENQUEUE_ID = "enqueueId";
         static final String PROP_QUEUE_NAME = "queueName";
         static final String PROP_MAIL_NAME = "mailName";
         static final String PROP_NEXT_DELIVERY = "nextDelivery";
         static final String PROP_SERIALIZED_MAIL = "serializedMail";
+        private static final int MAX_MIME_PAYLOAD_SIZE = 100 * 1024 * 1024; // 100 MB max message size safety guard
 
         private final AtomicInteger references = new AtomicInteger(0);
         private volatile boolean closed = false;
         private final DelayQueue<YouTrackDBMailQueueItem> mailItems;
-        private final LinkedBlockingDeque<YouTrackDBMailQueueItem> inProcessingMailItems;
+        private final Set<YouTrackDBMailQueueItem> inProcessingMailItems;
         private final MailQueueName name;
         private final YTDBGraphTraversalSource g;
         private final Flux<MailQueueItem> flux;
@@ -139,7 +141,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             this.g = g;
             this.clock = clock;
             this.mailItems = new DelayQueue<>();
-            this.inProcessingMailItems = new LinkedBlockingDeque<>();
+            this.inProcessingMailItems = ConcurrentHashMap.newKeySet();
             this.scheduler = Schedulers.newSingle("ytdb-mail-queue-" + name.asString());
 
             // Recover persistent items from YouTrackDB on startup
@@ -173,12 +175,15 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                         .toList();
                     for (var v : vertices) {
                         try {
+                            String enqueueId = v.property(PROP_ENQUEUE_ID).isPresent()
+                                ? v.value(PROP_ENQUEUE_ID)
+                                : UUID.randomUUID().toString();
                             byte[] data = v.value(PROP_SERIALIZED_MAIL);
                             Long nextDeliveryMillis = v.property(PROP_NEXT_DELIVERY).isPresent() ? v.<Long>value(PROP_NEXT_DELIVERY) : 0L;
                             if (data != null && data.length > 0) {
                                 Mail mail = deserializeMail(data);
                                 ZonedDateTime delivery = Instant.ofEpochMilli(nextDeliveryMillis != null ? nextDeliveryMillis : 0L).atZone(ZoneId.of("UTC"));
-                                items.add(new YouTrackDBMailQueueItem(mail, this, clock, delivery));
+                                items.add(new YouTrackDBMailQueueItem(enqueueId, mail, this, clock, delivery));
                             }
                         } catch (Exception e) {
                             LOGGER.error("Failed to recover mail item for queue {}", name.asString(), e);
@@ -193,7 +198,8 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                     LOGGER.info("Recovered {} pending mail queue items for queue {} from YouTrackDB", recovered.size(), name.asString());
                 }
             } catch (Exception e) {
-                LOGGER.warn("Failed to query persistent queue items from YouTrackDB for queue {}", name.asString(), e);
+                LOGGER.error("Fatal: failed to query persistent queue items from YouTrackDB for queue {}", name.asString(), e);
+                throw new IllegalStateException("Failed to recover persistent mail queue items for queue " + name.asString(), e);
             }
         }
 
@@ -220,46 +226,38 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
         @Override
         public void enQueue(Mail mail, Duration delay) throws MailQueueException {
+            if (closed) {
+                throw new MailQueueException("Mail queue " + name.asString() + " is already closed");
+            }
             ZonedDateTime nextDelivery = calculateNextDelivery(delay);
             try {
                 // The MIME message is written once; the in-memory copy and the persisted bytes come from it.
                 byte[] mime = mail.getMessage() == null ? null : toBytes(mail.getMessage());
+                if (mime != null && mime.length > MAX_MIME_PAYLOAD_SIZE) {
+                    throw new MailQueueException("MIME message exceeds maximum allowed payload size of "
+                        + MAX_MIME_PAYLOAD_SIZE + " bytes (actual: " + mime.length + ")");
+                }
                 Mail cloned = cloneMail(mail, mime);
                 byte[] serialized = serializeMail(cloned, mime);
+                String enqueueId = UUID.randomUUID().toString();
 
-                persist(cloned.getName(), nextDelivery, serialized);
+                persist(enqueueId, cloned.getName(), nextDelivery, serialized);
 
-                mailItems.put(new YouTrackDBMailQueueItem(cloned, this, clock, nextDelivery));
+                mailItems.put(new YouTrackDBMailQueueItem(enqueueId, cloned, this, clock, nextDelivery));
+            } catch (MailQueueException e) {
+                throw e;
             } catch (Exception e) {
                 throw new MailQueueException("Error while enqueuing mail " + mail.getName() + " to YouTrackDB queue", e);
             }
         }
 
-        /**
-         * A first enqueue is a plain insert (no lookup). Only a re-enqueue of an existing name (RETRY)
-         * pays for replacing the previous record, in a single transaction.
-         */
-        private void persist(String mailName, ZonedDateTime nextDelivery, byte[] serialized) {
-            try {
-                YouTrackDBTransactions.executeStrictTx(g, tx -> insertItem(tx, mailName, nextDelivery, serialized));
-            } catch (RuntimeException e) {
-                if (!YouTrackDBTransactions.hasCause(e, RecordDuplicatedException.class)) {
-                    throw e;
-                }
-                YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                    var existing = tx.V().hasLabel(CLASS_NAME)
-                        .has(PROP_QUEUE_NAME, name.asString())
-                        .has(PROP_MAIL_NAME, mailName);
-                    if (existing.hasNext()) {
-                        existing.next().remove();
-                    }
-                    insertItem(tx, mailName, nextDelivery, serialized);
-                });
-            }
+        private void persist(String enqueueId, String mailName, ZonedDateTime nextDelivery, byte[] serialized) {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> insertItem(tx, enqueueId, mailName, nextDelivery, serialized));
         }
 
-        private void insertItem(YTDBGraphTraversalSource tx, String mailName, ZonedDateTime nextDelivery, byte[] serialized) {
+        private void insertItem(YTDBGraphTraversalSource tx, String enqueueId, String mailName, ZonedDateTime nextDelivery, byte[] serialized) {
             tx.addV(CLASS_NAME)
+                .property(PROP_ENQUEUE_ID, enqueueId)
                 .property(PROP_QUEUE_NAME, name.asString())
                 .property(PROP_MAIL_NAME, mailName)
                 .property(PROP_NEXT_DELIVERY, nextDelivery.toInstant().toEpochMilli())
@@ -332,8 +330,6 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             return baos.toByteArray();
         }
 
-        private static final int MAX_MIME_PAYLOAD_SIZE = 100 * 1024 * 1024; // 100 MB max message size safety guard
-
         private static Mail deserializeMail(byte[] bytes) throws Exception {
             try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
                 ois.setObjectInputFilter(java.io.ObjectInputFilter.Config.createFilter(
@@ -391,7 +387,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             for (YouTrackDBMailQueueItem item : snapshot) {
                 // An item taken by a consumer meanwhile is no longer in the queue and is skipped.
                 if (mailItems.remove(item)) {
-                    mailItems.put(new YouTrackDBMailQueueItem(item.getMail(), this, clock, delivery));
+                    mailItems.put(new YouTrackDBMailQueueItem(item.getEnqueueId(), item.getMail(), this, clock, delivery));
                     count++;
                 }
             }
@@ -400,11 +396,11 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
         @Override
         public long clear() {
-            int size = mailItems.size();
-            mailItems.clear();
-            // Remove from YouTrackDB via set-based YQL deletion
+            // Delete from YouTrackDB first; if DB deletion fails, memory is not corrupted
             YouTrackDBTransactions.executeStrictTx(g, tx ->
                 tx.command("DELETE VERTEX JamesQueueItem WHERE queueName = :queue", "queue", name.asString()));
+            int size = mailItems.size();
+            mailItems.clear();
             return size;
         }
 
@@ -414,7 +410,6 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 .filter(item -> shouldRemove(item, type, value))
                 .collect(ImmutableList.toImmutableList());
             if (!toBeRemoved.isEmpty()) {
-                toBeRemoved.forEach(mailItems::remove);
                 if (!closed) {
                     try {
                         YouTrackDBTransactions.executeStrictTx(g, tx -> {
@@ -431,26 +426,26 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                         LOGGER.warn("Failed batch removal of mail items from queue {}", name.asString(), e);
                     }
                 }
+                toBeRemoved.forEach(mailItems::remove);
             }
             return toBeRemoved.size();
         }
 
-        private void deleteFromDatabase(String mailName) {
+        private void deleteFromDatabase(String enqueueId) {
             if (closed) {
                 return;
             }
             try {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     var traversal = tx.V().hasLabel(CLASS_NAME)
-                        .has(PROP_QUEUE_NAME, name.asString())
-                        .has(PROP_MAIL_NAME, mailName);
+                        .has(PROP_ENQUEUE_ID, enqueueId);
                     if (traversal.hasNext()) {
                         traversal.next().remove();
                     }
                 });
             } catch (Exception e) {
                 if (!closed) {
-                    LOGGER.warn("Failed to delete mail {} from YouTrackDB queue table", mailName, e);
+                    LOGGER.warn("Failed to delete queue item {} from YouTrackDB queue table", enqueueId, e);
                 }
             }
         }
@@ -471,16 +466,18 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         private void markProcessingAsFinished(YouTrackDBMailQueueItem item, MailQueue.MailQueueItem.CompletionStatus status) {
             inProcessingMailItems.remove(item);
             if (status == MailQueue.MailQueueItem.CompletionStatus.SUCCESS) {
-                deleteFromDatabase(item.getMail().getName());
+                deleteFromDatabase(item.getEnqueueId());
             } else if (status == MailQueue.MailQueueItem.CompletionStatus.RETRY) {
                 try {
                     enQueue(item.getMail());
                 } catch (Exception e) {
                     LOGGER.error("Failed to retry mail item {}", item.getMail().getName(), e);
                 }
+                // Once new retry record is persisted, old queue item record is completed and deleted
+                deleteFromDatabase(item.getEnqueueId());
             } else {
                 // Any other termination status (e.g. discard/error) -> purge from database so it doesn't resurrect on restart
-                deleteFromDatabase(item.getMail().getName());
+                deleteFromDatabase(item.getEnqueueId());
             }
         }
 
@@ -524,18 +521,24 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
     }
 
     public static class YouTrackDBMailQueueItem implements MailQueue.MailQueueItem, Delayed {
+        private final String enqueueId;
         private final Mail mail;
         private final YouTrackDBMailQueue queue;
         private final Clock clock;
         private final ZonedDateTime delivery;
         private final long deliveryMillis;
 
-        public YouTrackDBMailQueueItem(Mail mail, YouTrackDBMailQueue queue, Clock clock, ZonedDateTime delivery) {
+        public YouTrackDBMailQueueItem(String enqueueId, Mail mail, YouTrackDBMailQueue queue, Clock clock, ZonedDateTime delivery) {
+            this.enqueueId = Objects.requireNonNull(enqueueId, "enqueueId must not be null");
             this.mail = mail;
             this.queue = queue;
             this.clock = clock;
             this.delivery = delivery;
             this.deliveryMillis = toEpochMillisSaturated(delivery);
+        }
+
+        public String getEnqueueId() {
+            return enqueueId;
         }
 
         private static long toEpochMillisSaturated(ZonedDateTime time) {

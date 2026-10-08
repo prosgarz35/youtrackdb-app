@@ -54,11 +54,13 @@ public class YouTrackDBDeleteCommandsTest {
                     tx.command("CREATE PROPERTY JamesRRTMapping.source IF NOT EXISTS STRING");
                     tx.command("CREATE PROPERTY JamesRRTMapping.mapping IF NOT EXISTS STRING");
                     tx.command("CREATE CLASS JamesQueueItem IF NOT EXISTS EXTENDS V");
+                    tx.command("CREATE PROPERTY JamesQueueItem.enqueueId IF NOT EXISTS STRING");
                     tx.command("CREATE PROPERTY JamesQueueItem.queueName IF NOT EXISTS STRING");
                     tx.command("CREATE PROPERTY JamesQueueItem.mailName IF NOT EXISTS STRING");
                     tx.command("CREATE PROPERTY JamesQueueItem.nextDelivery IF NOT EXISTS LONG");
                     tx.command("CREATE PROPERTY JamesQueueItem.serializedMail IF NOT EXISTS BINARY");
-                    tx.command("CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) UNIQUE");
+                    tx.command("CREATE INDEX JamesQueueItem.enqueueId IF NOT EXISTS UNIQUE");
+                    tx.command("CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) NOTUNIQUE");
                 });
                 body.run(g);
             }

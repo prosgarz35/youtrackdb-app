@@ -26,11 +26,16 @@ public class YouTrackDBDomainList extends AbstractDomainList {
         this.g = g;
     }
 
+    private String canonicalDomain(Domain domain) {
+        return java.net.IDN.toASCII(domain.asString(), java.net.IDN.USE_STD3_ASCII_RULES);
+    }
+
     @Override
     public void addDomain(Domain domain) throws DomainListException {
+        String canon = canonicalDomain(domain);
         try {
             YouTrackDBTransactions.executeStrictTx(g, tx ->
-                tx.addV(CLASS_NAME).property(PROP_DOMAIN, domain.asString()).iterate());
+                tx.addV(CLASS_NAME).property(PROP_DOMAIN, canon).iterate());
         } catch (Exception e) {
             if (YouTrackDBTransactions.hasCause(e, RecordDuplicatedException.class)) {
                 throw new DomainListException(domain.name() + " already exists.");
@@ -58,9 +63,10 @@ public class YouTrackDBDomainList extends AbstractDomainList {
 
     @Override
     protected boolean containsDomainInternal(Domain domain) throws DomainListException {
+        String canon = canonicalDomain(domain);
         try {
             return !YouTrackDBTransactions.queryRows(g,
-                "SELECT 1 FROM JamesDomain WHERE domain = :domain LIMIT 1", "domain", domain.asString()).isEmpty();
+                "SELECT 1 FROM JamesDomain WHERE domain = :domain LIMIT 1", "domain", canon).isEmpty();
         } catch (Exception e) {
             throw new DomainListException("Failed to check if domain exists: " + domain.name(), e);
         }
@@ -68,10 +74,11 @@ public class YouTrackDBDomainList extends AbstractDomainList {
 
     @Override
     protected void doRemoveDomain(Domain domain) throws DomainListException {
+        String canon = canonicalDomain(domain);
         boolean removed;
         try {
             removed = YouTrackDBTransactions.computeStrictTx(g, tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_DOMAIN, domain.asString());
+                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_DOMAIN, canon);
                 if (traversal.hasNext()) {
                     traversal.next().remove();
                     return true;

@@ -71,6 +71,15 @@ public final class YouTrackDBTransactions {
             || hasCause(t, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class);
     }
 
+    public static final int DEFAULT_MAX_RETRIES = 10;
+
+    /**
+     * Executes an action with automatic retry using default max retries (10).
+     */
+    public static <T> T retryOnConflict(java.util.concurrent.Callable<T> action) throws Exception {
+        return retryOnConflict(DEFAULT_MAX_RETRIES, action);
+    }
+
     /**
      * Executes an action with automatic retry upon encountering retryable conflicts
      * (ConcurrentModificationException or ConcurrentCreateException).
@@ -103,23 +112,26 @@ public final class YouTrackDBTransactions {
         throw new IllegalStateException("Exhausted retries without result or exception");
     }
 
+    /** Executes a YQL query on an already open transaction without creating a nested computeInTx. */
+    public static java.util.List<java.util.Map<String, Object>> queryRowsInTx(YTDBGraphTraversalSource tx, String query, Object... params) {
+        var list = tx.yql(query, params).toList();
+        java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>(list.size());
+        for (Object item : list) {
+            if (item instanceof java.util.Map<?, ?> m) {
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> casted = (java.util.Map<String, Object>) m;
+                rows.add(casted);
+            } else if (item instanceof org.apache.tinkerpop.gremlin.structure.Vertex v) {
+                java.util.Map<String, Object> map = new java.util.HashMap<>();
+                v.properties().forEachRemaining(p -> map.put(p.key(), p.value()));
+                rows.add(map);
+            }
+        }
+        return rows;
+    }
+
     /** Executes a YQL query and extracts all rows as a list of Maps (DRY). */
     public static java.util.List<java.util.Map<String, Object>> queryRows(YTDBGraphTraversalSource g, String query, Object... params) {
-        return g.computeInTx(tx -> {
-            var list = tx.yql(query, params).toList();
-            java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>(list.size());
-            for (Object item : list) {
-                if (item instanceof java.util.Map<?, ?> m) {
-                    @SuppressWarnings("unchecked")
-                    java.util.Map<String, Object> casted = (java.util.Map<String, Object>) m;
-                    rows.add(casted);
-                } else if (item instanceof org.apache.tinkerpop.gremlin.structure.Vertex v) {
-                    java.util.Map<String, Object> map = new java.util.HashMap<>();
-                    v.properties().forEachRemaining(p -> map.put(p.key(), p.value()));
-                    rows.add(map);
-                }
-            }
-            return rows;
-        });
+        return g.computeInTx(tx -> queryRowsInTx(tx, query, params));
     }
 }

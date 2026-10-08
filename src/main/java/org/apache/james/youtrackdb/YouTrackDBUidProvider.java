@@ -42,7 +42,7 @@ public class YouTrackDBUidProvider implements UidProvider {
             return YouTrackDBTransactions.retryOnConflict(maxRetries, () -> {
                 synchronized (lock) {
                     return YouTrackDBTransactions.computeStrictTx(g, tx -> {
-                        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(tx,
+                        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
                             "SELECT lastUid FROM JamesMailbox WHERE mailboxId = :id",
                             "id", mailboxId.serialize());
                         if (rows.isEmpty()) {

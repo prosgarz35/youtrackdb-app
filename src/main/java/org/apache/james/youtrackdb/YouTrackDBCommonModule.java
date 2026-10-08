@@ -45,7 +45,6 @@ public class YouTrackDBCommonModule extends AbstractModule {
             ytdbConfig.setProperty("youtrackdb.storage.diskCache.bufferSize", 2048);
             ytdbConfig.setProperty("youtrackdb.storage.diskCache.writeCachePart", 15);
             ytdbConfig.setProperty("youtrackdb.storage.diskCache.writeCachePageFlushInterval", 25);
-            ytdbConfig.setProperty("youtrackdb.storage.diskCache.checksumMode", "Store");
             ytdbConfig.setProperty("youtrackdb.storage.wal.bufferSize", 128);
             ytdbConfig.setProperty("youtrackdb.storage.wal.cacheSize", 65536);
             ytdbConfig.setProperty("youtrackdb.storage.wal.commitTimeout", 50);
@@ -54,9 +53,11 @@ public class YouTrackDBCommonModule extends AbstractModule {
             ytdbConfig.setProperty("youtrackdb.db.pool.max", 256);
             ytdbConfig.setProperty("youtrackdb.storage.componentsLock.cache", 65536);
             ytdbConfig.setProperty("youtrackdb.statement.cacheSize", 500);
+            String dbName = DB_NAME;
             try {
                 Configuration conf = configurationProvider.getConfiguration("youtrackdb");
                 path = conf.getString("youtrackdb.path", DEFAULT_PATH);
+                dbName = conf.getString("youtrackdb.database", DB_NAME);
                 dbUser = conf.getString("youtrackdb.user", DB_USER);
                 dbPass = conf.getString("youtrackdb.password", DB_PASS);
                 // Merge overrides from configuration file
@@ -81,20 +82,38 @@ public class YouTrackDBCommonModule extends AbstractModule {
                 if (!walDir.exists()) {
                     walDir.mkdirs();
                 }
+                ytdbConfig.setProperty("youtrackdb.storage.wal.path", walDir.getAbsolutePath());
                 LOGGER.info("Using dedicated WAL path for YouTrackDB: {}", walDir.getAbsolutePath());
             }
 
             LOGGER.info("Initializing embedded YouTrackDB environment at {}", dir.getAbsolutePath());
-            this.youTrackDB = YourTracks.instance(dir.getAbsolutePath(), ytdbConfig);
-            
-            // Create database if absent
-            this.youTrackDB.createIfNotExists(DB_NAME, DatabaseType.DISK, ytdbConfig, dbUser, dbPass, "admin");
-            this.traversalSource = youTrackDB.openTraversal(DB_NAME, dbUser, dbPass);
-
-            initSchema();
+            YouTrackDB ytdb = null;
+            YTDBGraphTraversalSource ts = null;
+            try {
+                ytdb = YourTracks.instance(dir.getAbsolutePath(), ytdbConfig);
+                ytdb.createIfNotExists(dbName, DatabaseType.DISK, ytdbConfig, dbUser, dbPass, "admin");
+                ts = ytdb.openTraversal(dbName, dbUser, dbPass);
+                initSchema(ts);
+                this.youTrackDB = ytdb;
+                this.traversalSource = ts;
+            } catch (Exception e) {
+                if (ts != null) {
+                    try {
+                        ts.close();
+                    } catch (Exception ignored) {
+                    }
+                }
+                if (ytdb != null && ytdb.isOpen()) {
+                    try {
+                        ytdb.close();
+                    } catch (Exception ignored) {
+                    }
+                }
+                throw e;
+            }
         }
 
-        private void initSchema() {
+        private void initSchema(YTDBGraphTraversalSource traversalSource) {
             try {
                 LOGGER.info("Verifying/initializing schema in YouTrackDB");
                 // Class for Users
@@ -130,11 +149,14 @@ public class YouTrackDBCommonModule extends AbstractModule {
 
                     // Class for MailQueue Items
                     g.command("CREATE CLASS JamesQueueItem IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesQueueItem.enqueueId IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesQueueItem.queueName IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesQueueItem.mailName IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesQueueItem.nextDelivery IF NOT EXISTS LONG");
                     g.command("CREATE PROPERTY JamesQueueItem.serializedMail IF NOT EXISTS BINARY");
-                    g.command("CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) UNIQUE");
+                    g.command("CREATE INDEX JamesQueueItem.enqueueId IF NOT EXISTS UNIQUE");
+                    g.command("CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) NOTUNIQUE");
+                    g.command("CREATE INDEX JamesQueueItem.queueAndDelivery IF NOT EXISTS ON JamesQueueItem (queueName, nextDelivery) NOTUNIQUE");
 
                     // Class for Mailbox
                     g.command("CREATE CLASS JamesMailbox IF NOT EXISTS EXTENDS V");
@@ -159,16 +181,18 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE CLASS JamesMailboxMessage IF NOT EXISTS EXTENDS V");
                     g.command("CREATE PROPERTY JamesMailboxMessage.mailboxId IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesMailboxMessage.messageId IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.threadId IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesMailboxMessage.uid IF NOT EXISTS LONG");
                     g.command("CREATE PROPERTY JamesMailboxMessage.modSeq IF NOT EXISTS LONG");
                     g.command("CREATE PROPERTY JamesMailboxMessage.internalDate IF NOT EXISTS LONG");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.saveDate IF NOT EXISTS LONG");
                     g.command("CREATE PROPERTY JamesMailboxMessage.size IF NOT EXISTS LONG");
                     g.command("CREATE PROPERTY JamesMailboxMessage.bodyStartOctet IF NOT EXISTS INTEGER");
                     g.command("CREATE PROPERTY JamesMailboxMessage.flags IF NOT EXISTS EMBEDDEDSET STRING");
                     g.command("CREATE PROPERTY JamesMailboxMessage.userFlags IF NOT EXISTS EMBEDDEDSET STRING");
                     g.command("CREATE PROPERTY JamesMailboxMessage.content IF NOT EXISTS BINARY");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndUid IF NOT EXISTS ON JamesMailboxMessage (mailboxId, uid) UNIQUE");
-                    g.command("CREATE INDEX JamesMailboxMessage.mailboxId IF NOT EXISTS NOTUNIQUE");
+                    g.command("CREATE INDEX JamesMailboxMessage.messageId IF NOT EXISTS NOTUNIQUE");
 
                     // Classes for Quotas
                     g.command("CREATE CLASS JamesQuotaLimit IF NOT EXISTS EXTENDS V");
@@ -195,28 +219,36 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesMailboxAnnotation.key IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesMailboxAnnotation.value IF NOT EXISTS STRING");
                     g.command("CREATE INDEX JamesMailboxAnnotation.mailboxAndKey IF NOT EXISTS ON JamesMailboxAnnotation (mailboxId, key) UNIQUE");
+                });
 
-                    // Validation: verify that all existing mailbox IDs follow canonical uppercase UUID format
-                    var rows = g.yql("SELECT mailboxId FROM JamesMailbox").toList();
-                    for (Object row : rows) {
-                        String id = null;
-                        if (row instanceof java.util.Map<?, ?> m) {
-                            Object val = m.get("mailboxId");
-                            if (val != null) {
-                                id = val.toString();
-                            }
-                        } else if (row instanceof org.apache.tinkerpop.gremlin.structure.Vertex v) {
-                            var p = v.property("mailboxId");
-                            if (p.isPresent()) {
-                                id = p.value().toString();
-                            }
+                // Validation: verify that all existing mailbox IDs follow canonical uppercase UUID format
+                var rows = traversalSource.yql("SELECT mailboxId FROM JamesMailbox").toList();
+                for (Object row : rows) {
+                    String id = null;
+                    if (row instanceof java.util.Map<?, ?> m) {
+                        Object val = m.get("mailboxId");
+                        if (val != null) {
+                            id = val.toString();
                         }
-                        if (id != null && !id.equals(id.toUpperCase(java.util.Locale.US))) {
-                            throw new IllegalStateException("Found legacy/lowercase mailboxId in JamesMailbox: " + id
-                                + ". YouTrackDB James requires canonical uppercase UUID mailbox IDs.");
+                    } else if (row instanceof org.apache.tinkerpop.gremlin.structure.Vertex v) {
+                        var p = v.property("mailboxId");
+                        if (p.isPresent()) {
+                            id = p.value().toString();
                         }
                     }
-                });
+                    if (id != null) {
+                        try {
+                            java.util.UUID parsed = java.util.UUID.fromString(id);
+                            if (!id.equals(parsed.toString().toUpperCase(java.util.Locale.US))) {
+                                throw new IllegalStateException("Found non-canonical mailboxId in JamesMailbox: " + id
+                                    + ". YouTrackDB James requires canonical uppercase UUID mailbox IDs.");
+                            }
+                        } catch (IllegalArgumentException e) {
+                            throw new IllegalStateException("Found malformed mailboxId in JamesMailbox: " + id
+                                + ". YouTrackDB James requires canonical uppercase UUID mailbox IDs.", e);
+                        }
+                    }
+                }
             } catch (Exception e) {
                 LOGGER.error("Schema initialization failed in YouTrackDB: {}", e.getMessage(), e);
                 throw new RuntimeException("Fatal error: failed to initialize YouTrackDB schema", e);

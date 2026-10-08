@@ -11,6 +11,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 import jakarta.mail.Flags;
@@ -44,9 +45,11 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     private static final String CLASS_NAME = "JamesMailboxMessage";
     private static final String PROP_MAILBOX_ID = "mailboxId";
     private static final String PROP_MESSAGE_ID = "messageId";
+    private static final String PROP_THREAD_ID = "threadId";
     private static final String PROP_UID = "uid";
     private static final String PROP_MODSEQ = "modSeq";
     private static final String PROP_INTERNAL_DATE = "internalDate";
+    private static final String PROP_SAVE_DATE = "saveDate";
     private static final String PROP_SIZE = "size";
     private static final String PROP_BODY_START = "bodyStartOctet";
     private static final String PROP_FLAGS = "flags";
@@ -54,6 +57,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     private static final String PROP_CONTENT = "content";
 
     private final YTDBGraphTraversalSource g;
+    private final UidProvider uidProvider;
     private final ModSeqProvider modSeqProvider;
 
     public YouTrackDBMessageMapper(MailboxSession mailboxSession,
@@ -62,6 +66,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                                    Clock clock,
                                    YTDBGraphTraversalSource g) {
         super(mailboxSession, uidProvider, modSeqProvider, clock);
+        this.uidProvider = uidProvider;
         this.modSeqProvider = modSeqProvider;
         this.g = Objects.requireNonNull(g, "g must not be null");
     }
@@ -71,7 +76,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
         try {
             String mailboxId = mailbox.getMailboxId().serialize();
             String selectClause = (type == FetchType.METADATA)
-                ? "SELECT mailboxId, messageId, uid, modSeq, internalDate, size, bodyStartOctet, flags, userFlags FROM JamesMailboxMessage"
+                ? "SELECT mailboxId, messageId, threadId, uid, modSeq, internalDate, saveDate, size, bodyStartOctet, flags, userFlags FROM JamesMailboxMessage"
                 : "SELECT FROM JamesMailboxMessage";
             String query;
             List<Object> params = new ArrayList<>();
@@ -241,12 +246,14 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                 Set<String> userFlags = extractUserFlags(newFlags);
                 try {
                     YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                        tx.command("UPDATE JamesMailboxMessage SET flags = :flags, userFlags = :userFlags, modSeq = :modSeq WHERE mailboxId = :mbx AND uid = :uid",
+                        long currentModSeq = member.getModSeq().asLong();
+                        tx.command("UPDATE JamesMailboxMessage SET flags = :flags, userFlags = :userFlags, modSeq = :newModSeq WHERE mailboxId = :mbx AND uid = :uid AND (modSeq = :currModSeq OR modSeq < :newModSeq)",
                             "flags", systemFlags,
                             "userFlags", userFlags,
-                            "modSeq", modSeq.asLong(),
+                            "newModSeq", modSeq.asLong(),
                             "mbx", mailbox.getMailboxId().serialize(),
-                            "uid", member.getUid().asLong());
+                            "uid", member.getUid().asLong(),
+                            "currModSeq", currentModSeq);
                     });
                 } catch (Exception e) {
                     throw new MailboxException("Failed to update flags for message " + member.getUid(), e);
@@ -278,18 +285,20 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             Set<String> userFlags = extractUserFlags(message.createFlags());
 
             int bodyStart = (int) message.getHeaderOctets();
+            long saveDateMs = message.getSaveDate().map(Date::getTime).orElseGet(() -> clock.instant().toEpochMilli());
+            String threadId = message.getThreadId() != null && message.getThreadId().getBaseMessageId() != null
+                ? message.getThreadId().getBaseMessageId().serialize()
+                : message.getMessageId().serialize();
 
             YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :mbx AND uid = :uid",
-                    "mbx", mailbox.getMailboxId().serialize(),
-                    "uid", message.getUid().asLong());
-
                 tx.addV(CLASS_NAME)
                     .property(PROP_MAILBOX_ID, mailbox.getMailboxId().serialize())
                     .property(PROP_MESSAGE_ID, message.getMessageId().serialize())
+                    .property(PROP_THREAD_ID, threadId)
                     .property(PROP_UID, message.getUid().asLong())
                     .property(PROP_MODSEQ, message.getModSeq().asLong())
                     .property(PROP_INTERNAL_DATE, message.getInternalDate().getTime())
+                    .property(PROP_SAVE_DATE, saveDateMs)
                     .property(PROP_SIZE, message.getFullContentOctets())
                     .property(PROP_BODY_START, bodyStart)
                     .property(PROP_FLAGS, systemFlags)
@@ -314,9 +323,51 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
 
     @Override
     public MessageMetaData move(Mailbox mailbox, MailboxMessage original) throws MailboxException {
-        MessageMetaData data = copy(mailbox, original);
-        delete(original.getMailboxId(), original);
-        return data;
+        try {
+            MessageUid newUid = uidProvider.nextUid(mailbox);
+            ModSeq newModSeq = modSeqProvider.nextModSeq(mailbox);
+            SimpleMailboxMessage copy = SimpleMailboxMessage.copy(mailbox.getMailboxId(), original);
+            copy.setUid(newUid);
+            copy.setModSeq(newModSeq);
+
+            byte[] fullBytes;
+            try (InputStream is = copy.getFullContent()) {
+                fullBytes = IOUtils.toByteArray(is);
+            }
+
+            Set<String> systemFlags = extractSystemFlags(copy.createFlags());
+            Set<String> userFlags = extractUserFlags(copy.createFlags());
+            int bodyStart = (int) copy.getHeaderOctets();
+            long saveDateMs = clock.instant().toEpochMilli();
+            String threadId = original.getThreadId() != null && original.getThreadId().getBaseMessageId() != null
+                ? original.getThreadId().getBaseMessageId().serialize()
+                : original.getMessageId().serialize();
+
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                tx.addV(CLASS_NAME)
+                    .property(PROP_MAILBOX_ID, mailbox.getMailboxId().serialize())
+                    .property(PROP_MESSAGE_ID, copy.getMessageId().serialize())
+                    .property(PROP_THREAD_ID, threadId)
+                    .property(PROP_UID, copy.getUid().asLong())
+                    .property(PROP_MODSEQ, copy.getModSeq().asLong())
+                    .property(PROP_INTERNAL_DATE, copy.getInternalDate().getTime())
+                    .property(PROP_SAVE_DATE, saveDateMs)
+                    .property(PROP_SIZE, copy.getFullContentOctets())
+                    .property(PROP_BODY_START, bodyStart)
+                    .property(PROP_FLAGS, systemFlags)
+                    .property(PROP_USER_FLAGS, userFlags)
+                    .property(PROP_CONTENT, fullBytes)
+                    .iterate();
+
+                tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :mbx AND uid = :uid",
+                    "mbx", original.getMailboxId().serialize(),
+                    "uid", original.getUid().asLong());
+            });
+
+            return copy.metaData();
+        } catch (Exception e) {
+            throw new MailboxException("Failed to move message " + original.getUid() + " to mailbox " + mailbox.getMailboxId().serialize(), e);
+        }
     }
 
     private void delete(MailboxId mailboxId, MailboxMessage message) throws MailboxException {
@@ -342,32 +393,38 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     protected void rollback() {
     }
 
-    private MailboxMessage readMessage(Map<String, Object> row, MailboxId mailboxId, FetchType type) {
+    static MailboxMessage readMessage(Map<String, Object> row, MailboxId mailboxId, FetchType type) {
         String messageIdStr = Objects.toString(row.get(PROP_MESSAGE_ID), null);
+        String threadIdStr = Objects.toString(row.get(PROP_THREAD_ID), messageIdStr);
         long uid = ((Number) row.get(PROP_UID)).longValue();
         long modSeq = ((Number) row.get(PROP_MODSEQ)).longValue();
         long internalDateMs = ((Number) row.get(PROP_INTERNAL_DATE)).longValue();
+        Object saveDateObj = row.get(PROP_SAVE_DATE);
+        Optional<Date> saveDate = saveDateObj instanceof Number num ? Optional.of(new Date(num.longValue())) : Optional.empty();
         long size = ((Number) row.get(PROP_SIZE)).longValue();
         int bodyStart = ((Number) row.get(PROP_BODY_START)).intValue();
         byte[] content = (type == FetchType.METADATA) ? new byte[0] : (byte[]) row.get(PROP_CONTENT);
 
         Flags flags = readFlags(row);
 
-        return SimpleMailboxMessage.builder()
+        SimpleMailboxMessage.Builder builder = SimpleMailboxMessage.builder()
             .mailboxId(mailboxId)
             .messageId(YouTrackDBMessageId.of(messageIdStr))
-            .threadId(ThreadId.fromBaseMessageId(YouTrackDBMessageId.of(messageIdStr)))
+            .threadId(ThreadId.fromBaseMessageId(YouTrackDBMessageId.of(threadIdStr)))
             .uid(MessageUid.of(uid))
             .modseq(ModSeq.of(modSeq))
             .internalDate(new Date(internalDateMs))
             .size(size)
             .bodyStartOctet(bodyStart)
             .content(new ByteContent(content != null ? content : new byte[0]))
-            .flags(flags)
-            .build();
+            .flags(flags);
+
+        saveDate.ifPresent(builder::saveDate);
+
+        return builder.build();
     }
 
-    private Set<String> extractSystemFlags(Flags flags) {
+    private static Set<String> extractSystemFlags(Flags flags) {
         Set<String> set = new HashSet<>();
         if (flags.contains(Flag.ANSWERED)) {
             set.add("ANSWERED");
@@ -390,7 +447,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
         return set;
     }
 
-    private Set<String> extractUserFlags(Flags flags) {
+    private static Set<String> extractUserFlags(Flags flags) {
         Set<String> set = new HashSet<>();
         for (String userFlag : flags.getUserFlags()) {
             set.add(userFlag);
@@ -398,7 +455,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
         return set;
     }
 
-    private Flags readFlags(Map<String, Object> row) {
+    private static Flags readFlags(Map<String, Object> row) {
         Flags flags = new Flags();
         Object sysObj = row.get(PROP_FLAGS);
         if (sysObj instanceof Iterable<?> it) {

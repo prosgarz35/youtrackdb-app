@@ -3,7 +3,6 @@ package org.apache.james.youtrackdb;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 
 import jakarta.inject.Inject;
 
@@ -78,7 +77,7 @@ public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
             try {
                 YouTrackDBTransactions.retryOnConflict(10, () -> {
                     YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(tx,
+                        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
                             "SELECT FROM JamesQuotaUsage WHERE quotaRoot = :qr", "qr", rootVal);
                         if (rows.isEmpty()) {
                             tx.addV(CLASS_NAME)
@@ -122,7 +121,7 @@ public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
         try {
             YouTrackDBTransactions.retryOnConflict(10, () -> {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(tx,
+                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
                         "SELECT messageCount, size FROM JamesQuotaUsage WHERE quotaRoot = :qr", "qr", rootVal);
                     if (rows.isEmpty()) {
                         tx.addV(CLASS_NAME)

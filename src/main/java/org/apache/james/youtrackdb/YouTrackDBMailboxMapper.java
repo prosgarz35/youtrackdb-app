@@ -29,11 +29,16 @@ import com.google.common.base.Preconditions;
 import com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 public class YouTrackDBMailboxMapper implements MailboxMapper {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(YouTrackDBMailboxMapper.class);
 
     private static final String CLASS_NAME = "JamesMailbox";
     private static final String PROP_MAILBOX_ID = "mailboxId";
@@ -175,16 +180,50 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
 
     @Override
     public Flux<Mailbox> findMailboxWithPathLike(MailboxQuery.UserBound query) {
-        return list()
-            .filter(query::matches);
+        String fixedNamespace = query.getFixedNamespace();
+        String fixedUser = query.getFixedUser() != null ? query.getFixedUser().asString() : null;
+        return Mono.fromCallable(() -> {
+            String sql;
+            List<Map<String, Object>> rows;
+            if (fixedNamespace != null && fixedUser != null) {
+                sql = "SELECT FROM JamesMailbox WHERE namespace = :ns AND user = :user";
+                rows = YouTrackDBTransactions.queryRows(g, sql, "ns", fixedNamespace, "user", fixedUser);
+            } else if (fixedNamespace != null) {
+                sql = "SELECT FROM JamesMailbox WHERE namespace = :ns";
+                rows = YouTrackDBTransactions.queryRows(g, sql, "ns", fixedNamespace);
+            } else if (fixedUser != null) {
+                sql = "SELECT FROM JamesMailbox WHERE user = :user";
+                rows = YouTrackDBTransactions.queryRows(g, sql, "user", fixedUser);
+            } else {
+                sql = "SELECT FROM JamesMailbox";
+                rows = YouTrackDBTransactions.queryRows(g, sql);
+            }
+            List<Mailbox> result = new ArrayList<>(rows.size());
+            for (Map<String, Object> row : rows) {
+                result.add(readMailbox(row));
+            }
+            return result;
+        }).subscribeOn(Schedulers.boundedElastic())
+          .flatMapIterable(list -> list)
+          .filter(query::matches);
     }
 
     @Override
     public Mono<Boolean> hasChildren(Mailbox mailbox, char delimiter) {
         String childPrefix = mailbox.getName() + delimiter;
-        return list()
-            .filter(box -> belongsToSameUser(mailbox, box) && box.getName().startsWith(childPrefix))
-            .hasElements();
+        return Mono.fromCallable(() -> {
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT FROM JamesMailbox WHERE namespace = :ns AND user = :user",
+                "ns", mailbox.getNamespace(),
+                "user", mailbox.getUser() != null ? mailbox.getUser().asString() : "");
+            for (Map<String, Object> row : rows) {
+                Object nameObj = row.get(PROP_NAME);
+                if (nameObj != null && nameObj.toString().startsWith(childPrefix)) {
+                    return true;
+                }
+            }
+            return false;
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     private boolean belongsToSameUser(Mailbox mailbox, Mailbox otherMailbox) {
@@ -194,7 +233,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
 
     @Override
     public Mono<ACLDiff> updateACL(Mailbox mailbox, MailboxACL.ACLCommand mailboxACLCommand) {
-        return Mono.fromCallable(() -> {
+        return Mono.fromCallable(() -> YouTrackDBTransactions.retryOnConflict(() -> {
             return YouTrackDBTransactions.computeStrictTx(g, tx -> {
                 Mailbox found = findMailboxByIdSync(tx, mailbox.getMailboxId());
                 if (found == null) {
@@ -215,12 +254,12 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 mailbox.setACL(newAcl);
                 return ACLDiff.computeDiff(oldAcl, newAcl);
             });
-        }).subscribeOn(Schedulers.boundedElastic());
+        })).subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
     public Mono<ACLDiff> setACL(Mailbox mailbox, MailboxACL mailboxACL) {
-        return Mono.fromCallable(() -> {
+        return Mono.fromCallable(() -> YouTrackDBTransactions.retryOnConflict(() -> {
             return YouTrackDBTransactions.computeStrictTx(g, tx -> {
                 Mailbox found = findMailboxByIdSync(tx, mailbox.getMailboxId());
                 if (found == null) {
@@ -235,7 +274,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 mailbox.setACL(mailboxACL);
                 return ACLDiff.computeDiff(oldAcl, mailboxACL);
             });
-        }).subscribeOn(Schedulers.boundedElastic());
+        })).subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
@@ -320,6 +359,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             }
             return new MailboxACL(entries);
         } catch (Exception e) {
+            LOGGER.error("Failed to deserialize mailbox ACL JSON: {}", json, e);
             return MailboxACL.EMPTY;
         }
     }

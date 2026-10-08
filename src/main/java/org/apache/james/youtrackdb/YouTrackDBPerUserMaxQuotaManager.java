@@ -42,6 +42,14 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
         this.g = Objects.requireNonNull(g, "g must not be null");
     }
 
+    private Mono<Void> blockingRunnable(Runnable action) {
+        return Mono.fromRunnable(action).subscribeOn(Schedulers.boundedElastic()).then();
+    }
+
+    private <T> Mono<T> blockingSupplier(java.util.function.Supplier<Optional<T>> supplier) {
+        return Mono.fromSupplier(supplier).flatMap(Mono::justOrEmpty).subscribeOn(Schedulers.boundedElastic());
+    }
+
     @Override
     public void setMaxStorage(QuotaRoot quotaRoot, QuotaSizeLimit maxStorageQuota) {
         setUserLimit(quotaRoot.getValue(), "maxStorage", quotaValueToLong(Optional.of(maxStorageQuota)));
@@ -49,7 +57,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> setMaxStorageReactive(QuotaRoot quotaRoot, QuotaSizeLimit maxStorageQuota) {
-        return Mono.fromRunnable(() -> setMaxStorage(quotaRoot, maxStorageQuota));
+        return blockingRunnable(() -> setMaxStorage(quotaRoot, maxStorageQuota));
     }
 
     @Override
@@ -59,7 +67,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> setMaxMessageReactive(QuotaRoot quotaRoot, QuotaCountLimit maxMessageCount) {
-        return Mono.fromRunnable(() -> setMaxMessage(quotaRoot, maxMessageCount));
+        return blockingRunnable(() -> setMaxMessage(quotaRoot, maxMessageCount));
     }
 
     @Override
@@ -69,7 +77,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> setDomainMaxMessageReactive(Domain domain, QuotaCountLimit count) {
-        return Mono.fromRunnable(() -> setDomainMaxMessage(domain, count));
+        return blockingRunnable(() -> setDomainMaxMessage(domain, count));
     }
 
     @Override
@@ -79,7 +87,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> setDomainMaxStorageReactive(Domain domain, QuotaSizeLimit size) {
-        return Mono.fromRunnable(() -> setDomainMaxStorage(domain, size));
+        return blockingRunnable(() -> setDomainMaxStorage(domain, size));
     }
 
     @Override
@@ -89,7 +97,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> removeDomainMaxMessageReactive(Domain domain) {
-        return Mono.fromRunnable(() -> removeDomainMaxMessage(domain));
+        return blockingRunnable(() -> removeDomainMaxMessage(domain));
     }
 
     @Override
@@ -99,7 +107,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> removeDomainMaxStorageReactive(Domain domain) {
-        return Mono.fromRunnable(() -> removeDomainMaxStorage(domain));
+        return blockingRunnable(() -> removeDomainMaxStorage(domain));
     }
 
     @Override
@@ -110,7 +118,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<QuotaCountLimit> getDomainMaxMessageReactive(Domain domain) {
-        return Mono.fromSupplier(() -> getDomainMaxMessage(domain)).flatMap(Mono::justOrEmpty);
+        return blockingSupplier(() -> getDomainMaxMessage(domain));
     }
 
     @Override
@@ -121,7 +129,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<QuotaSizeLimit> getDomainMaxStorageReactive(Domain domain) {
-        return Mono.fromSupplier(() -> getDomainMaxStorage(domain)).flatMap(Mono::justOrEmpty);
+        return blockingSupplier(() -> getDomainMaxStorage(domain));
     }
 
     @Override
@@ -131,7 +139,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> removeMaxMessageReactive(QuotaRoot quotaRoot) {
-        return Mono.fromRunnable(() -> removeMaxMessage(quotaRoot));
+        return blockingRunnable(() -> removeMaxMessage(quotaRoot));
     }
 
     @Override
@@ -141,7 +149,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> setGlobalMaxStorageReactive(QuotaSizeLimit globalMaxStorage) {
-        return Mono.fromRunnable(() -> setGlobalMaxStorage(globalMaxStorage));
+        return blockingRunnable(() -> setGlobalMaxStorage(globalMaxStorage));
     }
 
     @Override
@@ -151,7 +159,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> removeGlobalMaxMessageReactive() {
-        return Mono.fromRunnable(this::removeGlobalMaxMessage);
+        return blockingRunnable(this::removeGlobalMaxMessage);
     }
 
     @Override
@@ -161,7 +169,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> setGlobalMaxMessageReactive(QuotaCountLimit globalMaxMessageCount) {
-        return Mono.fromRunnable(() -> setGlobalMaxMessage(globalMaxMessageCount));
+        return blockingRunnable(() -> setGlobalMaxMessage(globalMaxMessageCount));
     }
 
     @Override
@@ -172,7 +180,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<QuotaSizeLimit> getGlobalMaxStorageReactive() {
-        return Mono.fromSupplier(this::getGlobalMaxStorage).flatMap(Mono::justOrEmpty);
+        return blockingSupplier(this::getGlobalMaxStorage);
     }
 
     @Override
@@ -183,7 +191,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<QuotaCountLimit> getGlobalMaxMessageReactive() {
-        return Mono.fromSupplier(this::getGlobalMaxMessage).flatMap(Mono::justOrEmpty);
+        return blockingSupplier(this::getGlobalMaxMessage);
     }
 
     @Override
@@ -222,7 +230,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> removeMaxStorageReactive(QuotaRoot quotaRoot) {
-        return Mono.fromRunnable(() -> removeMaxStorage(quotaRoot));
+        return blockingRunnable(() -> removeMaxStorage(quotaRoot));
     }
 
     @Override
@@ -232,7 +240,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Publisher<Void> removeGlobalMaxStorageReactive() {
-        return Mono.fromRunnable(this::removeGlobalMaxStorage);
+        return blockingRunnable(this::removeGlobalMaxStorage);
     }
 
     private void setUserLimit(String key, String field, Long value) {
@@ -251,7 +259,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
         try {
             YouTrackDBTransactions.retryOnConflict(10, () -> {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(tx,
+                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
                         "SELECT FROM JamesQuotaLimit WHERE scope = :scope AND quotaKey = :key",
                         "scope", scope, "key", key);
                     if (rows.isEmpty()) {

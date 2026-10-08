@@ -64,32 +64,31 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
         if (messageIds.isEmpty()) {
             return Flux.empty();
         }
-        return Flux.fromIterable(messageIds)
-            .flatMap(msgId -> Flux.fromIterable(findMessagesForId(msgId)));
-    }
+        return Flux.defer(() -> {
+            try {
+                List<String> serializedIds = messageIds.stream()
+                    .map(MessageId::serialize)
+                    .collect(ImmutableList.toImmutableList());
 
-    private List<MailboxMessage> findMessagesForId(MessageId messageId) {
-        try {
-            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT mailboxId, uid FROM JamesMailboxMessage WHERE messageId = :mid",
-                "mid", messageId.serialize());
+                String selectClause = (fetchType == MessageMapper.FetchType.METADATA)
+                    ? "SELECT mailboxId, messageId, threadId, uid, modSeq, internalDate, saveDate, size, bodyStartOctet, flags, userFlags FROM JamesMailboxMessage"
+                    : "SELECT FROM JamesMailboxMessage";
 
-            ImmutableList.Builder<MailboxMessage> builder = ImmutableList.builder();
-            for (Map<String, Object> row : rows) {
-                String mbxIdStr = Objects.toString(row.get("mailboxId"), null);
-                long uidLong = ((Number) row.get("uid")).longValue();
-                MailboxId mbxId = YouTrackDBMailboxId.of(mbxIdStr);
-                Mailbox mailbox = MailboxReactorUtils.block(mailboxMapper.findMailboxById(mbxId));
-                java.util.Iterator<MailboxMessage> it = messageMapper.findInMailbox(
-                    mailbox, MessageRange.one(MessageUid.of(uidLong)), MessageMapper.FetchType.FULL, 1);
-                if (it.hasNext()) {
-                    builder.add(it.next());
+                List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                    selectClause + " WHERE messageId IN :mids",
+                    "mids", serializedIds);
+
+                ImmutableList.Builder<MailboxMessage> builder = ImmutableList.builder();
+                for (Map<String, Object> row : rows) {
+                    String mbxIdStr = Objects.toString(row.get("mailboxId"), null);
+                    MailboxId mbxId = YouTrackDBMailboxId.of(mbxIdStr);
+                    builder.add(YouTrackDBMessageMapper.readMessage(row, mbxId, fetchType));
                 }
+                return Flux.fromIterable(builder.build());
+            } catch (Exception e) {
+                return Flux.error(new RuntimeException("Error finding messages by messageIds", e));
             }
-            return builder.build();
-        } catch (Exception e) {
-            throw new RuntimeException("Error finding messages by messageId " + messageId.serialize(), e);
-        }
+        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override
@@ -112,7 +111,7 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
             } catch (Exception e) {
                 return Flux.error(e);
             }
-        });
+        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override

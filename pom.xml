@@ -195,6 +195,7 @@
                     <reuseForks>false</reuseForks>
                     <forkCount>1C</forkCount>
                     <argLine>-Xms512m -Xmx1024m</argLine>
+                    <excludedGroups>benchmark</excludedGroups>
                 </configuration>
             </plugin>
             <plugin>

@@ -34,15 +34,17 @@ public class YouTrackDBMailboxSessionMapperFactory extends MailboxSessionMapperF
     private final YTDBGraphTraversalSource g;
 
     @Inject
-    public YouTrackDBMailboxSessionMapperFactory(Clock clock, YTDBGraphTraversalSource g) {
+    public YouTrackDBMailboxSessionMapperFactory(Clock clock,
+                                                 YTDBGraphTraversalSource g,
+                                                 UidProvider uidProvider,
+                                                 ModSeqProvider modSeqProvider) {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.g = Objects.requireNonNull(g, "g must not be null");
+        this.uidProvider = Objects.requireNonNull(uidProvider, "uidProvider must not be null");
+        this.modSeqProvider = Objects.requireNonNull(modSeqProvider, "modSeqProvider must not be null");
 
         this.mailboxMapper = new YouTrackDBMailboxMapper(g);
         this.subscriptionMapper = new YouTrackDBSubscriptionMapper(g);
-        this.uidProvider = new YouTrackDBUidProvider(g);
-        this.modSeqProvider = new YouTrackDBModSeqProvider(g);
-
         this.attachmentMapper = new InMemoryAttachmentMapper();
         this.annotationMapper = new YouTrackDBAnnotationMapper(g);
     }

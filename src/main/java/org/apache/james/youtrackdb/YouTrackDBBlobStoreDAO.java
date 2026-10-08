@@ -141,12 +141,20 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
 
     /** A name is used as a path segment only if it cannot leave its directory or be mistaken for one. */
     private static boolean isPlainSegment(String name) {
-        return !name.isEmpty()
-            && !".".equals(name)
-            && !name.contains("..")
-            && name.indexOf('/') < 0
-            && name.indexOf('\\') < 0
-            && name.indexOf('\0') < 0;
+        if (name.isEmpty() || ".".equals(name) || name.contains("..")) {
+            return false;
+        }
+        char last = name.charAt(name.length() - 1);
+        if (last == '.' || last == ' ') {
+            return false;
+        }
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c <= 31 || c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean isPlainBucket(String bucket) {
@@ -325,12 +333,14 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 } catch (Exception e) {
                     throw new ObjectStoreIOException("Error decompressing inline blob: " + key, e);
                 }
-            } else {
+            } else if (STORAGE_INLINE_RAW.equals(storageType) || LEGACY_STORAGE_INLINE.equals(storageType)) {
                 byte[] bytes = meta.payload();
                 if (bytes == null) {
                     bytes = new byte[0];
                 }
                 return InputStreamBlob.of(new ByteArrayInputStream(bytes));
+            } else {
+                throw new ObjectStoreIOException("Unknown storage type: " + storageType + " for blob " + key);
             }
         })
         .switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
@@ -381,8 +391,9 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 } catch (IOException e) {
                     throw new ObjectStoreIOException("Error reading blob file: " + file.getAbsolutePath(), e);
                 }
+            } else {
+                throw new ObjectStoreIOException("Unknown storage type: " + storageType + " for blob " + key);
             }
-            return BytesBlob.of(new byte[0]);
         })
         .switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());

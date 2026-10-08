@@ -31,7 +31,7 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
     private static final String PROP_ALGO = "algorithm";
 
     private final YTDBGraphTraversalSource g;
-    private Algorithm algo;
+    private volatile Algorithm algo;
 
     public static final String DEFAULT_ALGORITHM = "PBKDF2-SHA512-210000";
 

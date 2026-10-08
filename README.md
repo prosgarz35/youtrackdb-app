@@ -209,12 +209,7 @@ youtrackdb.path=var/youtrackdb
 youtrackdb.storage.diskCache.bufferSize=2048
 youtrackdb.storage.diskCache.writeCachePart=15
 youtrackdb.storage.diskCache.writeCachePageFlushInterval=25
-youtrackdb.storage.diskCache.checksumMode=Store
 youtrackdb.storage.wal.bufferSize=128
 youtrackdb.storage.wal.cacheSize=65536
 youtrackdb.storage.wal.commitTimeout=50
-youtrackdb.memory.directMemory.preallocate=true
-youtrackdb.db.pool.min=64
-youtrackdb.db.pool.max=256
-youtrackdb.statement.cacheSize=500
 ```

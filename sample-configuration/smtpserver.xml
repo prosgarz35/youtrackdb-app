@@ -27,7 +27,7 @@
         <jmxName>smtpserver-global</jmxName>
         <bind>0.0.0.0:25</bind>
         <connectionBacklog>200</connectionBacklog>
-        <tls socketTLS="false" startTLS="false">
+        <tls socketTLS="false" startTLS="true">
             <keystore>file://conf/keystore</keystore>
             <keystoreType>PKCS12</keystoreType>
             <secret>james72laBalle</secret>

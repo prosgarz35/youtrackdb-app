@@ -22,11 +22,13 @@ import org.apache.james.utils.TestIMAPClient;
 import org.apache.james.youtrackdb.YouTrackDBJamesConfiguration;
 import org.apache.james.youtrackdb.YouTrackDBJamesServerMain;
 import org.awaitility.Awaitility;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@Tag("benchmark")
 public class YouTrackDBBenchmarkTest implements JamesServerConcreteContract {
     private static final Logger LOGGER = LoggerFactory.getLogger(YouTrackDBBenchmarkTest.class);
 
