@@ -184,6 +184,18 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesQuotaUsage.size IF NOT EXISTS LONG");
                     g.command("CREATE INDEX JamesQuotaUsage.quotaRoot IF NOT EXISTS ON JamesQuotaUsage (quotaRoot) UNIQUE");
 
+                    // Class for MailRepository URLs
+                    g.command("CREATE CLASS JamesMailRepositoryUrl IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesMailRepositoryUrl.url IF NOT EXISTS STRING");
+                    g.command("CREATE INDEX JamesMailRepositoryUrl.url IF NOT EXISTS ON JamesMailRepositoryUrl (url) UNIQUE");
+
+                    // Class for Mailbox Annotations (RFC 5464)
+                    g.command("CREATE CLASS JamesMailboxAnnotation IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesMailboxAnnotation.mailboxId IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesMailboxAnnotation.key IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesMailboxAnnotation.value IF NOT EXISTS STRING");
+                    g.command("CREATE INDEX JamesMailboxAnnotation.mailboxAndKey IF NOT EXISTS ON JamesMailboxAnnotation (mailboxId, key) UNIQUE");
+
                     // Validation: verify that all existing mailbox IDs follow canonical uppercase UUID format
                     var rows = g.yql("SELECT mailboxId FROM JamesMailbox").toList();
                     for (Object row : rows) {

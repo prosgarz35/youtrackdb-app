@@ -49,8 +49,8 @@ public class YouTrackDBDataModule extends AbstractModule {
         bind(CanSendFromImpl.class).in(Scopes.SINGLETON);
         bind(CanSendFrom.class).to(CanSendFromImpl.class);
 
-        bind(MemoryMailRepositoryUrlStore.class).in(Scopes.SINGLETON);
-        bind(MailRepositoryUrlStore.class).to(MemoryMailRepositoryUrlStore.class);
+        bind(YouTrackDBMailRepositoryUrlStore.class).in(Scopes.SINGLETON);
+        bind(MailRepositoryUrlStore.class).to(YouTrackDBMailRepositoryUrlStore.class);
 
         bind(MailRepositoryStoreConfiguration.Item.class)
             .toProvider(() -> new MailRepositoryStoreConfiguration.Item(

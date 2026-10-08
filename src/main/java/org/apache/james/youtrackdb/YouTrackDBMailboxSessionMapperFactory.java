@@ -46,7 +46,7 @@ public class YouTrackDBMailboxSessionMapperFactory extends MailboxSessionMapperF
         this.modSeqProvider = new YouTrackDBModSeqProvider(g);
 
         this.attachmentMapper = new InMemoryAttachmentMapper();
-        this.annotationMapper = new InMemoryAnnotationMapper();
+        this.annotationMapper = new YouTrackDBAnnotationMapper(g);
     }
 
     @Override
