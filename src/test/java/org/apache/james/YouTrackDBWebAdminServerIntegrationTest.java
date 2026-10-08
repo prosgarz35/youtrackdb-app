@@ -129,7 +129,11 @@ class YouTrackDBWebAdminServerIntegrationTest implements JamesServerConcreteCont
     }
 
     @Test
-    void webAdminShouldRecomputeCurrentQuotas() {
+    void webAdminShouldRecomputeCurrentQuotas() throws Exception {
+        dataProbe.addDomain(DOMAIN);
+        dataProbe.addUser(USERNAME, "secret");
+
+        // Alice has no mail yet, so recomputing quotas ensures current quota is 0 / empty
         String taskId = given()
             .queryParam("task", "RecomputeCurrentQuotas")
         .when()
@@ -147,5 +151,14 @@ class YouTrackDBWebAdminServerIntegrationTest implements JamesServerConcreteCont
             .statusCode(HttpStatus.OK_200)
             .body("status", org.hamcrest.Matchers.equalTo("completed"))
             .body("type", org.hamcrest.Matchers.equalTo("recompute-current-quotas"));
+
+        // Verify the user quota is readable and reflects computed usage
+        when()
+            .get("/quota/users/" + USERNAME)
+        .then()
+            .statusCode(HttpStatus.OK_200)
+            .body("occupation.count", org.hamcrest.Matchers.equalTo(0))
+            .body("occupation.size", org.hamcrest.Matchers.equalTo(0));
     }
 }
+

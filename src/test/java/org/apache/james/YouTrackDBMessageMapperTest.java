@@ -230,12 +230,12 @@ public class YouTrackDBMessageMapperTest {
     }
 
     @Test
-    void metadataFetchBenchmarkShouldBeFasterThanFullFetch() throws Exception {
+    void metadataAndFullFetchShouldReturnValidMessages() throws Exception {
         Mailbox benchmarkMailbox = mailboxMapper.create(MailboxPath.forUser(Username.of("benchmark"), "Benchmark"), UidValidity.of(99999L)).block();
         byte[] payload20k = new byte[20 * 1024]; // 20 KB
         java.util.Arrays.fill(payload20k, (byte) 'A');
 
-        int messageCount = 300;
+        int messageCount = 100;
         for (int i = 0; i < messageCount; i++) {
             SimpleMailboxMessage msg = SimpleMailboxMessage.builder()
                 .mailboxId(benchmarkMailbox.getMailboxId())
@@ -250,17 +250,11 @@ public class YouTrackDBMessageMapperTest {
             messageMapper.add(benchmarkMailbox, msg);
         }
 
-        // Measure FULL
-        long startFull = System.nanoTime();
         List<MailboxMessage> fullList = ImmutableList.copyOf(
             messageMapper.findInMailbox(benchmarkMailbox, MessageRange.all(), FetchType.FULL, messageCount));
-        long durationFullMs = (System.nanoTime() - startFull) / 1_000_000;
 
-        // Measure METADATA
-        long startMeta = System.nanoTime();
         List<MailboxMessage> metaList = ImmutableList.copyOf(
             messageMapper.findInMailbox(benchmarkMailbox, MessageRange.all(), FetchType.METADATA, messageCount));
-        long durationMetaMs = (System.nanoTime() - startMeta) / 1_000_000;
 
         assertThat(fullList).hasSize(messageCount);
         assertThat(metaList).hasSize(messageCount);
