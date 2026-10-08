@@ -48,6 +48,11 @@ public class YouTrackDBMailboxServerRestartTest {
 
             org.apache.james.mailbox.probe.QuotaProbe quotaProbe1 = server1.getProbe(org.apache.james.modules.QuotaProbesImpl.class);
             org.apache.james.mailbox.model.QuotaRoot bobQuotaRoot1 = quotaProbe1.getQuotaRoot(org.apache.james.mailbox.model.MailboxPath.inbox(org.apache.james.core.Username.of(USER)));
+            // 3 levels of quota limits: User, Domain, Global
+            quotaProbe1.setGlobalMaxMessageCount(org.apache.james.core.quota.QuotaCountLimit.count(500L));
+            quotaProbe1.setGlobalMaxStorage(org.apache.james.core.quota.QuotaSizeLimit.size(5000000L));
+            quotaProbe1.setDomainMaxMessage(org.apache.james.core.Domain.of(DOMAIN), org.apache.james.core.quota.QuotaCountLimit.count(250L));
+            quotaProbe1.setDomainMaxStorage(org.apache.james.core.Domain.of(DOMAIN), org.apache.james.core.quota.QuotaSizeLimit.size(2500000L));
             quotaProbe1.setMaxMessageCount(bobQuotaRoot1, org.apache.james.core.quota.QuotaCountLimit.count(100L));
             quotaProbe1.setMaxStorage(bobQuotaRoot1, org.apache.james.core.quota.QuotaSizeLimit.size(1024000L));
 
@@ -143,9 +148,11 @@ public class YouTrackDBMailboxServerRestartTest {
             String searchResult = imapClient2.sendCommand("SEARCH TEXT \"persistent mailbox world\"");
             assertThat(searchResult).contains("* SEARCH 1");
 
-            // Verify Quota survived restart
+            // Verify Quota survived restart (Global, Domain, User priority)
             org.apache.james.mailbox.probe.QuotaProbe quotaProbe2 = server2.getProbe(org.apache.james.modules.QuotaProbesImpl.class);
             org.apache.james.mailbox.model.QuotaRoot bobQuotaRoot = quotaProbe2.getQuotaRoot(org.apache.james.mailbox.model.MailboxPath.inbox(org.apache.james.core.Username.of(USER)));
+            assertThat(quotaProbe2.getGlobalMaxMessageCount()).contains(org.apache.james.core.quota.QuotaCountLimit.count(500L));
+            assertThat(quotaProbe2.getGlobalMaxStorage()).contains(org.apache.james.core.quota.QuotaSizeLimit.size(5000000L));
             assertThat(quotaProbe2.getMaxMessageCount(bobQuotaRoot)).contains(org.apache.james.core.quota.QuotaCountLimit.count(100L));
             assertThat(quotaProbe2.getMaxStorage(bobQuotaRoot)).contains(org.apache.james.core.quota.QuotaSizeLimit.size(1024000L));
             assertThat(quotaProbe2.getMessageCountQuota(bobQuotaRoot).getUsed().asLong()).isEqualTo(1L);

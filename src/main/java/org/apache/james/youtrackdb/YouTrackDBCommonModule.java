@@ -232,6 +232,10 @@ public class YouTrackDBCommonModule extends AbstractModule {
         com.google.inject.multibindings.Multibinder.newSetBinder(binder(), org.apache.james.webadmin.Routes.class)
             .addBinding()
             .to(YouTrackDBAdminRoutes.class);
+
+        com.google.inject.multibindings.Multibinder.newSetBinder(binder(), org.apache.james.utils.GuiceProbe.class)
+            .addBinding()
+            .to(YouTrackDBProbe.class);
     }
 
     @Provides
