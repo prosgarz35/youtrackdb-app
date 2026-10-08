@@ -114,7 +114,7 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE CLASS JamesRRTMapping IF NOT EXISTS EXTENDS V");
                     g.command("CREATE PROPERTY JamesRRTMapping.source IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesRRTMapping.mapping IF NOT EXISTS STRING");
-                    g.command("CREATE INDEX JamesRRTMapping.source IF NOT EXISTS NOTUNIQUE");
+                    // Composite index on (source, mapping) serves point lookups, uniqueness, and prefix lookups on source
                     g.command("CREATE INDEX JamesRRTMapping.sourceAndMapping IF NOT EXISTS ON JamesRRTMapping (source, mapping) UNIQUE");
 
                     // Class for Blobs
@@ -125,8 +125,7 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesBlob.storageType IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesBlob.payload IF NOT EXISTS BINARY");
                     g.command("CREATE INDEX JamesBlob.bucketAndBlobId IF NOT EXISTS UNIQUE");
-                    g.command("CREATE INDEX JamesBlob.bucket IF NOT EXISTS NOTUNIQUE");
-                    // Range scans by blobId prefix inside a bucket (mail repositories): see YouTrackDBBlobStoreDAO.listBlobs
+                    // Composite index on (bucket, blobId) serves prefix and range scans inside a bucket: see YouTrackDBBlobStoreDAO.listBlobs
                     g.command("CREATE INDEX JamesBlob.bucketAndBlobIdRange IF NOT EXISTS ON JamesBlob (bucket, blobId) NOTUNIQUE");
 
                     // Class for MailQueue Items
@@ -136,7 +135,6 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesQueueItem.nextDelivery IF NOT EXISTS LONG");
                     g.command("CREATE PROPERTY JamesQueueItem.serializedMail IF NOT EXISTS BINARY");
                     g.command("CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) UNIQUE");
-                    g.command("CREATE INDEX JamesQueueItem.queueAndDelivery IF NOT EXISTS ON JamesQueueItem (queueName, nextDelivery) NOTUNIQUE");
 
                     // Class for Mailbox
                     g.command("CREATE CLASS JamesMailbox IF NOT EXISTS EXTENDS V");
