@@ -38,48 +38,36 @@ public class YouTrackDBModSeqProvider implements ModSeqProvider {
         Object lock = mailboxLocks.computeIfAbsent(mailboxId.serialize(), k -> new Object());
         synchronized (lock) {
             int maxRetries = 10;
-            for (int attempt = 1; attempt <= maxRetries; attempt++) {
-                try {
+            try {
+                return YouTrackDBTransactions.retryOnConflict(maxRetries, () -> {
                     return YouTrackDBTransactions.computeStrictTx(g, tx -> {
-                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(tx,
-                        "SELECT highestModSeq FROM JamesMailbox WHERE mailboxId = :id",
-                        "id", mailboxId.serialize());
-                    if (rows.isEmpty()) {
-                        throw new MailboxNotFoundException(mailboxId);
-                    }
+                        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(tx,
+                            "SELECT highestModSeq FROM JamesMailbox WHERE mailboxId = :id",
+                            "id", mailboxId.serialize());
+                        if (rows.isEmpty()) {
+                            throw new MailboxNotFoundException(mailboxId);
+                        }
 
-                    Object currentVal = rows.get(0).get("highestModSeq");
-                    long current = currentVal instanceof Number ? ((Number) currentVal).longValue() : 0L;
-                    long next = current + 1L;
+                        Object currentVal = rows.get(0).get("highestModSeq");
+                        long current = currentVal instanceof Number ? ((Number) currentVal).longValue() : 0L;
+                        long next = current + 1L;
 
-                    tx.command("UPDATE JamesMailbox SET highestModSeq = :next WHERE mailboxId = :id",
-                        "next", next,
-                        "id", mailboxId.serialize());
+                        tx.command("UPDATE JamesMailbox SET highestModSeq = :next WHERE mailboxId = :id",
+                            "next", next,
+                            "id", mailboxId.serialize());
 
-                    return ModSeq.of(next);
+                        return ModSeq.of(next);
+                    });
                 });
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new MailboxException("Interrupted while allocating MODSEQ", ie);
+            } catch (MailboxException me) {
+                throw me;
             } catch (Exception e) {
-                if (e instanceof MailboxNotFoundException) {
-                    throw (MailboxNotFoundException) e;
-                }
-                boolean isRetryable = YouTrackDBTransactions.isRetryableConflict(e);
-                if (!isRetryable || attempt == maxRetries) {
-                    if (e instanceof MailboxException) {
-                        throw (MailboxException) e;
-                    }
-                    throw new MailboxException("Failed to allocate next MODSEQ for mailbox " + mailboxId.serialize(), e);
-                }
-                try {
-                    long sleepMs = 5L * attempt + java.util.concurrent.ThreadLocalRandom.current().nextInt(15);
-                    Thread.sleep(sleepMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new MailboxException("Interrupted while allocating MODSEQ", ie);
-                }
+                throw new MailboxException("Failed to allocate next MODSEQ for mailbox " + mailboxId.serialize(), e);
             }
         }
-        throw new MailboxException("Failed to allocate next MODSEQ after retries for mailbox " + mailboxId.serialize());
-    }
     }
 
     @Override

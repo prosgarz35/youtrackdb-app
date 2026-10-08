@@ -237,20 +237,7 @@ public class YouTrackDBCountersTest {
     }
 
     @Test
-    void uidProviderShouldRetryAndSucceedOnConcurrentModificationException() throws Exception {
-        Mailbox mailbox = mailboxMapper.create(MailboxPath.forUser(Username.of("alice"), "RetryBox"), UidValidity.of(400L)).block();
-
-        // Inject interceptor / simulate optimistic locking conflicts on first 2 attempts
-        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
-        YouTrackDBUidProvider mockRetryProvider = new YouTrackDBUidProvider(g) {
-            @Override
-            public MessageUid nextUid(Mailbox m) throws org.apache.james.mailbox.exception.MailboxException {
-                // We test the retry logic by delegating through the real provider logic with simulated storage exceptions
-                return super.nextUid(m);
-            }
-        };
-
-        // Validate isRetryableConflict directly
+    void isRetryableConflictShouldClassifyEngineExceptions() {
         com.jetbrains.youtrackdb.internal.core.id.RecordId dummyRid =
             new com.jetbrains.youtrackdb.internal.core.id.RecordId(1, 1L);
         com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException cme =
@@ -264,9 +251,54 @@ public class YouTrackDBCountersTest {
         assertThat(YouTrackDBTransactions.isRetryableConflict(new RuntimeException("wrapped", cme))).isTrue();
         assertThat(YouTrackDBTransactions.isRetryableConflict(cce)).isTrue();
         assertThat(YouTrackDBTransactions.isRetryableConflict(cie)).isFalse();
+    }
 
-        // And verify normal nextUid works as expected
-        MessageUid uid = uidProvider.nextUid(mailbox);
-        assertThat(uid).isEqualTo(MessageUid.of(1L));
+    @Test
+    void retryOnConflictShouldRetryAndSucceedWhenConflictResolves() throws Exception {
+        com.jetbrains.youtrackdb.internal.core.id.RecordId dummyRid =
+            new com.jetbrains.youtrackdb.internal.core.id.RecordId(1, 1L);
+        com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException cme =
+            new com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException("testDb", dummyRid, 1L, 2L, 1);
+
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        String result = YouTrackDBTransactions.retryOnConflict(3, () -> {
+            if (attempts.incrementAndGet() < 3) {
+                throw new RuntimeException("optimistic lock conflict", cme);
+            }
+            return "success";
+        });
+
+        assertThat(result).isEqualTo("success");
+        assertThat(attempts.get()).isEqualTo(3);
+    }
+
+    @Test
+    void retryOnConflictShouldThrowWhenRetriesExhausted() {
+        com.jetbrains.youtrackdb.internal.core.id.RecordId dummyRid =
+            new com.jetbrains.youtrackdb.internal.core.id.RecordId(1, 1L);
+        com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException cme =
+            new com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException("testDb", dummyRid, 1L, 2L, 1);
+
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        assertThatThrownBy(() -> YouTrackDBTransactions.retryOnConflict(2, () -> {
+            attempts.incrementAndGet();
+            throw new RuntimeException("persistent conflict", cme);
+        })).hasCause(cme);
+
+        assertThat(attempts.get()).isEqualTo(2);
+    }
+
+    @Test
+    void retryOnConflictShouldFailFastOnNonRetryableException() {
+        com.jetbrains.youtrackdb.internal.core.exception.CommandInterruptedException cie =
+            new com.jetbrains.youtrackdb.internal.core.exception.CommandInterruptedException("testDb", "interrupted");
+
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        assertThatThrownBy(() -> YouTrackDBTransactions.retryOnConflict(5, () -> {
+            attempts.incrementAndGet();
+            throw cie;
+        })).isEqualTo(cie);
+
+        assertThat(attempts.get()).isEqualTo(1);
     }
 }

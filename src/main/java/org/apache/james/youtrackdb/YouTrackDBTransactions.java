@@ -69,6 +69,30 @@ public final class YouTrackDBTransactions {
         return hasCause(t, com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException.class)
             || hasCause(t, com.jetbrains.youtrackdb.internal.core.exception.ConcurrentCreateException.class);
     }
+
+    /**
+     * Executes an action with automatic retry upon encountering retryable conflicts
+     * (ConcurrentModificationException or ConcurrentCreateException).
+     *
+     * @param maxRetries maximum number of attempts
+     * @param action the action to execute
+     * @return result of the action
+     * @throws Exception if max attempts are exhausted or a non-retryable exception occurs
+     */
+    public static <T> T retryOnConflict(int maxRetries, java.util.concurrent.Callable<T> action) throws Exception {
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                return action.call();
+            } catch (Exception e) {
+                if (!isRetryableConflict(e) || attempt == maxRetries) {
+                    throw e;
+                }
+                long sleepMs = 5L * attempt + java.util.concurrent.ThreadLocalRandom.current().nextInt(15);
+                Thread.sleep(sleepMs);
+            }
+        }
+        throw new IllegalStateException("Exhausted retries without result or exception");
+    }
     /** Executes a YQL query and extracts all rows as a list of Maps (DRY). */
     public static java.util.List<java.util.Map<String, Object>> queryRows(YTDBGraphTraversalSource g, String query, Object... params) {
         return g.computeInTx(tx -> {
