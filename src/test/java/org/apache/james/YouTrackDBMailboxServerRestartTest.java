@@ -37,6 +37,7 @@ public class YouTrackDBMailboxServerRestartTest {
             .build();
 
         // 1. First Server Run: create user, custom mailbox via IMAP, and deliver an email via SMTP
+        String statusBefore;
         GuiceJamesServer server1 = YouTrackDBJamesServerMain.createServer(configuration);
         server1.start();
         try {
@@ -60,10 +61,20 @@ public class YouTrackDBMailboxServerRestartTest {
                 .sendMessageWithHeaders(USER, USER, "Subject: Persistent Mail\r\n\r\nHello persistent mailbox world!");
 
             TestIMAPClient checkInboxClient = new TestIMAPClient();
-            AWAIT.until(() -> checkInboxClient.connect("127.0.0.1", imapPort1)
-                .login(USER, PASSWORD)
-                .select(TestIMAPClient.INBOX)
-                .hasAMessage());
+            checkInboxClient.connect("127.0.0.1", imapPort1)
+                .login(USER, PASSWORD);
+
+            AWAIT.until(() -> {
+                checkInboxClient.select(TestIMAPClient.INBOX);
+                return checkInboxClient.hasAMessage();
+            });
+
+            // Set flags before shutdown
+            checkInboxClient.setFlagsForAllMessagesInMailbox("\\Seen $CustomFlag");
+
+            // Capture status/UIDVALIDITY before shutdown
+            statusBefore = checkInboxClient.sendCommand("STATUS INBOX (UIDVALIDITY UIDNEXT)");
+            checkInboxClient.disconnect();
 
         } finally {
             server1.stop();
@@ -86,9 +97,39 @@ public class YouTrackDBMailboxServerRestartTest {
             String messageBody = imapClient2.readFirstMessage();
             assertThat(messageBody).contains("Hello persistent mailbox world!");
 
+            // RFC 3501: Verify UIDVALIDITY is unchanged after restart
+            String statusAfter = imapClient2.sendCommand("STATUS INBOX (UIDVALIDITY UIDNEXT)");
+            // Extract UIDVALIDITY value
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("UIDVALIDITY\\s+(\\d+)");
+            java.util.regex.Matcher mBefore = p.matcher(statusBefore);
+            java.util.regex.Matcher mAfter = p.matcher(statusAfter);
+            assertThat(mBefore.find()).isTrue();
+            assertThat(mAfter.find()).isTrue();
+            assertThat(mAfter.group(1)).isEqualTo(mBefore.group(1));
+
+            // Verify flags survived restart
+            String fetchFlags = imapClient2.sendCommand("FETCH 1 (FLAGS)");
+            assertThat(fetchFlags).contains("\\Seen");
+            assertThat(fetchFlags).contains("$CustomFlag");
+
             // Verify custom mailbox survived restart
             imapClient2.select("CustomFolder");
             assertThat(imapClient2.list()).anyMatch(line -> line.contains("CustomFolder"));
+
+            // Deliver a 2nd message after restart and verify UID increments monotonically without duplicates
+            SMTPMessageSender smtpSender2 = new SMTPMessageSender(DOMAIN);
+            smtpSender2.connect("127.0.0.1", server2.getProbe(SmtpGuiceProbe.class).getSmtpPort())
+                .authenticate(USER, PASSWORD)
+                .sendMessageWithHeaders(USER, USER, "Subject: Second Mail\r\n\r\nSecond message post restart!");
+
+            AWAIT.until(() -> {
+                imapClient2.select(TestIMAPClient.INBOX);
+                return imapClient2.getMessageCount(TestIMAPClient.INBOX) >= 2;
+            });
+
+            String fetchUids = imapClient2.sendCommand("FETCH 1:2 (UID)");
+            assertThat(fetchUids).contains("UID 1");
+            assertThat(fetchUids).contains("UID 2");
 
         } finally {
             server2.stop();

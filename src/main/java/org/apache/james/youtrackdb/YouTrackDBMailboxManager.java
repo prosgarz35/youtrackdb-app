@@ -16,6 +16,7 @@ import org.apache.james.mailbox.store.MailboxSessionMapperFactory;
 import org.apache.james.mailbox.store.PreDeletionHooks;
 import org.apache.james.mailbox.store.StoreMailboxAnnotationManager;
 import org.apache.james.mailbox.store.StoreMailboxManager;
+import org.apache.james.mailbox.store.StoreMessageManager;
 import org.apache.james.mailbox.store.StoreRightManager;
 import org.apache.james.mailbox.store.mail.ThreadIdGuessingAlgorithm;
 import org.apache.james.mailbox.store.mail.model.impl.MessageParser;
@@ -63,5 +64,22 @@ public class YouTrackDBMailboxManager extends StoreMailboxManager {
     @Override
     public EnumSet<MessageCapabilities> getSupportedMessageCapabilities() {
         return MESSAGE_CAPABILITIES;
+    }
+
+    @Override
+    protected StoreMessageManager createMessageManager(Mailbox mailbox, org.apache.james.mailbox.MailboxSession mailboxSession) {
+        return new YouTrackDBMessageManager(getMapperFactory(),
+            getMessageSearchIndex(),
+            getEventBus(),
+            getLocker(),
+            mailbox,
+            getQuotaComponents().getQuotaManager(),
+            getQuotaComponents().getQuotaRootResolver(),
+            getMessageIdFactory(),
+            configuration.getBatchSizes(),
+            getStoreRightManager(),
+            getPreDeletionHooks(),
+            getThreadIdGuessingAlgorithm(),
+            getClock());
     }
 }

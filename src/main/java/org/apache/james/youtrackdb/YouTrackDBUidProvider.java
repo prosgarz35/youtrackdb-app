@@ -22,6 +22,8 @@ public class YouTrackDBUidProvider implements UidProvider {
 
     private final YTDBGraphTraversalSource g;
 
+    private final java.util.concurrent.ConcurrentHashMap<String, Object> mailboxLocks = new java.util.concurrent.ConcurrentHashMap<>();
+
     @Inject
     public YouTrackDBUidProvider(YTDBGraphTraversalSource g) {
         this.g = Objects.requireNonNull(g, "g must not be null");
@@ -34,30 +36,49 @@ public class YouTrackDBUidProvider implements UidProvider {
 
     @Override
     public MessageUid nextUid(MailboxId mailboxId) throws MailboxException {
-        try {
-            return YouTrackDBTransactions.computeStrictTx(g, tx -> {
-                List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(tx,
-                    "SELECT lastUid FROM JamesMailbox WHERE mailboxId = :id",
-                    "id", mailboxId.serialize());
-                if (rows.isEmpty()) {
-                    throw new MailboxNotFoundException(mailboxId);
+        Object lock = mailboxLocks.computeIfAbsent(mailboxId.serialize(), k -> new Object());
+        synchronized (lock) {
+            int maxRetries = 10;
+            for (int attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    return YouTrackDBTransactions.computeStrictTx(g, tx -> {
+                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(tx,
+                        "SELECT lastUid FROM JamesMailbox WHERE mailboxId = :id",
+                        "id", mailboxId.serialize());
+                    if (rows.isEmpty()) {
+                        throw new MailboxNotFoundException(mailboxId);
+                    }
+
+                    Object currentVal = rows.get(0).get("lastUid");
+                    long last = currentVal instanceof Number ? ((Number) currentVal).longValue() : 0L;
+                    long next = last + 1L;
+
+                    tx.command("UPDATE JamesMailbox SET lastUid = :next WHERE mailboxId = :id",
+                        "next", next,
+                        "id", mailboxId.serialize());
+
+                    return MessageUid.of(next);
+                });
+            } catch (Exception e) {
+                if (e instanceof MailboxNotFoundException) {
+                    throw (MailboxNotFoundException) e;
                 }
-
-                Object currentVal = rows.get(0).get("lastUid");
-                long last = currentVal instanceof Number ? ((Number) currentVal).longValue() : 0L;
-                long next = last + 1L;
-
-                tx.command("UPDATE JamesMailbox SET lastUid = :next WHERE mailboxId = :id",
-                    "next", next,
-                    "id", mailboxId.serialize());
-
-                return MessageUid.of(next);
-            });
-        } catch (Exception e) {
-            if (e instanceof MailboxException) {
-                throw (MailboxException) e;
+                if (attempt == maxRetries) {
+                    if (e instanceof MailboxException) {
+                        throw (MailboxException) e;
+                    }
+                    throw new MailboxException("Failed to allocate next UID for mailbox " + mailboxId.serialize(), e);
+                }
+                    try {
+                        long sleepMs = 5L * attempt + java.util.concurrent.ThreadLocalRandom.current().nextInt(15);
+                        Thread.sleep(sleepMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new MailboxException("Interrupted while allocating UID", ie);
+                    }
+                }
             }
-            throw new MailboxException("Failed to allocate next UID for mailbox " + mailboxId.serialize(), e);
+            throw new MailboxException("Failed to allocate next UID after retries for mailbox " + mailboxId.serialize());
         }
     }
 
