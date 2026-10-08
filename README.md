@@ -198,6 +198,10 @@ Default data directory layout in `var/`:
 * `var/blobs/` — Sharded directory structure for large attachments & message bodies (> 64 KB) with transparent Zstd compression.
 * `var/backups/` — Destination directory for online backups.
 
+#### 🗄️ Mailbox Storage Format & Canonical Identifiers
+* **`JamesMailbox.mailboxId` Format**: Mailbox identifiers strictly follow canonical uppercase UUID representation (e.g. `12345678-ABCD-EF01-2345-6789ABCDEF01`). 
+* **Startup Integrity Guard**: During schema initialization, YouTrackDB James inspects existing `JamesMailbox` records and refuses to boot with an explicit error if any lowercase or malformed identifier is detected.
+
 Optional configuration file: `conf/youtrackdb.properties`
 ```properties
 # Custom path for YouTrackDB storage (defaults to var/youtrackdb)

@@ -185,6 +185,27 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesQuotaUsage.messageCount IF NOT EXISTS LONG");
                     g.command("CREATE PROPERTY JamesQuotaUsage.size IF NOT EXISTS LONG");
                     g.command("CREATE INDEX JamesQuotaUsage.quotaRoot IF NOT EXISTS ON JamesQuotaUsage (quotaRoot) UNIQUE");
+
+                    // Validation: verify that all existing mailbox IDs follow canonical uppercase UUID format
+                    var rows = g.yql("SELECT mailboxId FROM JamesMailbox").toList();
+                    for (Object row : rows) {
+                        String id = null;
+                        if (row instanceof java.util.Map<?, ?> m) {
+                            Object val = m.get("mailboxId");
+                            if (val != null) {
+                                id = val.toString();
+                            }
+                        } else if (row instanceof org.apache.tinkerpop.gremlin.structure.Vertex v) {
+                            var p = v.property("mailboxId");
+                            if (p.isPresent()) {
+                                id = p.value().toString();
+                            }
+                        }
+                        if (id != null && !id.equals(id.toUpperCase(java.util.Locale.US))) {
+                            throw new IllegalStateException("Found legacy/lowercase mailboxId in JamesMailbox: " + id
+                                + ". YouTrackDB James requires canonical uppercase UUID mailbox IDs.");
+                        }
+                    }
                 });
             } catch (Exception e) {
                 LOGGER.error("Schema initialization failed in YouTrackDB: {}", e.getMessage(), e);
