@@ -301,4 +301,35 @@ public class YouTrackDBCountersTest {
 
         assertThat(attempts.get()).isEqualTo(1);
     }
+
+    @Test
+    void retryOnConflictShouldRejectInvalidMaxRetries() {
+        assertThatThrownBy(() -> YouTrackDBTransactions.retryOnConflict(0, () -> "val"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("maxRetries must be positive");
+
+        assertThatThrownBy(() -> YouTrackDBTransactions.retryOnConflict(-1, () -> "val"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("maxRetries must be positive");
+    }
+
+    @Test
+    void retryOnConflictShouldPreserveInterruptedStatus() {
+        com.jetbrains.youtrackdb.internal.core.id.RecordId dummyRid =
+            new com.jetbrains.youtrackdb.internal.core.id.RecordId(1, 1L);
+        com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException cme =
+            new com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException("testDb", dummyRid, 1L, 2L, 1);
+
+        Thread.currentThread().interrupt();
+        try {
+            assertThatThrownBy(() -> YouTrackDBTransactions.retryOnConflict(2, () -> {
+                throw new RuntimeException("conflict", cme);
+            })).isInstanceOf(InterruptedException.class);
+
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally {
+            // Clear interrupted status for the thread runner
+            Thread.interrupted();
+        }
+    }
 }

@@ -37,10 +37,10 @@ public class YouTrackDBUidProvider implements UidProvider {
     @Override
     public MessageUid nextUid(MailboxId mailboxId) throws MailboxException {
         Object lock = mailboxLocks.computeIfAbsent(mailboxId.serialize(), k -> new Object());
-        synchronized (lock) {
-            int maxRetries = 10;
-            try {
-                return YouTrackDBTransactions.retryOnConflict(maxRetries, () -> {
+        int maxRetries = 10;
+        try {
+            return YouTrackDBTransactions.retryOnConflict(maxRetries, () -> {
+                synchronized (lock) {
                     return YouTrackDBTransactions.computeStrictTx(g, tx -> {
                         List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(tx,
                             "SELECT lastUid FROM JamesMailbox WHERE mailboxId = :id",
@@ -59,15 +59,15 @@ public class YouTrackDBUidProvider implements UidProvider {
 
                         return MessageUid.of(next);
                     });
-                });
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                throw new MailboxException("Interrupted while allocating UID", ie);
-            } catch (MailboxException me) {
-                throw me;
-            } catch (Exception e) {
-                throw new MailboxException("Failed to allocate next UID for mailbox " + mailboxId.serialize(), e);
-            }
+                }
+            });
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new MailboxException("Interrupted while allocating UID", ie);
+        } catch (MailboxException me) {
+            throw me;
+        } catch (Exception e) {
+            throw new MailboxException("Failed to allocate next UID for mailbox " + mailboxId.serialize(), e);
         }
     }
 

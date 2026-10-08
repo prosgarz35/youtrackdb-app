@@ -80,6 +80,9 @@ public final class YouTrackDBTransactions {
      * @throws Exception if max attempts are exhausted or a non-retryable exception occurs
      */
     public static <T> T retryOnConflict(int maxRetries, java.util.concurrent.Callable<T> action) throws Exception {
+        if (maxRetries <= 0) {
+            throw new IllegalArgumentException("maxRetries must be positive: " + maxRetries);
+        }
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 return action.call();
@@ -88,7 +91,12 @@ public final class YouTrackDBTransactions {
                     throw e;
                 }
                 long sleepMs = 5L * attempt + java.util.concurrent.ThreadLocalRandom.current().nextInt(15);
-                Thread.sleep(sleepMs);
+                try {
+                    Thread.sleep(sleepMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw ie;
+                }
             }
         }
         throw new IllegalStateException("Exhausted retries without result or exception");

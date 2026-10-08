@@ -36,10 +36,10 @@ public class YouTrackDBModSeqProvider implements ModSeqProvider {
     @Override
     public ModSeq nextModSeq(MailboxId mailboxId) throws MailboxException {
         Object lock = mailboxLocks.computeIfAbsent(mailboxId.serialize(), k -> new Object());
-        synchronized (lock) {
-            int maxRetries = 10;
-            try {
-                return YouTrackDBTransactions.retryOnConflict(maxRetries, () -> {
+        int maxRetries = 10;
+        try {
+            return YouTrackDBTransactions.retryOnConflict(maxRetries, () -> {
+                synchronized (lock) {
                     return YouTrackDBTransactions.computeStrictTx(g, tx -> {
                         List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(tx,
                             "SELECT highestModSeq FROM JamesMailbox WHERE mailboxId = :id",
@@ -58,15 +58,15 @@ public class YouTrackDBModSeqProvider implements ModSeqProvider {
 
                         return ModSeq.of(next);
                     });
-                });
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                throw new MailboxException("Interrupted while allocating MODSEQ", ie);
-            } catch (MailboxException me) {
-                throw me;
-            } catch (Exception e) {
-                throw new MailboxException("Failed to allocate next MODSEQ for mailbox " + mailboxId.serialize(), e);
-            }
+                }
+            });
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new MailboxException("Interrupted while allocating MODSEQ", ie);
+        } catch (MailboxException me) {
+            throw me;
+        } catch (Exception e) {
+            throw new MailboxException("Failed to allocate next MODSEQ for mailbox " + mailboxId.serialize(), e);
         }
     }
 
