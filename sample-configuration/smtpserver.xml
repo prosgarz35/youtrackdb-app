@@ -39,7 +39,7 @@
         <connectionLimitPerIP>0</connectionLimitPerIP>
         <authorizedAddresses>127.0.0.0/8</authorizedAddresses>
         <verifyIdentity>true</verifyIdentity>
-        <maxmessagesize>52428800</maxmessagesize>
+        <maxmessagesize>104857600</maxmessagesize>
         <addressBracketsEnforcement>true</addressBracketsEnforcement>
         <smtpGreeting>Mail Service Ready</smtpGreeting>
         <handlerchain coreHandlersPackage="org.apache.james.smtpserver.NoAuthCmdHandlerLoader">
@@ -74,7 +74,7 @@
         </auth>
         <authorizedAddresses>127.0.0.0/8</authorizedAddresses>
         <verifyIdentity>true</verifyIdentity>
-        <maxmessagesize>52428800</maxmessagesize>
+        <maxmessagesize>104857600</maxmessagesize>
         <addressBracketsEnforcement>true</addressBracketsEnforcement>
         <smtpGreeting>Mail Service Ready</smtpGreeting>
         <handlerchain>
@@ -110,7 +110,7 @@
         </auth>
         <authorizedAddresses>127.0.0.0/8</authorizedAddresses>
         <verifyIdentity>true</verifyIdentity>
-        <maxmessagesize>52428800</maxmessagesize>
+        <maxmessagesize>104857600</maxmessagesize>
         <addressBracketsEnforcement>true</addressBracketsEnforcement>
         <smtpGreeting>Mail Service Ready</smtpGreeting>
         <handlerchain>
