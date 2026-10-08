@@ -1,6 +1,8 @@
 package org.apache.james.youtrackdb;
 
 import org.apache.james.events.EventListener;
+import org.apache.james.jmap.api.upload.UploadUsageRepository;
+import org.apache.james.jmap.memory.upload.InMemoryUploadUsageRepository;
 import org.apache.james.mailbox.quota.CurrentQuotaManager;
 import org.apache.james.mailbox.quota.MaxQuotaManager;
 import org.apache.james.mailbox.quota.QuotaManager;
@@ -11,8 +13,6 @@ import org.apache.james.mailbox.store.quota.DefaultUserQuotaRootResolver;
 import org.apache.james.mailbox.store.quota.ListeningCurrentQuotaUpdater;
 import org.apache.james.mailbox.store.quota.QuotaUpdater;
 import org.apache.james.mailbox.store.quota.StoreQuotaManager;
-import org.apache.james.jmap.api.upload.UploadUsageRepository;
-import org.apache.james.jmap.memory.upload.InMemoryUploadUsageRepository;
 
 import com.google.inject.AbstractModule;
 import com.google.inject.Scopes;

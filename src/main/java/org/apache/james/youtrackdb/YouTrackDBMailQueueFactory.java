@@ -146,6 +146,10 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             recoverItemsFromDatabase();
 
             this.flux = Mono.<YouTrackDBMailQueueItem>create(sink -> {
+                    if (closed) {
+                        sink.success();
+                        return;
+                    }
                     try {
                         sink.success(mailItems.poll(10, TimeUnit.MILLISECONDS));
                     } catch (InterruptedException e) {
@@ -153,7 +157,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                     }
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .repeat()
+                .repeat(() -> !closed)
                 .subscribeOn(scheduler)
                 .flatMap(item ->
                     Mono.fromRunnable(() -> inProcessingMailItems.add(item)).thenReturn(item), 16)

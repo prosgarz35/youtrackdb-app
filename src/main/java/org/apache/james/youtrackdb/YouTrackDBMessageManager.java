@@ -1,7 +1,6 @@
 package org.apache.james.youtrackdb;
 
 import java.time.Clock;
-import java.util.EnumSet;
 
 import jakarta.mail.Flags;
 import jakarta.mail.Flags.Flag;

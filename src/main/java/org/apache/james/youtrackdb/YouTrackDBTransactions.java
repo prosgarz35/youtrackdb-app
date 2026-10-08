@@ -67,7 +67,8 @@ public final class YouTrackDBTransactions {
      */
     public static boolean isRetryableConflict(Throwable t) {
         return hasCause(t, com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException.class)
-            || hasCause(t, com.jetbrains.youtrackdb.internal.core.exception.ConcurrentCreateException.class);
+            || hasCause(t, com.jetbrains.youtrackdb.internal.core.exception.ConcurrentCreateException.class)
+            || hasCause(t, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class);
     }
 
     /**
@@ -101,6 +102,7 @@ public final class YouTrackDBTransactions {
         }
         throw new IllegalStateException("Exhausted retries without result or exception");
     }
+
     /** Executes a YQL query and extracts all rows as a list of Maps (DRY). */
     public static java.util.List<java.util.Map<String, Object>> queryRows(YTDBGraphTraversalSource g, String query, Object... params) {
         return g.computeInTx(tx -> {

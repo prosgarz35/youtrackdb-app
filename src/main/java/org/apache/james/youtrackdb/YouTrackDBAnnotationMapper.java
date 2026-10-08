@@ -95,9 +95,8 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
         String key = mailboxAnnotation.getKey().asString();
         String val = mailboxAnnotation.getValue().orElse("");
 
-        int maxRetries = 5;
-        for (int attempt = 0; attempt < maxRetries; attempt++) {
-            try {
+        try {
+            YouTrackDBTransactions.retryOnConflict(10, () -> {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     var existing = tx.V().hasLabel(CLASS)
                         .has(PROP_MAILBOX_ID, mId)
@@ -113,21 +112,10 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
                             .iterate();
                     }
                 });
-                return;
-            } catch (Exception e) {
-                boolean isConflict = YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)
-                    || YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException.class);
-                if (isConflict && attempt < maxRetries - 1) {
-                    try {
-                        Thread.sleep(10L * (attempt + 1));
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException(ie);
-                    }
-                    continue;
-                }
-                throw e;
-            }
+                return null;
+            });
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to insert/update annotation " + key + " for mailbox " + mId, e);
         }
     }
 

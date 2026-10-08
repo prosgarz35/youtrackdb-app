@@ -27,6 +27,8 @@ import org.apache.james.mailbox.model.MailboxId;
 import org.apache.james.mailbox.model.MessageMetaData;
 import org.apache.james.mailbox.model.MessageRange;
 import org.apache.james.mailbox.model.ThreadId;
+import org.apache.james.mailbox.model.UpdatedFlags;
+import org.apache.james.mailbox.store.FlagsUpdateCalculator;
 import org.apache.james.mailbox.store.mail.AbstractMessageMapper;
 import org.apache.james.mailbox.store.mail.ModSeqProvider;
 import org.apache.james.mailbox.store.mail.UidProvider;
@@ -52,6 +54,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     private static final String PROP_CONTENT = "content";
 
     private final YTDBGraphTraversalSource g;
+    private final ModSeqProvider modSeqProvider;
 
     public YouTrackDBMessageMapper(MailboxSession mailboxSession,
                                    UidProvider uidProvider,
@@ -59,6 +62,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                                    Clock clock,
                                    YTDBGraphTraversalSource g) {
         super(mailboxSession, uidProvider, modSeqProvider, clock);
+        this.modSeqProvider = modSeqProvider;
         this.g = Objects.requireNonNull(g, "g must not be null");
     }
 
@@ -66,6 +70,9 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     public Iterator<MailboxMessage> findInMailbox(Mailbox mailbox, MessageRange range, FetchType type, int limit) throws MailboxException {
         try {
             String mailboxId = mailbox.getMailboxId().serialize();
+            String selectClause = (type == FetchType.METADATA)
+                ? "SELECT mailboxId, messageId, uid, modSeq, internalDate, size, bodyStartOctet, flags, userFlags FROM JamesMailboxMessage"
+                : "SELECT FROM JamesMailboxMessage";
             String query;
             List<Object> params = new ArrayList<>();
             params.add("mbx");
@@ -73,17 +80,17 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
 
             switch (range.getType()) {
                 case ONE:
-                    query = "SELECT FROM JamesMailboxMessage WHERE mailboxId = :mbx AND uid = :uid";
+                    query = selectClause + " WHERE mailboxId = :mbx AND uid = :uid";
                     params.add("uid");
                     params.add(range.getUidFrom().asLong());
                     break;
                 case FROM:
-                    query = "SELECT FROM JamesMailboxMessage WHERE mailboxId = :mbx AND uid >= :from ORDER BY uid ASC";
+                    query = selectClause + " WHERE mailboxId = :mbx AND uid >= :from ORDER BY uid ASC";
                     params.add("from");
                     params.add(range.getUidFrom().asLong());
                     break;
                 case RANGE:
-                    query = "SELECT FROM JamesMailboxMessage WHERE mailboxId = :mbx AND uid >= :from AND uid <= :to ORDER BY uid ASC";
+                    query = selectClause + " WHERE mailboxId = :mbx AND uid >= :from AND uid <= :to ORDER BY uid ASC";
                     params.add("from");
                     params.add(range.getUidFrom().asLong());
                     params.add("to");
@@ -91,7 +98,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                     break;
                 case ALL:
                 default:
-                    query = "SELECT FROM JamesMailboxMessage WHERE mailboxId = :mbx ORDER BY uid ASC";
+                    query = selectClause + " WHERE mailboxId = :mbx ORDER BY uid ASC";
                     break;
             }
 
@@ -102,7 +109,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, query, params.toArray());
             List<MailboxMessage> messages = new ArrayList<>(rows.size());
             for (Map<String, Object> row : rows) {
-                messages.add(readMessage(row, mailbox.getMailboxId()));
+                messages.add(readMessage(row, mailbox.getMailboxId(), type));
             }
             return messages.iterator();
         } catch (Exception e) {
@@ -215,6 +222,51 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     }
 
     @Override
+    public Iterator<UpdatedFlags> updateFlags(Mailbox mailbox, FlagsUpdateCalculator flagsUpdateCalculator, MessageRange set) throws MailboxException {
+        List<UpdatedFlags> updatedFlags = new ArrayList<>();
+        Iterator<MailboxMessage> messages = findInMailbox(mailbox, set, FetchType.METADATA, UNLIMITED);
+
+        if (!messages.hasNext()) {
+            return Collections.emptyIterator();
+        }
+        ModSeq modSeq = modSeqProvider.nextModSeq(mailbox);
+        while (messages.hasNext()) {
+            MailboxMessage member = messages.next();
+            Flags originalFlags = member.createFlags();
+            member.setFlags(flagsUpdateCalculator.buildNewFlags(originalFlags));
+            Flags newFlags = member.createFlags();
+            if (UpdatedFlags.flagsChanged(originalFlags, newFlags)) {
+                member.setModSeq(modSeq);
+                Set<String> systemFlags = extractSystemFlags(newFlags);
+                Set<String> userFlags = extractUserFlags(newFlags);
+                try {
+                    YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                        tx.command("UPDATE JamesMailboxMessage SET flags = :flags, userFlags = :userFlags, modSeq = :modSeq WHERE mailboxId = :mbx AND uid = :uid",
+                            "flags", systemFlags,
+                            "userFlags", userFlags,
+                            "modSeq", modSeq.asLong(),
+                            "mbx", mailbox.getMailboxId().serialize(),
+                            "uid", member.getUid().asLong());
+                    });
+                } catch (Exception e) {
+                    throw new MailboxException("Failed to update flags for message " + member.getUid(), e);
+                }
+            }
+
+            updatedFlags.add(UpdatedFlags.builder()
+                .uid(member.getUid())
+                .messageId(member.getMessageId())
+                .internalDate(member.getInternalDate())
+                .modSeq(member.getModSeq())
+                .newFlags(newFlags)
+                .oldFlags(originalFlags)
+                .build());
+        }
+
+        return updatedFlags.iterator();
+    }
+
+    @Override
     protected MessageMetaData save(Mailbox mailbox, MailboxMessage message) throws MailboxException {
         try {
             byte[] fullBytes;
@@ -290,14 +342,14 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     protected void rollback() {
     }
 
-    private MailboxMessage readMessage(Map<String, Object> row, MailboxId mailboxId) {
+    private MailboxMessage readMessage(Map<String, Object> row, MailboxId mailboxId, FetchType type) {
         String messageIdStr = Objects.toString(row.get(PROP_MESSAGE_ID), null);
         long uid = ((Number) row.get(PROP_UID)).longValue();
         long modSeq = ((Number) row.get(PROP_MODSEQ)).longValue();
         long internalDateMs = ((Number) row.get(PROP_INTERNAL_DATE)).longValue();
         long size = ((Number) row.get(PROP_SIZE)).longValue();
         int bodyStart = ((Number) row.get(PROP_BODY_START)).intValue();
-        byte[] content = (byte[]) row.get(PROP_CONTENT);
+        byte[] content = (type == FetchType.METADATA) ? new byte[0] : (byte[]) row.get(PROP_CONTENT);
 
         Flags flags = readFlags(row);
 
@@ -317,12 +369,24 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
 
     private Set<String> extractSystemFlags(Flags flags) {
         Set<String> set = new HashSet<>();
-        if (flags.contains(Flag.ANSWERED)) set.add("ANSWERED");
-        if (flags.contains(Flag.DELETED)) set.add("DELETED");
-        if (flags.contains(Flag.DRAFT)) set.add("DRAFT");
-        if (flags.contains(Flag.FLAGGED)) set.add("FLAGGED");
-        if (flags.contains(Flag.RECENT)) set.add("RECENT");
-        if (flags.contains(Flag.SEEN)) set.add("SEEN");
+        if (flags.contains(Flag.ANSWERED)) {
+            set.add("ANSWERED");
+        }
+        if (flags.contains(Flag.DELETED)) {
+            set.add("DELETED");
+        }
+        if (flags.contains(Flag.DRAFT)) {
+            set.add("DRAFT");
+        }
+        if (flags.contains(Flag.FLAGGED)) {
+            set.add("FLAGGED");
+        }
+        if (flags.contains(Flag.RECENT)) {
+            set.add("RECENT");
+        }
+        if (flags.contains(Flag.SEEN)) {
+            set.add("SEEN");
+        }
         return set;
     }
 
@@ -339,12 +403,19 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
         Object sysObj = row.get(PROP_FLAGS);
         if (sysObj instanceof Iterable<?> it) {
             for (Object f : it) {
-                if ("ANSWERED".equals(f)) flags.add(Flag.ANSWERED);
-                else if ("DELETED".equals(f)) flags.add(Flag.DELETED);
-                else if ("DRAFT".equals(f)) flags.add(Flag.DRAFT);
-                else if ("FLAGGED".equals(f)) flags.add(Flag.FLAGGED);
-                else if ("RECENT".equals(f)) flags.add(Flag.RECENT);
-                else if ("SEEN".equals(f)) flags.add(Flag.SEEN);
+                if ("ANSWERED".equals(f)) {
+                    flags.add(Flag.ANSWERED);
+                } else if ("DELETED".equals(f)) {
+                    flags.add(Flag.DELETED);
+                } else if ("DRAFT".equals(f)) {
+                    flags.add(Flag.DRAFT);
+                } else if ("FLAGGED".equals(f)) {
+                    flags.add(Flag.FLAGGED);
+                } else if ("RECENT".equals(f)) {
+                    flags.add(Flag.RECENT);
+                } else if ("SEEN".equals(f)) {
+                    flags.add(Flag.SEEN);
+                }
             }
         }
         Object userObj = row.get(PROP_USER_FLAGS);

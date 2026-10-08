@@ -7,9 +7,7 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
 import org.apache.james.mailbox.MailboxSession;
-import org.apache.james.mailbox.inmemory.mail.InMemoryAnnotationMapper;
 import org.apache.james.mailbox.inmemory.mail.InMemoryAttachmentMapper;
-import org.apache.james.mailbox.inmemory.mail.InMemoryMessageIdMapper;
 import org.apache.james.mailbox.store.MailboxSessionMapperFactory;
 import org.apache.james.mailbox.store.mail.AnnotationMapper;
 import org.apache.james.mailbox.store.mail.AttachmentMapper;
