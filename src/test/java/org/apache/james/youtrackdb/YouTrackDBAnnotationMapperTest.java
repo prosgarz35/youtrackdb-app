@@ -167,27 +167,31 @@ class YouTrackDBAnnotationMapperTest {
     void concurrentInsertsShouldResolveWithoutException() throws Exception {
         int threads = 4;
         java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(threads);
-        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(threads);
+        java.util.concurrent.CountDownLatch startLatch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch doneLatch = new java.util.concurrent.CountDownLatch(threads);
         java.util.concurrent.atomic.AtomicInteger errorCount = new java.util.concurrent.atomic.AtomicInteger();
 
         for (int i = 0; i < threads; i++) {
             final int idx = i;
             executor.submit(() -> {
                 try {
+                    startLatch.await();
                     annotationMapper.insertAnnotation(mailboxId,
                         MailboxAnnotation.newInstance(PRIVATE_KEY, "val-" + idx));
                 } catch (Exception e) {
                     e.printStackTrace();
                     errorCount.incrementAndGet();
                 } finally {
-                    latch.countDown();
+                    doneLatch.countDown();
                 }
             });
         }
 
-        latch.await(10, java.util.concurrent.TimeUnit.SECONDS);
+        startLatch.countDown();
+        boolean completed = doneLatch.await(10, java.util.concurrent.TimeUnit.SECONDS);
         executor.shutdown();
 
+        assertThat(completed).isTrue();
         assertThat(errorCount.get()).isZero();
         assertThat(annotationMapper.getAllAnnotations(mailboxId)).hasSize(1);
         assertThat(annotationMapper.getAllAnnotations(mailboxId).get(0).getValue().get())
