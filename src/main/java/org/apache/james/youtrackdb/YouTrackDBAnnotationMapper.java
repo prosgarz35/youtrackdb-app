@@ -95,21 +95,38 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
         String key = mailboxAnnotation.getKey().asString();
         String val = mailboxAnnotation.getValue().orElse("");
 
-        YouTrackDBTransactions.executeStrictTx(g, tx -> {
-            var existing = tx.V().hasLabel(CLASS)
-                .has(PROP_MAILBOX_ID, mId)
-                .has(PROP_KEY, key)
-                .tryNext();
-            if (existing.isPresent()) {
-                existing.get().property(PROP_VALUE, val);
-            } else {
-                tx.addV(CLASS)
-                    .property(PROP_MAILBOX_ID, mId)
-                    .property(PROP_KEY, key)
-                    .property(PROP_VALUE, val)
-                    .iterate();
+        try {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                var existing = tx.V().hasLabel(CLASS)
+                    .has(PROP_MAILBOX_ID, mId)
+                    .has(PROP_KEY, key)
+                    .tryNext();
+                if (existing.isPresent()) {
+                    existing.get().property(PROP_VALUE, val);
+                } else {
+                    tx.addV(CLASS)
+                        .property(PROP_MAILBOX_ID, mId)
+                        .property(PROP_KEY, key)
+                        .property(PROP_VALUE, val)
+                        .iterate();
+                }
+            });
+        } catch (Exception e) {
+            if (YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)) {
+                // Concurrent insert created the vertex - update value (last-write-wins)
+                YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                    var existing = tx.V().hasLabel(CLASS)
+                        .has(PROP_MAILBOX_ID, mId)
+                        .has(PROP_KEY, key)
+                        .tryNext();
+                    if (existing.isPresent()) {
+                        existing.get().property(PROP_VALUE, val);
+                    }
+                });
+                return;
             }
-        });
+            throw e;
+        }
     }
 
     @Override

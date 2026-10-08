@@ -133,9 +133,12 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
     @Override
     public Mono<Void> delete(Mailbox mailbox) {
         return Mono.fromRunnable(() -> {
-            YouTrackDBTransactions.executeStrictTx(g, tx ->
-                tx.command("DELETE VERTEX JamesMailbox WHERE mailboxId = :id",
-                    "id", mailbox.getMailboxId().serialize()));
+            String mId = mailbox.getMailboxId().serialize();
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                tx.command("DELETE VERTEX JamesMailbox WHERE mailboxId = :id", "id", mId);
+                tx.command("DELETE VERTEX JamesMailboxAnnotation WHERE mailboxId = :id", "id", mId);
+                tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :id", "id", mId);
+            });
         }).subscribeOn(Schedulers.boundedElastic()).then();
     }
 
