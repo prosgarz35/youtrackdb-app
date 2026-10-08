@@ -38,7 +38,9 @@ public class YouTrackDBMailboxServerRestartTest {
 
         // 1. First Server Run: create user, custom mailbox via IMAP, and deliver an email via SMTP
         String statusBefore;
-        GuiceJamesServer server1 = YouTrackDBJamesServerMain.createServer(configuration);
+        GuiceJamesServer server1 = YouTrackDBJamesServerMain.createServer(configuration)
+            .combineWith(binder -> com.google.inject.multibindings.Multibinder.newSetBinder(binder, org.apache.james.utils.GuiceProbe.class)
+                .addBinding().to(org.apache.james.youtrackdb.YouTrackDBProbe.class));
         server1.start();
         try {
             server1.getProbe(DataProbeImpl.class)
@@ -96,7 +98,9 @@ public class YouTrackDBMailboxServerRestartTest {
         }
 
         // 2. Second Server Run: restart server on the same data directory
-        GuiceJamesServer server2 = YouTrackDBJamesServerMain.createServer(configuration);
+        GuiceJamesServer server2 = YouTrackDBJamesServerMain.createServer(configuration)
+            .combineWith(binder -> com.google.inject.multibindings.Multibinder.newSetBinder(binder, org.apache.james.utils.GuiceProbe.class)
+                .addBinding().to(org.apache.james.youtrackdb.YouTrackDBProbe.class));
         server2.start();
         try {
             int imapPort2 = server2.getProbe(ImapGuiceProbe.class).getImapPort();
@@ -151,10 +155,7 @@ public class YouTrackDBMailboxServerRestartTest {
             // Verify Quota survived restart (Global, Domain, User priority)
             org.apache.james.mailbox.probe.QuotaProbe quotaProbe2 = server2.getProbe(org.apache.james.modules.QuotaProbesImpl.class);
             org.apache.james.mailbox.model.QuotaRoot bobQuotaRoot = quotaProbe2.getQuotaRoot(org.apache.james.mailbox.model.MailboxPath.inbox(org.apache.james.core.Username.of(USER)));
-            org.apache.james.modules.QuotaProbesImpl quotaProbesImpl2 = server2.getProbe(org.apache.james.modules.QuotaProbesImpl.class);
-            java.lang.reflect.Field fMq = org.apache.james.modules.QuotaProbesImpl.class.getDeclaredField("maxQuotaManager");
-            fMq.setAccessible(true);
-            org.apache.james.mailbox.quota.MaxQuotaManager maxQuotaManager2 = (org.apache.james.mailbox.quota.MaxQuotaManager) fMq.get(quotaProbesImpl2);
+            org.apache.james.mailbox.quota.MaxQuotaManager maxQuotaManager2 = server2.getProbe(org.apache.james.youtrackdb.YouTrackDBProbe.class).getMaxQuotaManager();
 
             assertThat(quotaProbe2.getGlobalMaxMessageCount()).contains(org.apache.james.core.quota.QuotaCountLimit.count(500L));
             assertThat(quotaProbe2.getGlobalMaxStorage()).contains(org.apache.james.core.quota.QuotaSizeLimit.size(5000000L));
@@ -167,10 +168,15 @@ public class YouTrackDBMailboxServerRestartTest {
             assertThat(quotaProbe2.getMaxStorage(bobQuotaRoot)).contains(org.apache.james.core.quota.QuotaSizeLimit.size(1024000L));
             assertThat(quotaProbe2.getMessageCountQuota(bobQuotaRoot).getUsed().asLong()).isEqualTo(1L);
 
-            // Verify User > Domain fallback: remove user limit and verify domain limit takes over
+            // Verify User > Domain fallback: remove user limit and verify domain limit takes over for count and storage
             maxQuotaManager2.removeMaxMessage(bobQuotaRoot);
             assertThat(quotaProbe2.getMaxMessageCount(bobQuotaRoot)).contains(org.apache.james.core.quota.QuotaCountLimit.count(250L));
-            maxQuotaManager2.setMaxMessage(bobQuotaRoot, org.apache.james.core.quota.QuotaCountLimit.count(100L)); // restore user limit
+            maxQuotaManager2.removeMaxStorage(bobQuotaRoot);
+            assertThat(quotaProbe2.getMaxStorage(bobQuotaRoot)).contains(org.apache.james.core.quota.QuotaSizeLimit.size(2500000L));
+
+            // Restore user limits
+            maxQuotaManager2.setMaxMessage(bobQuotaRoot, org.apache.james.core.quota.QuotaCountLimit.count(100L));
+            maxQuotaManager2.setMaxStorage(bobQuotaRoot, org.apache.james.core.quota.QuotaSizeLimit.size(1024000L));
 
             // Deliver a 2nd message after restart and verify UID increments monotonically without duplicates
             SMTPMessageSender smtpSender2 = new SMTPMessageSender(DOMAIN);
