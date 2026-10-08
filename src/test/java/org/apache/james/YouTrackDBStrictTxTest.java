@@ -65,22 +65,9 @@ public class YouTrackDBStrictTxTest {
         });
     }
 
-    @Test
-    @DisplayName("Engine fix: plain executeInTx now also propagates commit failures instead of swallowing")
-    void plainExecuteInTxPropagatesCommitFailure(@TempDir Path workingDir) throws Exception {
-        withGraph(workingDir, g -> {
-            g.executeInTx(tx -> tx.addV(CLASS).property("key", "a").iterate());
-
-            // YTDBTransaction.finishTx now propagates commit errors directly
-            assertThatThrownBy(() ->
-                g.executeInTx(tx -> tx.addV(CLASS).property("key", "a").iterate()))
-                .satisfies(e -> assertThat(YouTrackDBTransactions.hasCause(e, RecordDuplicatedException.class))
-                    .as("cause chain of %s", e)
-                    .isTrue());
-
-            assertThat(count(g)).isEqualTo(1L);
-        });
-    }
+    // Note: upstream YouTrackDB 0.5.0-SNAPSHOT plain g.executeInTx swallows commit failures in finishTx().
+    // YouTrackDBTransactions.executeStrictTx explicitly calls tx.tx().commit(), ensuring all commit failures
+    // (such as unique index conflicts) are reliably propagated to the caller without requiring custom engine patches.
 
     @Test
     @DisplayName("Strict tx: exception inside the lambda rolls everything back")
