@@ -99,17 +99,23 @@ public class YouTrackDBMailboxServerRestartTest {
 
             // RFC 3501: Verify UIDVALIDITY is unchanged after restart
             String statusAfter = imapClient2.sendCommand("STATUS INBOX (UIDVALIDITY UIDNEXT)");
-            // Extract UIDVALIDITY value
-            java.util.regex.Pattern pValidity = java.util.regex.Pattern.compile("UIDVALIDITY\\s+(\\d+)");
-            java.util.regex.Matcher mBefore = pValidity.matcher(statusBefore);
-            java.util.regex.Matcher mAfter = pValidity.matcher(statusAfter);
-            assertThat(mBefore.find()).isTrue();
-            assertThat(mAfter.find()).isTrue();
-            assertThat(mAfter.group(1)).isEqualTo(mBefore.group(1));
+            // Extract UIDVALIDITY and UIDNEXT values strictly from "* STATUS INBOX (...)" or "* STATUS "INBOX" (...)" line
+            java.util.regex.Pattern pStatusLine = java.util.regex.Pattern.compile("\\*\\s+STATUS\\s+[\"']?INBOX[\"']?\\s+\\(([^)]+)\\)");
+            java.util.regex.Matcher mStatusBefore = pStatusLine.matcher(statusBefore);
+            java.util.regex.Matcher mStatusAfter = pStatusLine.matcher(statusAfter);
+            assertThat(mStatusBefore.find()).as("statusBefore: " + statusBefore).isTrue();
+            assertThat(mStatusAfter.find()).as("statusAfter: " + statusAfter).isTrue();
+
+            java.util.regex.Pattern pVal = java.util.regex.Pattern.compile("\\bUIDVALIDITY\\s+(\\d+)\\b");
+            java.util.regex.Matcher mValBefore = pVal.matcher(mStatusBefore.group(1));
+            java.util.regex.Matcher mValAfter = pVal.matcher(mStatusAfter.group(1));
+            assertThat(mValBefore.find()).isTrue();
+            assertThat(mValAfter.find()).isTrue();
+            assertThat(mValAfter.group(1)).isEqualTo(mValBefore.group(1));
 
             // Verify UIDNEXT before delivering 2nd message is 2
-            java.util.regex.Pattern pNext = java.util.regex.Pattern.compile("UIDNEXT\\s+(\\d+)");
-            java.util.regex.Matcher mNextAfter = pNext.matcher(statusAfter);
+            java.util.regex.Pattern pNext = java.util.regex.Pattern.compile("\\bUIDNEXT\\s+(\\d+)\\b");
+            java.util.regex.Matcher mNextAfter = pNext.matcher(mStatusAfter.group(1));
             assertThat(mNextAfter.find()).isTrue();
             assertThat(mNextAfter.group(1)).isEqualTo("2");
 
@@ -139,7 +145,9 @@ public class YouTrackDBMailboxServerRestartTest {
 
             // Verify UIDNEXT after 2nd message is now 3
             String statusAfterSecond = imapClient2.sendCommand("STATUS INBOX (UIDNEXT)");
-            java.util.regex.Matcher mNextSecond = pNext.matcher(statusAfterSecond);
+            java.util.regex.Matcher mStatusSecond = pStatusLine.matcher(statusAfterSecond);
+            assertThat(mStatusSecond.find()).isTrue();
+            java.util.regex.Matcher mNextSecond = pNext.matcher(mStatusSecond.group(1));
             assertThat(mNextSecond.find()).isTrue();
             assertThat(mNextSecond.group(1)).isEqualTo("3");
 
