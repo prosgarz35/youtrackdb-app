@@ -66,13 +66,17 @@ public class YouTrackDBStrictTxTest {
     }
 
     @Test
-    @DisplayName("Characterization: plain executeInTx swallows the same commit failure (delete when the engine is fixed)")
-    void plainExecuteInTxSwallowsCommitFailure(@TempDir Path workingDir) throws Exception {
+    @DisplayName("Engine fix: plain executeInTx now also propagates commit failures instead of swallowing")
+    void plainExecuteInTxPropagatesCommitFailure(@TempDir Path workingDir) throws Exception {
         withGraph(workingDir, g -> {
             g.executeInTx(tx -> tx.addV(CLASS).property("key", "a").iterate());
 
-            // No exception expected today: YTDBTransaction.finishTx only logs commit errors.
-            g.executeInTx(tx -> tx.addV(CLASS).property("key", "a").iterate());
+            // YTDBTransaction.finishTx now propagates commit errors directly
+            assertThatThrownBy(() ->
+                g.executeInTx(tx -> tx.addV(CLASS).property("key", "a").iterate()))
+                .satisfies(e -> assertThat(YouTrackDBTransactions.hasCause(e, RecordDuplicatedException.class))
+                    .as("cause chain of %s", e)
+                    .isTrue());
 
             assertThat(count(g)).isEqualTo(1L);
         });
