@@ -151,11 +151,26 @@ public class YouTrackDBMailboxServerRestartTest {
             // Verify Quota survived restart (Global, Domain, User priority)
             org.apache.james.mailbox.probe.QuotaProbe quotaProbe2 = server2.getProbe(org.apache.james.modules.QuotaProbesImpl.class);
             org.apache.james.mailbox.model.QuotaRoot bobQuotaRoot = quotaProbe2.getQuotaRoot(org.apache.james.mailbox.model.MailboxPath.inbox(org.apache.james.core.Username.of(USER)));
+            org.apache.james.modules.QuotaProbesImpl quotaProbesImpl2 = server2.getProbe(org.apache.james.modules.QuotaProbesImpl.class);
+            java.lang.reflect.Field fMq = org.apache.james.modules.QuotaProbesImpl.class.getDeclaredField("maxQuotaManager");
+            fMq.setAccessible(true);
+            org.apache.james.mailbox.quota.MaxQuotaManager maxQuotaManager2 = (org.apache.james.mailbox.quota.MaxQuotaManager) fMq.get(quotaProbesImpl2);
+
             assertThat(quotaProbe2.getGlobalMaxMessageCount()).contains(org.apache.james.core.quota.QuotaCountLimit.count(500L));
             assertThat(quotaProbe2.getGlobalMaxStorage()).contains(org.apache.james.core.quota.QuotaSizeLimit.size(5000000L));
+            // Verify domain limits survived restart
+            assertThat(maxQuotaManager2.getDomainMaxMessage(org.apache.james.core.Domain.of(DOMAIN))).contains(org.apache.james.core.quota.QuotaCountLimit.count(250L));
+            assertThat(maxQuotaManager2.getDomainMaxStorage(org.apache.james.core.Domain.of(DOMAIN))).contains(org.apache.james.core.quota.QuotaSizeLimit.size(2500000L));
+
+            // Verify User limit takes precedence
             assertThat(quotaProbe2.getMaxMessageCount(bobQuotaRoot)).contains(org.apache.james.core.quota.QuotaCountLimit.count(100L));
             assertThat(quotaProbe2.getMaxStorage(bobQuotaRoot)).contains(org.apache.james.core.quota.QuotaSizeLimit.size(1024000L));
             assertThat(quotaProbe2.getMessageCountQuota(bobQuotaRoot).getUsed().asLong()).isEqualTo(1L);
+
+            // Verify User > Domain fallback: remove user limit and verify domain limit takes over
+            maxQuotaManager2.removeMaxMessage(bobQuotaRoot);
+            assertThat(quotaProbe2.getMaxMessageCount(bobQuotaRoot)).contains(org.apache.james.core.quota.QuotaCountLimit.count(250L));
+            maxQuotaManager2.setMaxMessage(bobQuotaRoot, org.apache.james.core.quota.QuotaCountLimit.count(100L)); // restore user limit
 
             // Deliver a 2nd message after restart and verify UID increments monotonically without duplicates
             SMTPMessageSender smtpSender2 = new SMTPMessageSender(DOMAIN);

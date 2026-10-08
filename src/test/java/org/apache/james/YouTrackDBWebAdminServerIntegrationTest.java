@@ -34,7 +34,9 @@ class YouTrackDBWebAdminServerIntegrationTest implements JamesServerConcreteCont
             .workingDirectory(tmpDir)
             .configurationFromClasspath()
             .build())
-        .server(YouTrackDBJamesServerMain::createServer)
+        .server(configuration -> YouTrackDBJamesServerMain.createServer(configuration)
+            .combineWith(binder -> com.google.inject.multibindings.Multibinder.newSetBinder(binder, org.apache.james.utils.GuiceProbe.class)
+                .addBinding().to(org.apache.james.youtrackdb.YouTrackDBProbe.class)))
         .lifeCycle(JamesServerExtension.Lifecycle.PER_CLASS)
         .build();
 
@@ -142,14 +144,11 @@ class YouTrackDBWebAdminServerIntegrationTest implements JamesServerConcreteCont
         byte[] mailContent = "Subject: Test Quota\r\n\r\nHello quota recompute body!".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         mailboxProbe.appendMessage(USERNAME, inboxPath, new java.io.ByteArrayInputStream(mailContent), new java.util.Date(), false, new jakarta.mail.Flags());
 
-        // Corrupt the quota counter: manually decrease/corrupt usage in CurrentQuotaManager so it is incorrect
-        org.apache.james.mailbox.quota.CurrentQuotaManager currentQuotaManager = server.getProbe(org.apache.james.modules.QuotaProbesImpl.class)
-            .getQuotaRoot(inboxPath) != null ? server.getProbe(org.apache.james.modules.MailboxProbeImpl.class) != null ? null : null : null;
-        
+        org.apache.james.mailbox.model.QuotaRoot userQuotaRoot = server.getProbe(org.apache.james.modules.QuotaProbesImpl.class).getQuotaRoot(inboxPath);
         com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource g = server.getProbe(org.apache.james.youtrackdb.YouTrackDBProbe.class).getTraversalSource();
         org.apache.james.youtrackdb.YouTrackDBTransactions.executeStrictTx(g, tx -> {
-            tx.command("UPDATE JamesQuotaUsage SET messageCount = 999, size = 999999 WHERE quotaRoot LIKE :qr",
-                "qr", "%" + USERNAME);
+            tx.command("UPDATE JamesQuotaUsage SET messageCount = 999, size = 999999 WHERE quotaRoot = :qr",
+                "qr", userQuotaRoot.getValue());
         });
 
         // Verify corrupted value is currently seen
