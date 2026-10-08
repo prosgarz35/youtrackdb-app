@@ -127,4 +127,25 @@ class YouTrackDBWebAdminServerIntegrationTest implements JamesServerConcreteCont
             .body("status", org.hamcrest.Matchers.equalTo("completed"))
             .body("type", org.hamcrest.Matchers.equalTo("youtrackdb-backup"));
     }
+
+    @Test
+    void webAdminShouldRecomputeCurrentQuotas() {
+        String taskId = given()
+            .queryParam("task", "RecomputeCurrentQuotas")
+        .when()
+            .post("/quota/users")
+        .then()
+            .statusCode(HttpStatus.CREATED_201)
+            .header("Location", org.hamcrest.Matchers.startsWith("/tasks/"))
+            .extract()
+            .jsonPath()
+            .getString("taskId");
+
+        when()
+            .get("/tasks/" + taskId + "/await")
+        .then()
+            .statusCode(HttpStatus.OK_200)
+            .body("status", org.hamcrest.Matchers.equalTo("completed"))
+            .body("type", org.hamcrest.Matchers.equalTo("recompute-current-quotas"));
+    }
 }

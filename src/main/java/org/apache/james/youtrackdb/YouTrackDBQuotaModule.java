@@ -40,5 +40,10 @@ public class YouTrackDBQuotaModule extends AbstractModule {
         Multibinder.newSetBinder(binder(), EventListener.ReactiveGroupEventListener.class)
             .addBinding()
             .to(ListeningCurrentQuotaUpdater.class);
+
+        bind(org.apache.james.mailbox.store.quota.CurrentQuotaCalculator.class).in(Scopes.SINGLETON);
+        Multibinder.newSetBinder(binder(), org.apache.james.mailbox.quota.task.RecomputeSingleComponentCurrentQuotasService.class)
+            .addBinding()
+            .to(org.apache.james.mailbox.quota.task.RecomputeMailboxCurrentQuotasService.class);
     }
 }

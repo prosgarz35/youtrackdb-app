@@ -228,4 +228,43 @@ public class YouTrackDBMessageMapperTest {
         assertThat(copiedMeta.getUid()).isEqualTo(MessageUid.of(1L));
         assertThat(messageMapper.countMessagesInMailbox(trash)).isEqualTo(1L);
     }
+
+    @Test
+    void metadataFetchBenchmarkShouldBeFasterThanFullFetch() throws Exception {
+        Mailbox benchmarkMailbox = mailboxMapper.create(MailboxPath.forUser(Username.of("benchmark"), "Benchmark"), UidValidity.of(99999L)).block();
+        byte[] payload20k = new byte[20 * 1024]; // 20 KB
+        java.util.Arrays.fill(payload20k, (byte) 'A');
+
+        int messageCount = 300;
+        for (int i = 0; i < messageCount; i++) {
+            SimpleMailboxMessage msg = SimpleMailboxMessage.builder()
+                .mailboxId(benchmarkMailbox.getMailboxId())
+                .messageId(YouTrackDBMessageId.generate())
+                .threadId(ThreadId.fromBaseMessageId(YouTrackDBMessageId.generate()))
+                .internalDate(new Date())
+                .size(payload20k.length)
+                .bodyStartOctet(0)
+                .content(new ByteContent(payload20k))
+                .flags(new Flags())
+                .build();
+            messageMapper.add(benchmarkMailbox, msg);
+        }
+
+        // Measure FULL
+        long startFull = System.nanoTime();
+        List<MailboxMessage> fullList = ImmutableList.copyOf(
+            messageMapper.findInMailbox(benchmarkMailbox, MessageRange.all(), FetchType.FULL, messageCount));
+        long durationFullMs = (System.nanoTime() - startFull) / 1_000_000;
+
+        // Measure METADATA
+        long startMeta = System.nanoTime();
+        List<MailboxMessage> metaList = ImmutableList.copyOf(
+            messageMapper.findInMailbox(benchmarkMailbox, MessageRange.all(), FetchType.METADATA, messageCount));
+        long durationMetaMs = (System.nanoTime() - startMeta) / 1_000_000;
+
+        assertThat(fullList).hasSize(messageCount);
+        assertThat(metaList).hasSize(messageCount);
+        assertThat(metaList.get(0).getFullContentOctets()).isEqualTo(payload20k.length);
+        assertThat(fullList.get(0).getFullContent().readAllBytes()).hasSize(payload20k.length);
+    }
 }
