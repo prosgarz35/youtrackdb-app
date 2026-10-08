@@ -50,6 +50,7 @@ public class YouTrackDBBackupRestoreTest {
         server.start();
 
         int initialDomains = 0;
+        int expectedTotal = INITIAL_MESSAGES + 1;
         File backupDir = workingDir.resolve("backups").toFile();
         backupDir.mkdirs();
 
@@ -83,7 +84,6 @@ public class YouTrackDBBackupRestoreTest {
                 .sendMessageWithHeaders(USER, USER, "Subject: Large Sharded Msg\r\n\r\n" + largeBody);
 
             // Await delivery via IMAP
-            int expectedTotal = INITIAL_MESSAGES + 1;
             TestIMAPClient imapClient = new TestIMAPClient();
             Awaitility.await()
                 .atMost(30, TimeUnit.SECONDS)
@@ -228,7 +228,19 @@ public class YouTrackDBBackupRestoreTest {
                 .statusCode(HttpStatus.OK_200)
                 .body("username", org.hamcrest.Matchers.hasItem(USER));
 
-            LOGGER.info("RESTORE SUCCESSFUL: User {} restored and verified in YouTrackDB database!", USER);
+            // 7. Verify restored messages (including large sharded blob) via IMAP
+            int restoredImapPort = restoredServer.getProbe(ImapGuiceProbe.class).getImapPort();
+            TestIMAPClient restoredImapClient = new TestIMAPClient();
+            restoredImapClient.connect("127.0.0.1", restoredImapPort)
+                .login(USER, PASSWORD)
+                .select(TestIMAPClient.INBOX);
+
+            assertThat(restoredImapClient.getMessageCount(TestIMAPClient.INBOX)).isEqualTo(expectedTotal);
+            String fetchUids = restoredImapClient.sendCommand("UID FETCH 1 (UID)");
+            assertThat(fetchUids).contains("UID 1");
+            restoredImapClient.disconnect();
+
+            LOGGER.info("RESTORE SUCCESSFUL: User {} and all {} messages restored and verified!", USER, expectedTotal);
         } finally {
             restoredServer.stop();
         }
