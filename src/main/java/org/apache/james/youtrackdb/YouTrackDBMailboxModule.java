@@ -86,24 +86,24 @@ public class YouTrackDBMailboxModule extends AbstractModule {
         install(new MemoryQuotaSearchModule());
         install(new org.apache.james.modules.mailbox.LuceneSearchMailboxModule());
 
-        bind(MessageMapperFactory.class).to(InMemoryMailboxSessionMapperFactory.class);
-        bind(MailboxMapperFactory.class).to(InMemoryMailboxSessionMapperFactory.class);
+        bind(MessageMapperFactory.class).to(YouTrackDBMailboxSessionMapperFactory.class);
+        bind(MailboxMapperFactory.class).to(YouTrackDBMailboxSessionMapperFactory.class);
         bind(AttachmentIdFactory.class).to(StringBackedAttachmentIdFactory.class);
-        bind(AttachmentMapperFactory.class).to(InMemoryMailboxSessionMapperFactory.class);
-        bind(MailboxSessionMapperFactory.class).to(InMemoryMailboxSessionMapperFactory.class);
-        bind(ModSeqProvider.class).to(InMemoryModSeqProvider.class);
-        bind(UidProvider.class).to(InMemoryUidProvider.class);
-        bind(MailboxId.Factory.class).to(InMemoryId.Factory.class);
-        bind(MessageId.Factory.class).to(InMemoryMessageId.Factory.class);
+        bind(AttachmentMapperFactory.class).to(YouTrackDBMailboxSessionMapperFactory.class);
+        bind(MailboxSessionMapperFactory.class).to(YouTrackDBMailboxSessionMapperFactory.class);
+        bind(ModSeqProvider.class).to(YouTrackDBModSeqProvider.class);
+        bind(UidProvider.class).to(YouTrackDBUidProvider.class);
+        bind(MailboxId.Factory.class).to(YouTrackDBMailboxId.Factory.class);
+        bind(MessageId.Factory.class).to(YouTrackDBMessageId.Factory.class);
         bind(ThreadIdGuessingAlgorithm.class).to(SearchThreadIdGuessingAlgorithm.class);
         bind(State.Factory.class).to(State.DefaultFactory.class);
 
         bind(SubscriptionManager.class).to(StoreSubscriptionManager.class);
-        bind(SubscriptionMapperFactory.class).to(InMemoryMailboxSessionMapperFactory.class);
+        bind(SubscriptionMapperFactory.class).to(YouTrackDBMailboxSessionMapperFactory.class);
         bind(MailboxPathLocker.class).to(JVMMailboxPathLocker.class);
         bind(Authenticator.class).to(UserRepositoryAuthenticator.class);
-        bind(MailboxManager.class).to(InMemoryMailboxManager.class);
-        bind(StoreMailboxManager.class).to(InMemoryMailboxManager.class);
+        bind(MailboxManager.class).to(YouTrackDBMailboxManager.class);
+        bind(StoreMailboxManager.class).to(YouTrackDBMailboxManager.class);
         bind(MailboxChangeRepository.class).to(MemoryMailboxChangeRepository.class);
         bind(EmailChangeRepository.class).to(MemoryEmailChangeRepository.class);
         bind(MessageIdManager.class).to(StoreMessageIdManager.class);
@@ -117,16 +117,16 @@ public class YouTrackDBMailboxModule extends AbstractModule {
         bind(MessageParser.class).toInstance(new MessageParserImpl());
         bind(MailboxCounterCorrector.class).toInstance(MailboxCounterCorrector.DEFAULT);
 
-        bind(InMemoryMailboxSessionMapperFactory.class).in(Scopes.SINGLETON);
-        bind(InMemoryModSeqProvider.class).in(Scopes.SINGLETON);
-        bind(InMemoryUidProvider.class).in(Scopes.SINGLETON);
+        bind(YouTrackDBMailboxSessionMapperFactory.class).in(Scopes.SINGLETON);
+        bind(YouTrackDBModSeqProvider.class).in(Scopes.SINGLETON);
+        bind(YouTrackDBUidProvider.class).in(Scopes.SINGLETON);
         bind(StoreSubscriptionManager.class).in(Scopes.SINGLETON);
         bind(JVMMailboxPathLocker.class).in(Scopes.SINGLETON);
         bind(UserRepositoryAuthenticator.class).in(Scopes.SINGLETON);
-        bind(InMemoryMailboxManager.class).in(Scopes.SINGLETON);
+        bind(YouTrackDBMailboxManager.class).in(Scopes.SINGLETON);
         bind(MemoryMailboxChangeRepository.class).in(Scopes.SINGLETON);
         bind(MemoryEmailChangeRepository.class).in(Scopes.SINGLETON);
-        bind(InMemoryMessageId.Factory.class).in(Scopes.SINGLETON);
+        bind(YouTrackDBMessageId.Factory.class).in(Scopes.SINGLETON);
         bind(StoreMessageIdManager.class).in(Scopes.SINGLETON);
         bind(StoreAttachmentManager.class).in(Scopes.SINGLETON);
         bind(StoreRightManager.class).in(Scopes.SINGLETON);
@@ -165,7 +165,7 @@ public class YouTrackDBMailboxModule extends AbstractModule {
     @Singleton
     private static class YouTrackDBMailboxManagerDefinition extends MailboxManagerDefinition {
         @Inject
-        private YouTrackDBMailboxManagerDefinition(InMemoryMailboxManager manager) {
+        private YouTrackDBMailboxManagerDefinition(YouTrackDBMailboxManager manager) {
             super("youtrackdb-mailboxmanager", manager);
         }
     }

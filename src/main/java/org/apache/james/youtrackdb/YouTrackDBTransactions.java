@@ -55,7 +55,7 @@ public final class YouTrackDBTransactions {
         }
         return false;
     }
-/** Executes a YQL query and extracts all rows as a list of Maps (DRY). */
+    /** Executes a YQL query and extracts all rows as a list of Maps (DRY). */
     public static java.util.List<java.util.Map<String, Object>> queryRows(YTDBGraphTraversalSource g, String query, Object... params) {
         return g.computeInTx(tx -> {
             var list = tx.yql(query, params).toList();
@@ -65,6 +65,10 @@ public final class YouTrackDBTransactions {
                     @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> casted = (java.util.Map<String, Object>) m;
                     rows.add(casted);
+                } else if (item instanceof org.apache.tinkerpop.gremlin.structure.Vertex v) {
+                    java.util.Map<String, Object> map = new java.util.HashMap<>();
+                    v.properties().forEachRemaining(p -> map.put(p.key(), p.value()));
+                    rows.add(map);
                 }
             }
             return rows;

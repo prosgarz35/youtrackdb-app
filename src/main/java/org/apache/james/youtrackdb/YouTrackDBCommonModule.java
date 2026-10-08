@@ -137,6 +137,40 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesQueueItem.serializedMail IF NOT EXISTS BINARY");
                     g.command("CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) UNIQUE");
                     g.command("CREATE INDEX JamesQueueItem.queueAndDelivery IF NOT EXISTS ON JamesQueueItem (queueName, nextDelivery) NOTUNIQUE");
+
+                    // Class for Mailbox
+                    g.command("CREATE CLASS JamesMailbox IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesMailbox.mailboxId IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesMailbox.namespace IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesMailbox.user IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesMailbox.name IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesMailbox.uidValidity IF NOT EXISTS LONG");
+                    g.command("CREATE PROPERTY JamesMailbox.lastUid IF NOT EXISTS LONG");
+                    g.command("CREATE PROPERTY JamesMailbox.highestModSeq IF NOT EXISTS LONG");
+                    g.command("CREATE PROPERTY JamesMailbox.acl IF NOT EXISTS STRING");
+                    g.command("CREATE INDEX JamesMailbox.mailboxId IF NOT EXISTS UNIQUE");
+                    g.command("CREATE INDEX JamesMailbox.path IF NOT EXISTS ON JamesMailbox (namespace, user, name) UNIQUE");
+
+                    // Class for Subscriptions
+                    g.command("CREATE CLASS JamesSubscription IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesSubscription.user IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesSubscription.mailbox IF NOT EXISTS STRING");
+                    g.command("CREATE INDEX JamesSubscription.userAndMailbox IF NOT EXISTS ON JamesSubscription (user, mailbox) UNIQUE");
+
+                    // Class for Mailbox Messages
+                    g.command("CREATE CLASS JamesMailboxMessage IF NOT EXISTS EXTENDS V");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.mailboxId IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.messageId IF NOT EXISTS STRING");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.uid IF NOT EXISTS LONG");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.modSeq IF NOT EXISTS LONG");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.internalDate IF NOT EXISTS LONG");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.size IF NOT EXISTS LONG");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.bodyStartOctet IF NOT EXISTS INTEGER");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.flags IF NOT EXISTS EMBEDDEDSET STRING");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.userFlags IF NOT EXISTS EMBEDDEDSET STRING");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.content IF NOT EXISTS BINARY");
+                    g.command("CREATE INDEX JamesMailboxMessage.mailboxAndUid IF NOT EXISTS ON JamesMailboxMessage (mailboxId, uid) UNIQUE");
+                    g.command("CREATE INDEX JamesMailboxMessage.mailboxId IF NOT EXISTS NOTUNIQUE");
                 });
             } catch (Exception e) {
                 LOGGER.error("Schema initialization failed in YouTrackDB: {}", e.getMessage(), e);
