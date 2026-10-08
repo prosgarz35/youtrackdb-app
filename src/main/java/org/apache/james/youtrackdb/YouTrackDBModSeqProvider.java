@@ -62,8 +62,7 @@ public class YouTrackDBModSeqProvider implements ModSeqProvider {
                 if (e instanceof MailboxNotFoundException) {
                     throw (MailboxNotFoundException) e;
                 }
-                boolean isRetryable = YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException.class)
-                    || YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.internal.common.concur.NeedRetryException.class);
+                boolean isRetryable = YouTrackDBTransactions.isRetryableConflict(e);
                 if (!isRetryable || attempt == maxRetries) {
                     if (e instanceof MailboxException) {
                         throw (MailboxException) e;

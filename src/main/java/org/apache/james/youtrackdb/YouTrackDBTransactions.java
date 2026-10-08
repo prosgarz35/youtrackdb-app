@@ -55,6 +55,20 @@ public final class YouTrackDBTransactions {
         }
         return false;
     }
+
+    /**
+     * Determines whether an engine exception is an optimistic conflict eligible for retry.
+     * Retries are limited to concurrent record updates/creates:
+     * - ConcurrentModificationException (public API: optimistic lock conflict on update)
+     * - ConcurrentCreateException (internal: simultaneous record creation conflict)
+     *
+     * Other NeedRetryException subclasses (such as CommandInterruptedException or LinksConsistencyException)
+     * are intentional cancellations or corruption errors and must not be retried.
+     */
+    public static boolean isRetryableConflict(Throwable t) {
+        return hasCause(t, com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException.class)
+            || hasCause(t, com.jetbrains.youtrackdb.internal.core.exception.ConcurrentCreateException.class);
+    }
     /** Executes a YQL query and extracts all rows as a list of Maps (DRY). */
     public static java.util.List<java.util.Map<String, Object>> queryRows(YTDBGraphTraversalSource g, String query, Object... params) {
         return g.computeInTx(tx -> {
