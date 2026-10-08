@@ -1,5 +1,6 @@
 package org.apache.james.youtrackdb;
 
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -22,7 +23,9 @@ public final class YouTrackDBMessageId implements MessageId {
     private final String id;
 
     private YouTrackDBMessageId(String id) {
-        this.id = Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        UUID.fromString(id);
+        this.id = id.toLowerCase(Locale.US);
     }
 
     public static YouTrackDBMessageId generate() {
@@ -57,7 +60,7 @@ public final class YouTrackDBMessageId implements MessageId {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id);
+        return Objects.hashCode(id);
     }
 
     @Override

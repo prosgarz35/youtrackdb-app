@@ -1,5 +1,6 @@
 package org.apache.james.youtrackdb;
 
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -17,7 +18,9 @@ public final class YouTrackDBMailboxId implements MailboxId {
     private final String id;
 
     private YouTrackDBMailboxId(String id) {
-        this.id = Objects.requireNonNull(id, "id must not be null").toUpperCase(java.util.Locale.US);
+        Objects.requireNonNull(id, "id must not be null");
+        UUID.fromString(id);
+        this.id = id.toUpperCase(Locale.US);
     }
 
     public static YouTrackDBMailboxId generate() {
@@ -30,7 +33,7 @@ public final class YouTrackDBMailboxId implements MailboxId {
 
     @Override
     public String serialize() {
-        return id.toUpperCase(java.util.Locale.US);
+        return id;
     }
 
     @Override
@@ -47,7 +50,7 @@ public final class YouTrackDBMailboxId implements MailboxId {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id);
+        return Objects.hashCode(id);
     }
 
     @Override

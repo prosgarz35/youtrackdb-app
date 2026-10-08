@@ -35,14 +35,17 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
 
     @Override
     public List<MailboxAnnotation> getAllAnnotations(MailboxId mailboxId) {
-        String mId = getMailboxIdString(mailboxId);
         return g.computeInTx(tx -> {
-            List<Vertex> vertices = tx.V().hasLabel(CLASS).has(PROP_MAILBOX_ID, mId).toList();
+            List<Vertex> vertices = tx.V().hasLabel(CLASS).has(PROP_MAILBOX_ID, mailboxId.serialize()).toList();
             ImmutableList.Builder<MailboxAnnotation> builder = ImmutableList.builder();
             for (Vertex v : vertices) {
-                String key = v.property(PROP_KEY).value().toString();
-                String val = v.property(PROP_VALUE).value().toString();
-                builder.add(MailboxAnnotation.newInstance(new MailboxAnnotationKey(key), val));
+                var keyProp = v.property(PROP_KEY);
+                var valProp = v.property(PROP_VALUE);
+                if (keyProp.isPresent()) {
+                    String key = keyProp.value().toString();
+                    String val = valProp.isPresent() ? valProp.value().toString() : "";
+                    builder.add(MailboxAnnotation.newInstance(new MailboxAnnotationKey(key), val));
+                }
             }
             return builder.build();
         });
@@ -124,13 +127,20 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
         String mId = getMailboxIdString(mailboxId);
         String keyStr = key.asString();
 
-        YouTrackDBTransactions.executeStrictTx(g, tx -> {
-            tx.V().hasLabel(CLASS)
-                .has(PROP_MAILBOX_ID, mId)
-                .has(PROP_KEY, keyStr)
-                .drop()
-                .iterate();
-        });
+        try {
+            YouTrackDBTransactions.retryOnConflict(() -> {
+                YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                    tx.V().hasLabel(CLASS)
+                        .has(PROP_MAILBOX_ID, mId)
+                        .has(PROP_KEY, keyStr)
+                        .drop()
+                        .iterate();
+                });
+                return null;
+            });
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete annotation " + key + " for mailbox " + mId, e);
+        }
     }
 
     @Override
@@ -150,6 +160,6 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
             .has(PROP_MAILBOX_ID, mId)
             .count()
             .next());
-        return (int) count;
+        return Math.toIntExact(count);
     }
 }

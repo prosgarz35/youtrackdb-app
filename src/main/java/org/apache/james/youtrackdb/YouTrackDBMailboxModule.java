@@ -2,6 +2,7 @@ package org.apache.james.youtrackdb;
 
 import static org.apache.james.modules.Names.MAILBOXMANAGER_NAME;
 
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
 import org.apache.james.adapter.mailbox.ACLUsernameChangeTaskStep;
@@ -29,12 +30,7 @@ import org.apache.james.mailbox.SessionProvider;
 import org.apache.james.mailbox.StringBackedAttachmentIdFactory;
 import org.apache.james.mailbox.SubscriptionManager;
 import org.apache.james.mailbox.extractor.TextExtractor;
-import org.apache.james.mailbox.inmemory.InMemoryId;
-import org.apache.james.mailbox.inmemory.InMemoryMailboxManager;
-import org.apache.james.mailbox.inmemory.InMemoryMailboxSessionMapperFactory;
-import org.apache.james.mailbox.inmemory.InMemoryMessageId;
-import org.apache.james.mailbox.inmemory.mail.InMemoryModSeqProvider;
-import org.apache.james.mailbox.inmemory.mail.InMemoryUidProvider;
+import org.apache.james.mailbox.indexer.ReIndexer;
 import org.apache.james.mailbox.model.MailboxId;
 import org.apache.james.mailbox.model.MessageId;
 import org.apache.james.mailbox.store.JVMMailboxPathLocker;
@@ -58,25 +54,24 @@ import org.apache.james.mailbox.store.mail.ThreadIdGuessingAlgorithm;
 import org.apache.james.mailbox.store.mail.UidProvider;
 import org.apache.james.mailbox.store.mail.model.impl.MessageParser;
 import org.apache.james.mailbox.store.mail.model.impl.MessageParserImpl;
-import org.apache.james.mailbox.store.search.SimpleMessageSearchIndex;
-import org.apache.james.mailbox.store.search.MessageSearchIndex;
-import org.apache.james.mailbox.store.search.ListeningMessageSearchIndex;
 import org.apache.james.mailbox.store.user.SubscriptionMapperFactory;
 import org.apache.james.modules.mailbox.DefaultEventModule;
+import org.apache.james.modules.mailbox.LuceneSearchMailboxModule;
 import org.apache.james.modules.mailbox.MemoryDeadLetterModule;
-import org.apache.james.modules.mailbox.MemoryQuotaModule;
 import org.apache.james.modules.mailbox.MemoryQuotaSearchModule;
 import org.apache.james.user.api.DeleteUserDataTaskStep;
 import org.apache.james.user.api.UsernameChangeTaskStep;
 import org.apache.james.utils.MailboxManagerDefinition;
+import org.apache.mailbox.tools.indexer.ReIndexerImpl;
 
 import com.google.inject.AbstractModule;
-import com.google.inject.Inject;
 import com.google.inject.Scopes;
 import com.google.inject.multibindings.Multibinder;
 import com.google.inject.name.Names;
 
 public class YouTrackDBMailboxModule extends AbstractModule {
+
+    private static final Limit DEFAULT_CHANGE_LIMIT = Limit.of(256);
 
     @Override
     protected void configure() {
@@ -84,44 +79,48 @@ public class YouTrackDBMailboxModule extends AbstractModule {
         install(new MemoryDeadLetterModule());
         install(new YouTrackDBQuotaModule());
         install(new MemoryQuotaSearchModule());
-        install(new org.apache.james.modules.mailbox.LuceneSearchMailboxModule());
+        install(new LuceneSearchMailboxModule());
 
         bind(MessageMapperFactory.class).to(YouTrackDBMailboxSessionMapperFactory.class);
         bind(MailboxMapperFactory.class).to(YouTrackDBMailboxSessionMapperFactory.class);
-        bind(AttachmentIdFactory.class).to(StringBackedAttachmentIdFactory.class);
         bind(AttachmentMapperFactory.class).to(YouTrackDBMailboxSessionMapperFactory.class);
         bind(MailboxSessionMapperFactory.class).to(YouTrackDBMailboxSessionMapperFactory.class);
+        bind(SubscriptionMapperFactory.class).to(YouTrackDBMailboxSessionMapperFactory.class);
+
         bind(ModSeqProvider.class).to(YouTrackDBModSeqProvider.class);
         bind(UidProvider.class).to(YouTrackDBUidProvider.class);
-        bind(MailboxId.Factory.class).to(YouTrackDBMailboxId.Factory.class);
-        bind(MessageId.Factory.class).to(YouTrackDBMessageId.Factory.class);
-        bind(ThreadIdGuessingAlgorithm.class).to(SearchThreadIdGuessingAlgorithm.class);
-        bind(State.Factory.class).to(State.DefaultFactory.class);
 
         bind(SubscriptionManager.class).to(StoreSubscriptionManager.class);
-        bind(SubscriptionMapperFactory.class).to(YouTrackDBMailboxSessionMapperFactory.class);
+        bind(StoreSubscriptionManager.class).in(Scopes.SINGLETON);
+
         bind(MailboxPathLocker.class).to(JVMMailboxPathLocker.class);
         bind(Authenticator.class).to(UserRepositoryAuthenticator.class);
         bind(MailboxManager.class).to(YouTrackDBMailboxManager.class);
         bind(StoreMailboxManager.class).to(YouTrackDBMailboxManager.class);
-        bind(MailboxChangeRepository.class).to(MemoryMailboxChangeRepository.class);
-        bind(EmailChangeRepository.class).to(MemoryEmailChangeRepository.class);
-        bind(MessageIdManager.class).to(StoreMessageIdManager.class);
-        bind(AttachmentManager.class).to(StoreAttachmentManager.class);
         bind(SessionProvider.class).to(SessionProviderImpl.class);
 
+        bind(MailboxId.Factory.class).to(YouTrackDBMailboxId.Factory.class);
+        bind(MessageId.Factory.class).to(YouTrackDBMessageId.Factory.class);
+
+        bind(MessageParser.class).to(MessageParserImpl.class);
         bind(TextExtractor.class).to(JsoupTextExtractor.class);
         bind(RightManager.class).to(StoreRightManager.class);
-        bind(AttachmentContentLoader.class).to(AttachmentManager.class);
 
-        bind(MessageParser.class).toInstance(new MessageParserImpl());
+        bind(ThreadIdGuessingAlgorithm.class).to(SearchThreadIdGuessingAlgorithm.class);
+
+        bind(AttachmentManager.class).to(StoreAttachmentManager.class);
+        bind(AttachmentContentLoader.class).to(StoreAttachmentManager.class);
+        bind(AttachmentIdFactory.class).to(StringBackedAttachmentIdFactory.class);
+
+        bind(MessageIdManager.class).to(StoreMessageIdManager.class);
+
+        bind(State.Factory.class).toInstance(State.Factory.DEFAULT);
+
+        bind(MailboxChangeRepository.class).to(MemoryMailboxChangeRepository.class);
+        bind(EmailChangeRepository.class).to(MemoryEmailChangeRepository.class);
+
         bind(MailboxCounterCorrector.class).toInstance(MailboxCounterCorrector.DEFAULT);
 
-        bind(YouTrackDBMailboxSessionMapperFactory.class).in(Scopes.SINGLETON);
-        bind(YouTrackDBModSeqProvider.class).in(Scopes.SINGLETON);
-        bind(YouTrackDBUidProvider.class).in(Scopes.SINGLETON);
-        bind(StoreSubscriptionManager.class).in(Scopes.SINGLETON);
-        bind(JVMMailboxPathLocker.class).in(Scopes.SINGLETON);
         bind(UserRepositoryAuthenticator.class).in(Scopes.SINGLETON);
         bind(YouTrackDBMailboxManager.class).in(Scopes.SINGLETON);
         bind(MemoryMailboxChangeRepository.class).in(Scopes.SINGLETON);
@@ -132,11 +131,11 @@ public class YouTrackDBMailboxModule extends AbstractModule {
         bind(StoreRightManager.class).in(Scopes.SINGLETON);
         bind(SessionProviderImpl.class).in(Scopes.SINGLETON);
 
-        bind(Limit.class).annotatedWith(Names.named(MemoryEmailChangeRepository.LIMIT_NAME)).toInstance(Limit.of(256));
-        bind(Limit.class).annotatedWith(Names.named(MemoryMailboxChangeRepository.LIMIT_NAME)).toInstance(Limit.of(256));
+        bind(Limit.class).annotatedWith(Names.named(MemoryEmailChangeRepository.LIMIT_NAME)).toInstance(DEFAULT_CHANGE_LIMIT);
+        bind(Limit.class).annotatedWith(Names.named(MemoryMailboxChangeRepository.LIMIT_NAME)).toInstance(DEFAULT_CHANGE_LIMIT);
 
-        bind(org.apache.mailbox.tools.indexer.ReIndexerImpl.class).in(Scopes.SINGLETON);
-        bind(org.apache.james.mailbox.indexer.ReIndexer.class).to(org.apache.mailbox.tools.indexer.ReIndexerImpl.class);
+        bind(ReIndexerImpl.class).in(Scopes.SINGLETON);
+        bind(ReIndexer.class).to(ReIndexerImpl.class);
 
         Multibinder.newSetBinder(binder(), MailboxManagerDefinition.class)
             .addBinding()

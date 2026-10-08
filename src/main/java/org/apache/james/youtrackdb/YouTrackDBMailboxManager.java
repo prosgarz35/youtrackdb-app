@@ -6,8 +6,8 @@ import java.util.EnumSet;
 import jakarta.inject.Inject;
 
 import org.apache.james.events.EventBus;
-import org.apache.james.mailbox.MailboxAnnotationManager;
 import org.apache.james.mailbox.MailboxPathLocker;
+import org.apache.james.mailbox.MailboxSession;
 import org.apache.james.mailbox.SessionProvider;
 import org.apache.james.mailbox.model.Mailbox;
 import org.apache.james.mailbox.model.MessageId;
@@ -67,7 +67,7 @@ public class YouTrackDBMailboxManager extends StoreMailboxManager {
     }
 
     @Override
-    protected StoreMessageManager createMessageManager(Mailbox mailbox, org.apache.james.mailbox.MailboxSession mailboxSession) {
+    protected StoreMessageManager createMessageManager(Mailbox mailbox, MailboxSession mailboxSession) {
         return new YouTrackDBMessageManager(getMapperFactory(),
             getMessageSearchIndex(),
             getEventBus(),

@@ -75,9 +75,12 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     public Iterator<MailboxMessage> findInMailbox(Mailbox mailbox, MessageRange range, FetchType type, int limit) throws MailboxException {
         try {
             String mailboxId = mailbox.getMailboxId().serialize();
+            String metadataCols = String.join(", ",
+                PROP_MAILBOX_ID, PROP_MESSAGE_ID, PROP_THREAD_ID, PROP_UID, PROP_MODSEQ,
+                PROP_INTERNAL_DATE, PROP_SAVE_DATE, PROP_SIZE, PROP_BODY_START, PROP_FLAGS, PROP_USER_FLAGS);
             String selectClause = (type == FetchType.METADATA)
-                ? "SELECT mailboxId, messageId, threadId, uid, modSeq, internalDate, saveDate, size, bodyStartOctet, flags, userFlags FROM JamesMailboxMessage"
-                : "SELECT FROM JamesMailboxMessage";
+                ? "SELECT " + metadataCols + " FROM " + CLASS_NAME
+                : "SELECT FROM " + CLASS_NAME;
             String query;
             List<Object> params = new ArrayList<>();
             params.add("mbx");
@@ -108,7 +111,9 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             }
 
             if (limit > 0) {
-                query += " LIMIT " + limit;
+                query += " LIMIT :limit";
+                params.add("limit");
+                params.add(limit);
             }
 
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, query, params.toArray());
@@ -424,35 +429,36 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
         return builder.build();
     }
 
+    private static final Map<Flag, String> SYSTEM_FLAG_TO_NAME = Map.of(
+        Flag.ANSWERED, "ANSWERED",
+        Flag.DELETED, "DELETED",
+        Flag.DRAFT, "DRAFT",
+        Flag.FLAGGED, "FLAGGED",
+        Flag.RECENT, "RECENT",
+        Flag.SEEN, "SEEN"
+    );
+
+    private static final Map<String, Flag> NAME_TO_SYSTEM_FLAG = Map.of(
+        "ANSWERED", Flag.ANSWERED,
+        "DELETED", Flag.DELETED,
+        "DRAFT", Flag.DRAFT,
+        "FLAGGED", Flag.FLAGGED,
+        "RECENT", Flag.RECENT,
+        "SEEN", Flag.SEEN
+    );
+
     private static Set<String> extractSystemFlags(Flags flags) {
         Set<String> set = new HashSet<>();
-        if (flags.contains(Flag.ANSWERED)) {
-            set.add("ANSWERED");
-        }
-        if (flags.contains(Flag.DELETED)) {
-            set.add("DELETED");
-        }
-        if (flags.contains(Flag.DRAFT)) {
-            set.add("DRAFT");
-        }
-        if (flags.contains(Flag.FLAGGED)) {
-            set.add("FLAGGED");
-        }
-        if (flags.contains(Flag.RECENT)) {
-            set.add("RECENT");
-        }
-        if (flags.contains(Flag.SEEN)) {
-            set.add("SEEN");
+        for (Map.Entry<Flag, String> entry : SYSTEM_FLAG_TO_NAME.entrySet()) {
+            if (flags.contains(entry.getKey())) {
+                set.add(entry.getValue());
+            }
         }
         return set;
     }
 
     private static Set<String> extractUserFlags(Flags flags) {
-        Set<String> set = new HashSet<>();
-        for (String userFlag : flags.getUserFlags()) {
-            set.add(userFlag);
-        }
-        return set;
+        return Set.of(flags.getUserFlags());
     }
 
     private static Flags readFlags(Map<String, Object> row) {
@@ -460,18 +466,9 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
         Object sysObj = row.get(PROP_FLAGS);
         if (sysObj instanceof Iterable<?> it) {
             for (Object f : it) {
-                if ("ANSWERED".equals(f)) {
-                    flags.add(Flag.ANSWERED);
-                } else if ("DELETED".equals(f)) {
-                    flags.add(Flag.DELETED);
-                } else if ("DRAFT".equals(f)) {
-                    flags.add(Flag.DRAFT);
-                } else if ("FLAGGED".equals(f)) {
-                    flags.add(Flag.FLAGGED);
-                } else if ("RECENT".equals(f)) {
-                    flags.add(Flag.RECENT);
-                } else if ("SEEN".equals(f)) {
-                    flags.add(Flag.SEEN);
+                Flag systemFlag = NAME_TO_SYSTEM_FLAG.get(Objects.toString(f));
+                if (systemFlag != null) {
+                    flags.add(systemFlag);
                 }
             }
         }

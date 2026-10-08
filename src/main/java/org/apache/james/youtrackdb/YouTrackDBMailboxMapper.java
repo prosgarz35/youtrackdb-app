@@ -63,10 +63,11 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
 
             try {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                    String usernameStr = mailboxPath.getUser() != null ? mailboxPath.getUser().asString() : "";
                     List<Map<String, Object>> existing = YouTrackDBTransactions.queryRows(tx,
                         "SELECT FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name",
                         "ns", mailboxPath.getNamespace(),
-                        "user", mailboxPath.getUser().asString(),
+                        "user", usernameStr,
                         "name", mailboxPath.getName());
                     if (!existing.isEmpty()) {
                         throw new MailboxExistsException(mailboxPath.getName());
@@ -75,7 +76,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                     tx.addV(CLASS_NAME)
                         .property(PROP_MAILBOX_ID, id.serialize())
                         .property(PROP_NAMESPACE, mailboxPath.getNamespace())
-                        .property(PROP_USER, mailboxPath.getUser().asString())
+                        .property(PROP_USER, usernameStr)
                         .property(PROP_NAME, mailboxPath.getName())
                         .property(PROP_UID_VALIDITY, uidValidity.asLong())
                         .property("lastUid", 0L)
@@ -101,10 +102,11 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
         return Mono.fromCallable(() -> {
             try {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                    String usernameStr = mailbox.getUser() != null ? mailbox.getUser().asString() : "";
                     List<Map<String, Object>> existing = YouTrackDBTransactions.queryRows(tx,
                         "SELECT FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name AND mailboxId <> :id",
                         "ns", mailbox.getNamespace(),
-                        "user", mailbox.getUser().asString(),
+                        "user", usernameStr,
                         "name", mailbox.getName(),
                         "id", mailbox.getMailboxId().serialize());
                     if (!existing.isEmpty()) {
@@ -120,7 +122,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
 
                     tx.command("UPDATE JamesMailbox SET namespace = :ns, user = :user, name = :name WHERE mailboxId = :id",
                         "ns", mailbox.getNamespace(),
-                        "user", mailbox.getUser().asString(),
+                        "user", usernameStr,
                         "name", mailbox.getName(),
                         "id", mailbox.getMailboxId().serialize());
                 });
@@ -240,12 +242,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                     throw new MailboxNotFoundException(mailbox.getMailboxId());
                 }
                 MailboxACL oldAcl = found.getACL();
-                MailboxACL newAcl;
-                try {
-                    newAcl = oldAcl.apply(mailboxACLCommand);
-                } catch (UnsupportedRightException e) {
-                    throw new RuntimeException("ACL update failed", e);
-                }
+                MailboxACL newAcl = oldAcl.apply(mailboxACLCommand);
 
                 tx.command("UPDATE JamesMailbox SET acl = :acl WHERE mailboxId = :id",
                     "acl", serializeACL(newAcl),
@@ -325,10 +322,14 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
         String user = Objects.toString(row.get(PROP_USER), null);
         String name = Objects.toString(row.get(PROP_NAME), null);
         Object uidValidityObj = row.get(PROP_UID_VALIDITY);
-        long uidValidity = uidValidityObj instanceof Number ? ((Number) uidValidityObj).longValue() : 1L;
+        if (!(uidValidityObj instanceof Number)) {
+            throw new IllegalStateException("Corrupted mailbox record: missing uidValidity for mailbox " + mailboxIdStr);
+        }
+        long uidValidity = ((Number) uidValidityObj).longValue();
         String aclStr = Objects.toString(row.get(PROP_ACL), null);
 
-        MailboxPath path = new MailboxPath(namespace, Username.of(user), name);
+        Username username = (user == null || user.isEmpty()) ? null : Username.of(user);
+        MailboxPath path = new MailboxPath(namespace, username, name);
         Mailbox mailbox = new Mailbox(path, UidValidity.of(uidValidity), YouTrackDBMailboxId.of(mailboxIdStr));
         mailbox.setACL(deserializeACL(aclStr));
         return mailbox;
