@@ -119,8 +119,10 @@ class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
             assertThat(okLine).startsWith("a001 OK");
             assertThat(capabilityLine).startsWith("* CAPABILITY ");
 
-            // Mandatory base IMAP4rev1 (RFC 3501)
-            assertThat(capabilityLine).contains("IMAP4REV1");
+            // Mandatory base IMAP4rev1 (RFC 3501) and IMAP4rev2 (RFC 9051)
+            assertThat(capabilityLine)
+                .contains("IMAP4REV1")
+                .contains("IMAP4REV2");
 
             // Mandatory RFC 9051 (IMAP4rev2) capabilities implemented by YouTrackDB & James:
             // MOVE (RFC 6855), OBJECTID (RFC 8474), SAVEDATE (RFC 8514), QUOTA (RFC 9208),
@@ -150,10 +152,20 @@ class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
             assertThat(enableLine).startsWith("* ENABLED");
             assertThat(enableOk).startsWith("a003 OK");
 
-            // 5. Clean logout
-            writer.println("a004 LOGOUT");
+            // 5. Test RFC 9051 section 6.2.4 UNAUTHENTICATE command (returns to NON_AUTHENTICATED state)
+            writer.println("a004 UNAUTHENTICATE");
+            String unauthOk = reader.readLine();
+            assertThat(unauthOk).startsWith("a004 OK");
+
+            // Verify session is back in NON_AUTHENTICATED state by successfully re-logging in
+            writer.println("a005 LOGIN " + USER + " " + PASSWORD);
+            String reLoginOk = reader.readLine();
+            assertThat(reLoginOk).startsWith("a005 OK");
+
+            // 6. Clean logout
+            writer.println("a006 LOGOUT");
             reader.readLine(); // * BYE
-            reader.readLine(); // a004 OK
+            reader.readLine(); // a006 OK
         }
     }
 }
