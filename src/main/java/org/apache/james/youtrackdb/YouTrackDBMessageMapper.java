@@ -450,13 +450,12 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     static MailboxMessage readMessage(Map<String, Object> row, MailboxId mailboxId, FetchType type) {
         String messageIdStr = Objects.toString(row.get(PROP_MESSAGE_ID), null);
         String threadIdStr = Objects.toString(row.get(PROP_THREAD_ID), messageIdStr);
-        long uid = ((Number) row.get(PROP_UID)).longValue();
-        long modSeq = ((Number) row.get(PROP_MODSEQ)).longValue();
-        long internalDateMs = ((Number) row.get(PROP_INTERNAL_DATE)).longValue();
-        Object saveDateObj = row.get(PROP_SAVE_DATE);
-        Optional<Date> saveDate = saveDateObj instanceof Number num ? Optional.of(new Date(num.longValue())) : Optional.empty();
-        long size = ((Number) row.get(PROP_SIZE)).longValue();
-        int bodyStart = ((Number) row.get(PROP_BODY_START)).intValue();
+        long uid = row.get(PROP_UID) instanceof Number n ? n.longValue() : 0L;
+        long modSeq = row.get(PROP_MODSEQ) instanceof Number n ? n.longValue() : 0L;
+        long internalDateMs = row.get(PROP_INTERNAL_DATE) instanceof Number n ? n.longValue() : 0L;
+        Optional<Date> saveDate = row.get(PROP_SAVE_DATE) instanceof Number num ? Optional.of(new Date(num.longValue())) : Optional.empty();
+        long size = row.get(PROP_SIZE) instanceof Number n ? n.longValue() : 0L;
+        int bodyStart = row.get(PROP_BODY_START) instanceof Number n ? n.intValue() : 0;
         byte[] content = (type == FetchType.METADATA) ? new byte[0] : (byte[]) row.get(PROP_CONTENT);
 
         Flags flags = readFlags(row);
