@@ -42,7 +42,7 @@ public final class YouTrackDBMailboxCounters {
                         throw new MailboxNotFoundException(mailboxId);
                     }
 
-                    Object currentVal = rows.get(0).get(propertyName);
+                    Object currentVal = rows.getFirst().get(propertyName);
                     long current = currentVal instanceof Number ? ((Number) currentVal).longValue() : 0L;
                     long next = current + 1L;
 
@@ -78,7 +78,7 @@ public final class YouTrackDBMailboxCounters {
                 throw new MailboxNotFoundException(mailboxId);
             }
 
-            Object currentVal = rows.get(0).get(propertyName);
+            Object currentVal = rows.getFirst().get(propertyName);
             if (currentVal instanceof Number num) {
                 return OptionalLong.of(num.longValue());
             }

@@ -105,7 +105,7 @@ public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
         if (rows.isEmpty()) {
             return CurrentQuotas.emptyQuotas();
         }
-        Map<String, Object> row = rows.get(0);
+        Map<String, Object> row = rows.getFirst();
         Object cntObj = row.get("messageCount");
         Object szObj = row.get("size");
         long count = cntObj instanceof Number ? ((Number) cntObj).longValue() : NO_MESSAGES;
@@ -122,7 +122,7 @@ public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
             YouTrackDBTransactions.retryOnConflict(10, () -> {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
-                        "SELECT messageCount, size FROM JamesQuotaUsage WHERE quotaRoot = :qr", "qr", rootVal);
+                        "SELECT 1 FROM JamesQuotaUsage WHERE quotaRoot = :qr LIMIT 1", "qr", rootVal);
                     if (rows.isEmpty()) {
                         tx.addV(CLASS_NAME)
                             .property("quotaRoot", rootVal)
@@ -130,15 +130,8 @@ public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
                             .property("size", diffSize)
                             .iterate();
                     } else {
-                        Map<String, Object> row = rows.get(0);
-                        long currentCount = row.get("messageCount") instanceof Number ? ((Number) row.get("messageCount")).longValue() : 0L;
-                        long currentSize = row.get("size") instanceof Number ? ((Number) row.get("size")).longValue() : 0L;
-
-                        long newCount = currentCount + diffCount;
-                        long newSize = currentSize + diffSize;
-
-                        tx.command("UPDATE JamesQuotaUsage SET messageCount = :mc, size = :sz WHERE quotaRoot = :qr",
-                            "mc", newCount, "sz", newSize, "qr", rootVal);
+                        tx.command("UPDATE JamesQuotaUsage SET messageCount = messageCount + :dc, size = size + :ds WHERE quotaRoot = :qr",
+                            "dc", diffCount, "ds", diffSize, "qr", rootVal);
                     }
                 });
                 return null;

@@ -206,7 +206,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             if (rows.isEmpty()) {
                 return Optional.<Mailbox>empty();
             }
-            Mailbox mailbox = readMailbox(rows.get(0));
+            Mailbox mailbox = readMailbox(rows.getFirst());
             putInCache(mailbox);
             return Optional.of(mailbox);
         }).subscribeOn(Schedulers.boundedElastic())
@@ -227,7 +227,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             if (rows.isEmpty()) {
                 return Optional.<Mailbox>empty();
             }
-            Mailbox mailbox = readMailbox(rows.get(0));
+            Mailbox mailbox = readMailbox(rows.getFirst());
             putInCache(mailbox);
             return Optional.of(mailbox);
         }).subscribeOn(Schedulers.boundedElastic())
