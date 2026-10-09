@@ -145,11 +145,11 @@ class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
             String loginOk = reader.readLine();
             assertThat(loginOk).startsWith("a002 OK");
 
-            // 4. Test ENABLE CONDSTORE negotiation (RFC 5161)
-            writer.println("a003 ENABLE CONDSTORE");
+            // 4. Test RFC 5161 / RFC 9051 ENABLE IMAP4rev2 negotiation
+            writer.println("a003 ENABLE IMAP4rev2");
             String enableLine = reader.readLine();
             String enableOk = reader.readLine();
-            assertThat(enableLine).startsWith("* ENABLED");
+            assertThat(enableLine).isEqualTo("* ENABLED IMAP4REV2");
             assertThat(enableOk).startsWith("a003 OK");
 
             // 5. Test RFC 9051 section 6.2.4 UNAUTHENTICATE command (returns to NON_AUTHENTICATED state)
