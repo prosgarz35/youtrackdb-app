@@ -168,4 +168,206 @@ class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
             reader.readLine(); // a006 OK
         }
     }
+
+    @Test
+    void imapServerShouldSupportAllFourClientArchetypes(GuiceJamesServer jamesServer) throws Exception {
+        try {
+            jamesServer.getProbe(DataProbeImpl.class).fluent().addDomain(DOMAIN);
+        } catch (Exception ignored) {
+        }
+        try {
+            jamesServer.getProbe(DataProbeImpl.class).fluent().addUser(USER, PASSWORD);
+        } catch (Exception ignored) {
+        }
+
+        int imapPort = jamesServer.getProbe(ImapGuiceProbe.class).getImapPort();
+
+        // =========================================================================================
+        // Клиент 1: IMAP4rev1 only (RFC 3501 strictly, no modular extensions, no ENABLE)
+        // =========================================================================================
+        try (java.net.Socket socket = new java.net.Socket(JAMES_SERVER_HOST, imapPort);
+             java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream(), java.nio.charset.StandardCharsets.US_ASCII));
+             java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.OutputStreamWriter(socket.getOutputStream(), java.nio.charset.StandardCharsets.US_ASCII), true)) {
+
+            String banner = reader.readLine();
+            assertThat(banner).startsWith("* OK JAMES IMAP4rev1 Server");
+
+            writer.println("c11 CAPABILITY");
+            String capLine = reader.readLine();
+            String capOk = reader.readLine();
+            assertThat(capLine).contains("IMAP4REV1");
+            assertThat(capOk).startsWith("c11 OK");
+
+            writer.println("c12 LOGIN " + USER + " " + PASSWORD);
+            assertThat(reader.readLine()).startsWith("c12 OK");
+
+            // RFC 3501: SELECT returns * N RECENT
+            writer.println("c13 SELECT INBOX");
+            java.util.List<String> selectResponses = new java.util.ArrayList<>();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                selectResponses.add(line);
+                if (line.startsWith("c13 OK")) {
+                    break;
+                }
+            }
+            assertThat(selectResponses.stream().anyMatch(s -> s.matches("\\* \\d+ RECENT"))).isTrue();
+
+            // RFC 3501: SEARCH returns classic * SEARCH
+            writer.println("c14 SEARCH ALL");
+            String searchResp = reader.readLine();
+            String searchOk = reader.readLine();
+            assertThat(searchResp).startsWith("* SEARCH");
+            assertThat(searchResp).doesNotStartWith("* ESEARCH");
+            assertThat(searchOk).startsWith("c14 OK");
+
+            writer.println("c15 LOGOUT");
+            reader.readLine(); // * BYE
+            reader.readLine(); // OK
+        }
+
+        // =========================================================================================
+        // Клиент 2: IMAP4rev2 only (RFC 9051 strictly: parses IMAP4rev2, calls ENABLE IMAP4rev2)
+        // =========================================================================================
+        try (java.net.Socket socket = new java.net.Socket(JAMES_SERVER_HOST, imapPort);
+             java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream(), java.nio.charset.StandardCharsets.US_ASCII));
+             java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.OutputStreamWriter(socket.getOutputStream(), java.nio.charset.StandardCharsets.US_ASCII), true)) {
+
+            reader.readLine(); // Banner
+            writer.println("c21 CAPABILITY");
+            String capLine = reader.readLine();
+            reader.readLine(); // OK
+            assertThat(capLine).contains("IMAP4REV2");
+
+            writer.println("c22 LOGIN " + USER + " " + PASSWORD);
+            assertThat(reader.readLine()).startsWith("c22 OK");
+
+            // RFC 9051 Appendix A: calls ENABLE IMAP4rev2
+            writer.println("c23 ENABLE IMAP4rev2");
+            assertThat(reader.readLine()).isEqualTo("* ENABLED IMAP4REV2");
+            assertThat(reader.readLine()).startsWith("c23 OK");
+
+            // RFC 9051: SELECT suppresses RECENT
+            writer.println("c24 SELECT INBOX");
+            java.util.List<String> selectResponses = new java.util.ArrayList<>();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                selectResponses.add(line);
+                if (line.startsWith("c24 OK")) {
+                    break;
+                }
+            }
+            assertThat(selectResponses.stream().noneMatch(s -> s.matches("\\* \\d+ RECENT"))).isTrue();
+
+            // RFC 9051: SEARCH automatically uses * ESEARCH
+            writer.println("c25 SEARCH ALL");
+            String searchResp = reader.readLine();
+            String searchOk = reader.readLine();
+            assertThat(searchResp).startsWith("* ESEARCH");
+            assertThat(searchOk).startsWith("c25 OK");
+
+            // RFC 9051 section 6.2.4: UNAUTHENTICATE command resets auth state
+            writer.println("c26 UNAUTHENTICATE");
+            assertThat(reader.readLine()).startsWith("c26 OK");
+
+            writer.println("c27 LOGOUT");
+            reader.readLine(); // * BYE
+            reader.readLine(); // OK
+        }
+
+        // =========================================================================================
+        // Клиент 3: IMAP4rev1 с частичной модульной поддержкой (rev1 + IDLE, MOVE, QRESYNC, UNSELECT)
+        // =========================================================================================
+        try (java.net.Socket socket = new java.net.Socket(JAMES_SERVER_HOST, imapPort);
+             java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream(), java.nio.charset.StandardCharsets.US_ASCII));
+             java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.OutputStreamWriter(socket.getOutputStream(), java.nio.charset.StandardCharsets.US_ASCII), true)) {
+
+            reader.readLine(); // Banner
+            writer.println("c31 CAPABILITY");
+            String capLine = reader.readLine();
+            reader.readLine(); // OK
+            // Modular client checks discrete capability tokens without enabling rev2:
+            assertThat(capLine).contains("MOVE").contains("UNSELECT").contains("QRESYNC").contains("UIDPLUS");
+
+            writer.println("c32 LOGIN " + USER + " " + PASSWORD);
+            assertThat(reader.readLine()).startsWith("c32 OK");
+
+            // Enable single module QRESYNC only (RFC 5161)
+            writer.println("c33 ENABLE QRESYNC");
+            assertThat(reader.readLine()).isEqualTo("* ENABLED QRESYNC");
+            assertThat(reader.readLine()).startsWith("c33 OK");
+
+            // Must RETAIN rev1 behavior: * N RECENT is still returned!
+            writer.println("c34 SELECT INBOX");
+            java.util.List<String> selectResponses = new java.util.ArrayList<>();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                selectResponses.add(line);
+                if (line.startsWith("c34 OK")) {
+                    break;
+                }
+            }
+            assertThat(selectResponses.stream().anyMatch(s -> s.matches("\\* \\d+ RECENT"))).isTrue();
+
+            // Direct use of modular command UNSELECT (RFC 3691)
+            writer.println("c35 UNSELECT");
+            assertThat(reader.readLine()).startsWith("c35 OK");
+
+            writer.println("c36 LOGOUT");
+            reader.readLine(); // * BYE
+            reader.readLine(); // OK
+        }
+
+        // =========================================================================================
+        // Клиент 4: Полная поддержка обоих протоколов (Dual-stack rev1 & rev2)
+        // =========================================================================================
+        try (java.net.Socket socket = new java.net.Socket(JAMES_SERVER_HOST, imapPort);
+             java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream(), java.nio.charset.StandardCharsets.US_ASCII));
+             java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.OutputStreamWriter(socket.getOutputStream(), java.nio.charset.StandardCharsets.US_ASCII), true)) {
+
+            reader.readLine(); // Banner
+            writer.println("c41 CAPABILITY");
+            String capLine = reader.readLine();
+            reader.readLine(); // OK
+            // Dual-stack client verifies both markers are present simultaneously:
+            assertThat(capLine).contains("IMAP4REV1").contains("IMAP4REV2");
+
+            writer.println("c42 LOGIN " + USER + " " + PASSWORD);
+            assertThat(reader.readLine()).startsWith("c42 OK");
+
+            // Client starts in rev1 mode, executes standard commands
+            writer.println("c43 SELECT INBOX");
+            java.util.List<String> selectResponses = new java.util.ArrayList<>();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                selectResponses.add(line);
+                if (line.startsWith("c43 OK")) {
+                    break;
+                }
+            }
+            assertThat(selectResponses.stream().anyMatch(s -> s.matches("\\* \\d+ RECENT"))).isTrue();
+
+            // Client upgrades session dynamically to IMAP4rev2:
+            writer.println("c44 ENABLE IMAP4rev2");
+            assertThat(reader.readLine()).isEqualTo("* ENABLED IMAP4REV2");
+            assertThat(reader.readLine()).startsWith("c44 OK");
+
+            // Following commands now strictly follow RFC 9051:
+            writer.println("c45 SEARCH ALL");
+            assertThat(reader.readLine()).startsWith("* ESEARCH");
+            assertThat(reader.readLine()).startsWith("c45 OK");
+
+            // UNAUTHENTICATE resets session back to non-authenticated
+            writer.println("c46 UNAUTHENTICATE");
+            assertThat(reader.readLine()).startsWith("c46 OK");
+
+            // Re-login with another session
+            writer.println("c47 LOGIN " + USER + " " + PASSWORD);
+            assertThat(reader.readLine()).startsWith("c47 OK");
+
+            writer.println("c48 LOGOUT");
+            reader.readLine(); // * BYE
+            reader.readLine(); // OK
+        }
+    }
 }
