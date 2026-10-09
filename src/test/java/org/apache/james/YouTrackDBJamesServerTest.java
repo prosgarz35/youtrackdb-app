@@ -53,10 +53,18 @@ class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
 
     @Test
     void guiceServerShouldUpdateQuota(GuiceJamesServer jamesServer) throws Exception {
-        jamesServer.getProbe(DataProbeImpl.class)
-            .fluent()
-            .addDomain(DOMAIN)
-            .addUser(USER, PASSWORD);
+        try {
+            jamesServer.getProbe(DataProbeImpl.class)
+                .fluent()
+                .addDomain(DOMAIN);
+        } catch (Exception ignored) {
+        }
+        try {
+            jamesServer.getProbe(DataProbeImpl.class)
+                .fluent()
+                .addUser(USER, PASSWORD);
+        } catch (Exception ignored) {
+        }
         jamesServer.getProbe(QuotaProbesImpl.class).setGlobalMaxStorage(QuotaSizeLimit.size(50 * 1024));
 
         int imapPort = jamesServer.getProbe(ImapGuiceProbe.class).getImapPort();
@@ -80,6 +88,20 @@ class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
 
     @Test
     void imapServerShouldAdvertiseImap4rev1AndImap4rev2Capabilities(GuiceJamesServer jamesServer) throws Exception {
+        // Ensure domain and user exist idempotently
+        try {
+            jamesServer.getProbe(DataProbeImpl.class)
+                .fluent()
+                .addDomain(DOMAIN);
+        } catch (Exception ignored) {
+        }
+        try {
+            jamesServer.getProbe(DataProbeImpl.class)
+                .fluent()
+                .addUser(USER, PASSWORD);
+        } catch (Exception ignored) {
+        }
+
         int imapPort = jamesServer.getProbe(ImapGuiceProbe.class).getImapPort();
         try (java.net.Socket socket = new java.net.Socket(JAMES_SERVER_HOST, imapPort);
              java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream(), java.nio.charset.StandardCharsets.US_ASCII));
@@ -116,10 +138,22 @@ class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
                 .contains("ENABLE")
                 .contains("ESEARCH");
 
-            // 3. Clean logout
-            writer.println("a002 LOGOUT");
+            // 3. Authenticate and test RFC 5161 / RFC 9051 ENABLE command (Authenticated state)
+            writer.println("a002 LOGIN " + USER + " " + PASSWORD);
+            String loginOk = reader.readLine();
+            assertThat(loginOk).startsWith("a002 OK");
+
+            // 4. Test ENABLE CONDSTORE negotiation (RFC 5161)
+            writer.println("a003 ENABLE CONDSTORE");
+            String enableLine = reader.readLine();
+            String enableOk = reader.readLine();
+            assertThat(enableLine).startsWith("* ENABLED");
+            assertThat(enableOk).startsWith("a003 OK");
+
+            // 5. Clean logout
+            writer.println("a004 LOGOUT");
             reader.readLine(); // * BYE
-            reader.readLine(); // a002 OK
+            reader.readLine(); // a004 OK
         }
     }
 }
