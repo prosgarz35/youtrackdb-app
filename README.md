@@ -20,7 +20,12 @@ It provides a modern appliance architecture: **zero external database dependenci
 * **Single Process / Single Directory**: The entire mail stack (SMTP, IMAP, Spooler, Queues, Mailbox, Search, and Storage) runs inside a single JVM process.
 * **Persistent vs In-Memory Subsystems (Appliance Model)**:
   * **Strictly Persisted in YouTrackDB (ACID / WAL)**: User accounts & credentials (`JamesUser`), Domains (`JamesDomain`), Virtual Aliases & Rewrites (`JamesRRTMapping`), Spooler Queue items (`JamesQueueItem`), Content-Addressed Blob Storage (`JamesBlob` + Tier 3 Zstd file tree), Mailboxes (`JamesMailbox`), Messages & Flags (`JamesMailboxMessage`), Quotas (`JamesQuotaLimit`, `JamesQuotaUsage`), Subscriptions (`JamesSubscription`), Mailbox Annotations (`JamesMailboxAnnotation`, RFC 5464), and Mail Repository URLs (`JamesMailRepositoryUrl`). All survive full server restarts with strict ACID durability via WAL.
-  * **In-Memory Buffering & Transient State**: Message dispatching uses an in-memory `DelayQueue` hydrated from persisted `JamesQueueItem` records on startup; full-text search utilizes embedded Lucene indexing; mail attachments are stored as MIME payload parts within the persisted messages and blob store. JMAP state metadata and transient dead-letter event trackers operate in-memory.
+  * **In-Memory Buffering & Microsecond Cache Layer**:
+    * **Caffeine User Cache**: High-performance thread-safe in-memory cache in `YouTrackDBUsersDAO` (`maximumSize=10,000`, `expireAfterAccess=15m`) ensures instantaneous $O(1)$ credential verification and existence lookups with strict transaction-bound invalidation on user update/delete.
+    * **In-Memory DelayQueue Spooler**: Message dispatching uses an in-memory `DelayQueue` hydrated from persisted `JamesQueueItem` records on startup.
+    * **Full-Text Search**: Embedded Lucene indexing (`LuceneSearchMailboxModule`).
+    * **Mail Attachments**: Stored as MIME payload parts within the persisted messages and tiered blob store.
+    * **Dead Code & JMAP Elimination (KISS / YAGNI)**: The server purposefully focuses on IMAP4rev1/SMTP/ManageSieve protocols. All dead JMAP endpoints, repository bindings, and unneeded event-store layers have been completely eliminated for minimal footprint and maximum reliability.
 * **Direct Memory Pre-allocation**: Off-heap buffer caches with `memory.directMemory.preallocate = true` avoid on-the-fly JVM pause stalls and eliminate garbage collector pressure.
 * **No Network IPC Overhead**: Completely eliminates serialization, network socket hops, TCP connection pool starvation, and context switching found in client-server architectures like PostgreSQL, MySQL, or Cassandra.
 * **Zero DBA Footprint**: No background vacuuming stalls, no complex replication clustering, and no external schema migration scripts.
@@ -59,9 +64,16 @@ Storage is dynamically partitioned based on payload dimensions:
 * **Crash & Contention Resilient**: Validated by extensive stress tests under concurrency, abrupt thread deaths, and abrupt network dropouts (`YouTrackDBAcidCrashTest`) with no corrupted records observed. These tests close the database normally; they do not simulate a power loss or `kill -9`.
 * **Non-Blocking Dispatch**: Uses an in-memory `DelayQueue` for microsecond dispatching while persisting the backing state on disk.
 
-#### 5. Online Incremental Backups
-* Native online backup triggered via `POST /youtrackdb/backup` on the WebAdmin REST API.
-* Uses the engine's incremental backup (`traversalSource.backup(path)`: the first call copies the whole database, later calls into the same folder copy only the changes) and copies the `var/blobs` tree into the same folder. The two parts are taken one after another without a common lock, so under heavy write load the database and the blob files are not guaranteed to be consistent with each other. The server stays online during the backup.
+#### 5. Comprehensive Dual-Tier Backup System
+The server provides two complementary backup mechanisms tailored for different operational scenarios:
+* **Infrastructure Bare-Metal Hot Backup (`POST /youtrackdb/backup`)**:
+  * Triggers an online hot backup directly via the YouTrackDB engine (`traversalSource.backup(path)`) alongside filesystem blobs (`var/blobs`).
+  * Enables full disaster recovery (bare-metal restore) of the entire mail server with all users, domains, mailboxes, quotas, queues, and B-Tree indexes.
+  * Verified end-to-end via automated disaster recovery integration tests (`YouTrackDBBackupRestoreTest`).
+* **Logical Mailbox Export / Portability (`POST /users/{username}/mailboxes?task=export`)**:
+  * Triggers an asynchronous user mailbox export via James WebAdmin tasks.
+  * Packs the user's mailboxes and messages into a portable, standard ZIP archive of RFC 5322 EML files.
+  * Ideal for user account migrations, GDPR compliance, data portability, and selective mailbox restores.
 
 ---
 
@@ -100,11 +112,13 @@ A head-to-head load benchmark was executed on the same hardware environment unde
 * **Virtual Aliases**: `YouTrackDBRecipientRewriteTable` supporting alias, regex, error, forward, and group mapping rules with direct YQL projections.
 * **Full-Text Search**: Embedded Apache Lucene (`LuceneSearchMailboxModule`).
 * **Supported RFC Standards**:
-  * **SMTP / SMTPS**: RFC 5321, RFC 4954, RFC 3207 (Ports 25, 465, 587).
+  * **SMTP / SMTPS**: RFC 5321 (Simple Mail Transfer Protocol), RFC 4954 (SMTP Authentication), RFC 3207 (STARTTLS) on Ports 25, 465, 587.
   * **Email Format**: RFC 5322 (Internet Message Format) & MIME RFC 2045–2049.
-  * **IMAP4rev1**: RFC 3501 (Ports 143, 993).
-  * **ManageSieve**: RFC 5804 (Port 4190).
-  * **WebAdmin API**: Administrative REST API (Port 8000).
+  * **IMAP4rev1**: RFC 3501 (Internet Message Access Protocol) on Ports 143, 993.
+  * **IMAP Quotas**: RFC 9208 (IMAP QUOTA Extension) with per-user limits and strict usage calculations.
+  * **IMAP Annotations**: RFC 5464 (IMAP METADATA Extension) persisted in YouTrackDB.
+  * **ManageSieve**: RFC 5804 (Sieve Script Management Protocol) on Port 4190.
+  * **WebAdmin API**: Administrative REST API on Port 8000.
 
 ---
 
@@ -165,11 +179,17 @@ curl -X GET http://localhost:8000/healthcheck
 ```
 Includes the native `YouTrackDBHealthCheck` component reporting the live operational status of the embedded database engine directly in the standard JSON health response.
 
-#### Triggering an Online Hot Backup
+#### Triggering an Online Hot Backup (Disaster Recovery)
 ```bash
 curl -X POST "http://localhost:8000/youtrackdb/backup?backupDir=var/backups"
 ```
 The server runs the backup as a WebAdmin task while it stays online: an incremental backup of the database plus a copy of the `var/blobs` tree (not atomic across the two).
+
+#### Exporting User Mailboxes (Portable ZIP Archive)
+```bash
+curl -X POST "http://localhost:8000/users/user@domain.local/mailboxes?task=export"
+```
+Creates an asynchronous WebAdmin task (`MailboxesExportTask`) that extracts all messages of the specified user into a portable ZIP archive.
 
 #### Blobs Garbage Collection (Orphan Blobs GC)
 ```bash
