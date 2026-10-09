@@ -83,9 +83,10 @@ public class YouTrackDBBenchmarkTest implements JamesServerConcreteContract {
         }
         LOGGER.info("=== WARMUP COMPLETE ===");
 
-        LOGGER.info("=== STARTING YOUTRACKDB BENCHMARK: {} messages, concurrency: {} ===", TOTAL_MESSAGES, CONCURRENCY);
+        LOGGER.info("=== STARTING YOUTRACKDB BENCHMARK: {} messages, concurrency: {} (Virtual Threads) ===", TOTAL_MESSAGES, CONCURRENCY);
 
-        ExecutorService executor = Executors.newFixedThreadPool(CONCURRENCY);
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        java.util.concurrent.Semaphore concurrencyThrottle = new java.util.concurrent.Semaphore(CONCURRENCY);
         CountDownLatch latch = new CountDownLatch(TOTAL_MESSAGES);
         List<Long> latenciesMs = Collections.synchronizedList(new ArrayList<>(TOTAL_MESSAGES));
         AtomicInteger successCount = new AtomicInteger(0);
@@ -95,6 +96,7 @@ public class YouTrackDBBenchmarkTest implements JamesServerConcreteContract {
 
         for (int i = 0; i < TOTAL_MESSAGES; i++) {
             final int msgIndex = i;
+            concurrencyThrottle.acquire();
             executor.submit(() -> {
                 long t0 = System.nanoTime();
                 try (Socket socket = new Socket("127.0.0.1", smtpPort);
@@ -142,6 +144,7 @@ public class YouTrackDBBenchmarkTest implements JamesServerConcreteContract {
                     failureCount.incrementAndGet();
                     LOGGER.error("Error sending message #{}", msgIndex, e);
                 } finally {
+                    concurrencyThrottle.release();
                     latch.countDown();
                 }
             });
