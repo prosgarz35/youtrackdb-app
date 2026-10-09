@@ -342,6 +342,30 @@ public class YouTrackDBMessageMapperTest {
     }
 
     @Test
+    void copyShouldDuplicateMessageIntoTargetMailboxPreservingContentAndFlags() throws Exception {
+        Mailbox destination = mailboxMapper.create(MailboxPath.forUser(Username.of("alice"), "Destination"), UidValidity.of(12345L)).block();
+
+        SimpleMailboxMessage msg = createMessage("Copy payload test message", new Flags(Flag.SEEN));
+        messageMapper.add(mailbox, msg);
+        assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(1L);
+        assertThat(messageMapper.countMessagesInMailbox(destination)).isEqualTo(0L);
+
+        MessageMetaData copyMeta = messageMapper.copy(destination, msg);
+        assertThat(copyMeta.getUid()).isEqualTo(MessageUid.of(1L));
+        // Verify original message is retained
+        assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(1L);
+        // Verify destination has the copied message
+        assertThat(messageMapper.countMessagesInMailbox(destination)).isEqualTo(1L);
+
+        Iterator<MailboxMessage> destIt = messageMapper.findInMailbox(destination, MessageRange.one(copyMeta.getUid()), FetchType.FULL, 1);
+        assertThat(destIt.hasNext()).isTrue();
+        MailboxMessage copiedMsg = destIt.next();
+        assertThat(copiedMsg.isSeen()).isTrue();
+        assertThat(new String(copiedMsg.getFullContent().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8))
+            .contains("Copy payload test message");
+    }
+
+    @Test
     void getApplicableFlagShouldReturnDefaultFlagsWhenNoUserFlags() throws Exception {
         SimpleMailboxMessage msg = createMessage("Normal message", new Flags(Flag.SEEN));
         messageMapper.add(mailbox, msg);

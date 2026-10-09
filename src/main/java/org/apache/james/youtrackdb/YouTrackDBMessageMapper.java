@@ -413,10 +413,59 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
 
     @Override
     protected MessageMetaData copy(Mailbox mailbox, MessageUid uid, ModSeq modSeq, MailboxMessage original) throws MailboxException {
-        SimpleMailboxMessage copy = SimpleMailboxMessage.copy(mailbox.getMailboxId(), original);
-        copy.setUid(uid);
-        copy.setModSeq(modSeq);
-        return save(mailbox, copy);
+        try {
+            long saveDateMs = clock.instant().toEpochMilli();
+            String newMailboxId = mailbox.getMailboxId().serialize();
+            String origMailboxId = original.getMailboxId().serialize();
+            long origUid = original.getUid().asLong();
+
+            // Zero-copy: server-side query fetching content and attributes directly from original vertex
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT FROM JamesMailboxMessage WHERE mailboxId = :origMbx AND uid = :origUid",
+                "origMbx", origMailboxId,
+                "origUid", origUid);
+
+            if (!rows.isEmpty()) {
+                Map<String, Object> origRow = rows.getFirst();
+                byte[] content = (byte[]) origRow.get(PROP_CONTENT);
+                Set<String> systemFlags = extractSystemFlags(original.createFlags());
+                Set<String> userFlags = extractUserFlags(original.createFlags());
+                int bodyStart = (int) original.getHeaderOctets();
+                String threadId = original.getThreadId() != null && original.getThreadId().getBaseMessageId() != null
+                    ? original.getThreadId().getBaseMessageId().serialize()
+                    : original.getMessageId().serialize();
+
+                YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                    tx.addV(CLASS_NAME)
+                        .property(PROP_MAILBOX_ID, newMailboxId)
+                        .property(PROP_MESSAGE_ID, original.getMessageId().serialize())
+                        .property(PROP_THREAD_ID, threadId)
+                        .property(PROP_UID, uid.asLong())
+                        .property(PROP_MODSEQ, modSeq.asLong())
+                        .property(PROP_INTERNAL_DATE, original.getInternalDate().getTime())
+                        .property(PROP_SAVE_DATE, saveDateMs)
+                        .property(PROP_SIZE, original.getFullContentOctets())
+                        .property(PROP_BODY_START, bodyStart)
+                        .property(PROP_FLAGS, systemFlags)
+                        .property(PROP_USER_FLAGS, userFlags)
+                        .property(PROP_CONTENT, content != null ? content : new byte[0])
+                        .iterate();
+                });
+
+                SimpleMailboxMessage copy = SimpleMailboxMessage.copy(mailbox.getMailboxId(), original);
+                copy.setUid(uid);
+                copy.setModSeq(modSeq);
+                return copy.metaData();
+            }
+
+            // Fallback to standard copy if original vertex not found by (mailboxId, uid)
+            SimpleMailboxMessage copy = SimpleMailboxMessage.copy(mailbox.getMailboxId(), original);
+            copy.setUid(uid);
+            copy.setModSeq(modSeq);
+            return save(mailbox, copy);
+        } catch (Exception e) {
+            throw new MailboxException("Failed to copy message " + original.getUid() + " to mailbox " + mailbox.getMailboxId().serialize(), e);
+        }
     }
 
     @Override
