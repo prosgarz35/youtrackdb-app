@@ -336,4 +336,36 @@ public class YouTrackDBMessageMapperTest {
         assertThat(new String(movedMsg.getFullContent().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8))
             .contains("Important mail to archive");
     }
+
+    @Test
+    void getApplicableFlagShouldReturnDefaultFlagsWhenNoUserFlags() throws Exception {
+        SimpleMailboxMessage msg = createMessage("Normal message", new Flags(Flag.SEEN));
+        messageMapper.add(mailbox, msg);
+
+        Flags applicable = messageMapper.getApplicableFlag(mailbox);
+        assertThat(applicable.contains(Flag.ANSWERED)).isTrue();
+        assertThat(applicable.contains(Flag.DELETED)).isTrue();
+        assertThat(applicable.contains(Flag.DRAFT)).isTrue();
+        assertThat(applicable.contains(Flag.FLAGGED)).isTrue();
+        assertThat(applicable.contains(Flag.SEEN)).isTrue();
+        assertThat(applicable.getUserFlags()).isEmpty();
+    }
+
+    @Test
+    void getApplicableFlagShouldIncludeCustomUserFlags() throws Exception {
+        Flags customFlags1 = new Flags();
+        customFlags1.add("MyCustomFlag1");
+        customFlags1.add("SharedFlag");
+
+        Flags customFlags2 = new Flags();
+        customFlags2.add("MyCustomFlag2");
+        customFlags2.add("SharedFlag");
+
+        messageMapper.add(mailbox, createMessage("Msg 1", customFlags1));
+        messageMapper.add(mailbox, createMessage("Msg 2", customFlags2));
+
+        Flags applicable = messageMapper.getApplicableFlag(mailbox);
+        assertThat(applicable.getUserFlags()).containsExactlyInAnyOrder("MyCustomFlag1", "MyCustomFlag2", "SharedFlag");
+        assertThat(applicable.contains(Flag.SEEN)).isTrue();
+    }
 }

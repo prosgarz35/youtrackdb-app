@@ -279,9 +279,25 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
 
     @Override
     public Flags getApplicableFlag(Mailbox mailbox) throws MailboxException {
-        List<MailboxMessage> messages = ImmutableList.copyOf(
-            findInMailbox(mailbox, MessageRange.all(), FetchType.METADATA, UNLIMITED));
-        return new ApplicableFlagCalculator(messages).computeApplicableFlags();
+        try {
+            org.apache.james.mailbox.ApplicableFlagBuilder builder = org.apache.james.mailbox.ApplicableFlagBuilder.builder();
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT userFlags FROM JamesMailboxMessage WHERE mailboxId = :mbx AND userFlags IS NOT NULL",
+                "mbx", mailbox.getMailboxId().serialize());
+            for (Map<String, Object> row : rows) {
+                Object ufObj = row.get(PROP_USER_FLAGS);
+                if (ufObj instanceof Iterable<?> it) {
+                    for (Object f : it) {
+                        if (f != null) {
+                            builder.add(f.toString());
+                        }
+                    }
+                }
+            }
+            return builder.build();
+        } catch (Exception e) {
+            throw new MailboxException("Failed to calculate applicable flags in mailbox " + mailbox.getMailboxId().serialize(), e);
+        }
     }
 
     @Override
