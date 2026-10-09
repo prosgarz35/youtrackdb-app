@@ -36,9 +36,6 @@
      <connectionBacklog>200</connectionBacklog>
 
      <tls socketTLS="false" startTLS="false">
-       <!-- To create a new keystore execute:
-        keytool -genkey -alias james -keyalg RSA -keystore /path/to/james/conf/keystore
-         -->
        <privateKey>classpath://private.key</privateKey>
        <certificates>classpath://certs.self-signed.csr</certificates>
        <secret>james72laBalle</secret>
