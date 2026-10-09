@@ -3,6 +3,7 @@ package org.apache.james.youtrackdb;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import jakarta.inject.Inject;
@@ -93,11 +94,21 @@ public class YouTrackDBAdminRoutes implements Routes {
             long[] counts = {0, 0, 0};
             if (dbOpen) {
                 try {
-                    traversalSource.executeInTx(tx -> {
-                        counts[0] = tx.V().hasLabel(YouTrackDBBlobStoreDAO.CLASS_NAME).count().next();
-                        counts[1] = tx.V().hasLabel("JamesUser").count().next();
-                        counts[2] = tx.V().hasLabel("JamesDomain").count().next();
-                    });
+                    List<Map<String, Object>> blobRows = YouTrackDBTransactions.queryRows(traversalSource,
+                        "SELECT count(*) AS total FROM JamesBlob");
+                    if (!blobRows.isEmpty() && blobRows.getFirst().get("total") instanceof Number n) {
+                        counts[0] = n.longValue();
+                    }
+                    List<Map<String, Object>> userRows = YouTrackDBTransactions.queryRows(traversalSource,
+                        "SELECT count(*) AS total FROM JamesUser");
+                    if (!userRows.isEmpty() && userRows.getFirst().get("total") instanceof Number n) {
+                        counts[1] = n.longValue();
+                    }
+                    List<Map<String, Object>> domainRows = YouTrackDBTransactions.queryRows(traversalSource,
+                        "SELECT count(*) AS total FROM JamesDomain");
+                    if (!domainRows.isEmpty() && domainRows.getFirst().get("total") instanceof Number n) {
+                        counts[2] = n.longValue();
+                    }
                 } catch (Exception e) {
                     LOGGER.warn("Failed to get counts: {}", e.getMessage(), e);
                 }
@@ -148,19 +159,15 @@ public class YouTrackDBAdminRoutes implements Routes {
             File blobsSourceDir = new File(fileSystem.getBasedir(), "var/blobs");
             long[] deleted = {0};
             if (blobsSourceDir.exists()) {
-                java.util.Set<String> activeBlobIds = traversalSource.computeInTx(tx -> {
-                    java.util.Set<String> set = new java.util.HashSet<>();
-                    var list = tx.yql("SELECT blobId FROM JamesBlob").toList();
-                    for (Object item : list) {
-                        if (item instanceof Map<?, ?> m) {
-                            Object bId = m.get("blobId");
-                            if (bId != null) {
-                                set.add(bId.toString());
-                            }
-                        }
+                List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(traversalSource,
+                    "SELECT blobId FROM JamesBlob");
+                java.util.Set<String> activeBlobIds = new java.util.HashSet<>(rows.size());
+                for (Map<String, Object> row : rows) {
+                    Object bId = row.get("blobId");
+                    if (bId != null) {
+                        activeBlobIds.add(bId.toString());
                     }
-                    return set;
-                });
+                }
 
                 java.util.Set<String> keepNames = YouTrackDBBlobStoreDAO.fileNamesToKeep(activeBlobIds);
                 long gracePeriodCutoff = System.currentTimeMillis() - java.time.Duration.ofHours(1).toMillis();
