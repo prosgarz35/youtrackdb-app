@@ -8,7 +8,6 @@ import org.apache.james.modules.LegacyEncryptionModule;
 import org.apache.james.modules.MailboxModule;
 import org.apache.james.modules.MailetProcessingModule;
 import org.apache.james.modules.RunArgumentsModule;
-import org.apache.james.modules.eventstore.MemoryEventStoreModule;
 import org.apache.james.modules.protocols.IMAPServerModule;
 import org.apache.james.modules.protocols.ManageSieveServerModule;
 import org.apache.james.modules.protocols.ProtocolHandlerModule;
@@ -60,7 +59,6 @@ public class YouTrackDBJamesServerMain implements JamesServerMain {
         new YouTrackDBBlobModule(),
         new BlobExportMechanismModule(),
         new MailboxModule(),
-        new MemoryEventStoreModule(),
         new YouTrackDBDataModule(),
         new YouTrackDBMailboxModule(),
         new YouTrackDBMailQueueModule(),
