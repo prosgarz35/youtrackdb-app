@@ -372,16 +372,12 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             }
             long now = clock.millis();
             try {
-                // Database first: if it fails, the in-memory queue is left untouched.
-                YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                    for (YouTrackDBMailQueueItem item : snapshot) {
-                        var traversal = tx.V().hasLabel(CLASS_NAME)
-                            .has(PROP_ENQUEUE_ID, item.getEnqueueId());
-                        if (traversal.hasNext()) {
-                            traversal.next().property(PROP_NEXT_DELIVERY, now);
-                        }
-                    }
-                });
+                // Database first: batch update using indexed enqueueId IN :ids
+                List<String> enqueueIds = snapshot.stream().map(YouTrackDBMailQueueItem::getEnqueueId).toList();
+                YouTrackDBTransactions.executeStrictTx(g, tx ->
+                    tx.command("UPDATE JamesQueueItem SET nextDelivery = :now WHERE enqueueId IN :ids",
+                        "now", now,
+                        "ids", enqueueIds));
             } catch (RuntimeException e) {
                 throw new MailQueueException("Error while flushing queue " + name.asString(), e);
             }
@@ -415,15 +411,9 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             if (!toBeRemoved.isEmpty()) {
                 if (!closed) {
                     try {
-                        YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                            for (YouTrackDBMailQueueItem item : toBeRemoved) {
-                                var traversal = tx.V().hasLabel(CLASS_NAME)
-                                    .has(PROP_ENQUEUE_ID, item.getEnqueueId());
-                                if (traversal.hasNext()) {
-                                    traversal.next().remove();
-                                }
-                            }
-                        });
+                        List<String> enqueueIds = toBeRemoved.stream().map(YouTrackDBMailQueueItem::getEnqueueId).toList();
+                        YouTrackDBTransactions.executeStrictTx(g, tx ->
+                            tx.command("DELETE VERTEX JamesQueueItem WHERE enqueueId IN :ids", "ids", enqueueIds));
                     } catch (Exception e) {
                         LOGGER.warn("Failed batch removal of mail items from queue {}", name.asString(), e);
                     }
@@ -438,13 +428,8 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 return;
             }
             try {
-                YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                    var traversal = tx.V().hasLabel(CLASS_NAME)
-                        .has(PROP_ENQUEUE_ID, enqueueId);
-                    if (traversal.hasNext()) {
-                        traversal.next().remove();
-                    }
-                });
+                YouTrackDBTransactions.executeStrictTx(g, tx ->
+                    tx.command("DELETE VERTEX JamesQueueItem WHERE enqueueId = :id", "id", enqueueId));
             } catch (Exception e) {
                 if (!closed) {
                     LOGGER.warn("Failed to delete queue item {} from YouTrackDB queue table", enqueueId, e);
