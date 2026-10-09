@@ -223,8 +223,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <reuseForks>false</reuseForks>
-                    <forkCount>1C</forkCount>
-                    <argLine>-Xms512m -Xmx1024m</argLine>
+                    <forkCount>1</forkCount>
+                    <argLine>-XX:+UseZGC -XX:+ZGenerational -Xms4096m -Xmx4096m</argLine>
                     <excludedGroups>${surefire.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
