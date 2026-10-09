@@ -77,4 +77,49 @@ class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
                 "* QUOTA #private&toto@james.local (STORAGE 12 50)\r\n")
             .endsWith("OK GETQUOTAROOT completed.\r\n");
     }
+
+    @Test
+    void imapServerShouldAdvertiseImap4rev1AndImap4rev2Capabilities(GuiceJamesServer jamesServer) throws Exception {
+        int imapPort = jamesServer.getProbe(ImapGuiceProbe.class).getImapPort();
+        try (java.net.Socket socket = new java.net.Socket(JAMES_SERVER_HOST, imapPort);
+             java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream(), java.nio.charset.StandardCharsets.US_ASCII));
+             java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.OutputStreamWriter(socket.getOutputStream(), java.nio.charset.StandardCharsets.US_ASCII), true)) {
+
+            // 1. Initial greeting must maintain strict backwards compatibility with RFC 3501 (IMAP4rev1)
+            String banner = reader.readLine();
+            assertThat(banner).startsWith("* OK JAMES IMAP4rev1 Server");
+
+            // 2. Query CAPABILITY
+            writer.println("a001 CAPABILITY");
+            String capabilityLine = reader.readLine();
+            String okLine = reader.readLine();
+
+            assertThat(okLine).startsWith("a001 OK");
+            assertThat(capabilityLine).startsWith("* CAPABILITY ");
+
+            // Mandatory base IMAP4rev1 (RFC 3501)
+            assertThat(capabilityLine).contains("IMAP4REV1");
+
+            // Mandatory RFC 9051 (IMAP4rev2) capabilities implemented by YouTrackDB & James:
+            // MOVE (RFC 6855), OBJECTID (RFC 8474), SAVEDATE (RFC 8514), QUOTA (RFC 9208),
+            // UNSELECT (RFC 3691), QRESYNC (RFC 7162 superseding CONDSTORE), UIDPLUS (RFC 4315),
+            // METADATA (RFC 5464), ENABLE (RFC 5161), ESEARCH (RFC 4731), STATUS=SIZE (RFC 8438)
+            assertThat(capabilityLine)
+                .contains("MOVE")
+                .contains("OBJECTID")
+                .contains("SAVEDATE")
+                .contains("QUOTA")
+                .contains("UNSELECT")
+                .contains("QRESYNC")
+                .contains("UIDPLUS")
+                .contains("METADATA")
+                .contains("ENABLE")
+                .contains("ESEARCH");
+
+            // 3. Clean logout
+            writer.println("a002 LOGOUT");
+            reader.readLine(); // * BYE
+            reader.readLine(); // a002 OK
+        }
+    }
 }
