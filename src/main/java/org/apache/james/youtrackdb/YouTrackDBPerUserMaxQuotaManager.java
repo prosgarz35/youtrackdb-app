@@ -52,7 +52,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void setMaxStorage(QuotaRoot quotaRoot, QuotaSizeLimit maxStorageQuota) {
-        setUserLimit(quotaRoot.getValue(), "maxStorage", quotaValueToLong(Optional.of(maxStorageQuota)));
+        setUserLimit(quotaRoot.getValue(), LimitField.MAX_STORAGE, quotaValueToLong(Optional.of(maxStorageQuota)));
     }
 
     @Override
@@ -62,7 +62,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void setMaxMessage(QuotaRoot quotaRoot, QuotaCountLimit maxMessageCount) {
-        setUserLimit(quotaRoot.getValue(), "maxMessage", quotaValueToLong(Optional.of(maxMessageCount)));
+        setUserLimit(quotaRoot.getValue(), LimitField.MAX_MESSAGE, quotaValueToLong(Optional.of(maxMessageCount)));
     }
 
     @Override
@@ -72,7 +72,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void setDomainMaxMessage(Domain domain, QuotaCountLimit count) {
-        setDomainLimit(domain.asString().toLowerCase(Locale.US), "maxMessage", quotaValueToLong(Optional.of(count)));
+        setDomainLimit(domain.asString().toLowerCase(Locale.US), LimitField.MAX_MESSAGE, quotaValueToLong(Optional.of(count)));
     }
 
     @Override
@@ -82,7 +82,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void setDomainMaxStorage(Domain domain, QuotaSizeLimit size) {
-        setDomainLimit(domain.asString().toLowerCase(Locale.US), "maxStorage", quotaValueToLong(Optional.of(size)));
+        setDomainLimit(domain.asString().toLowerCase(Locale.US), LimitField.MAX_STORAGE, quotaValueToLong(Optional.of(size)));
     }
 
     @Override
@@ -92,7 +92,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void removeDomainMaxMessage(Domain domain) {
-        setDomainLimit(domain.asString().toLowerCase(Locale.US), "maxMessage", null);
+        setDomainLimit(domain.asString().toLowerCase(Locale.US), LimitField.MAX_MESSAGE, null);
     }
 
     @Override
@@ -102,7 +102,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void removeDomainMaxStorage(Domain domain) {
-        setDomainLimit(domain.asString().toLowerCase(Locale.US), "maxStorage", null);
+        setDomainLimit(domain.asString().toLowerCase(Locale.US), LimitField.MAX_STORAGE, null);
     }
 
     @Override
@@ -112,7 +112,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Optional<QuotaCountLimit> getDomainMaxMessage(Domain domain) {
-        Long val = getLimit(SCOPE_DOMAIN, domain.asString().toLowerCase(Locale.US), "maxMessage");
+        Long val = getLimit(SCOPE_DOMAIN, domain.asString().toLowerCase(Locale.US), LimitField.MAX_MESSAGE);
         return longToQuotaCount(val);
     }
 
@@ -123,7 +123,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Optional<QuotaSizeLimit> getDomainMaxStorage(Domain domain) {
-        Long val = getLimit(SCOPE_DOMAIN, domain.asString().toLowerCase(Locale.US), "maxStorage");
+        Long val = getLimit(SCOPE_DOMAIN, domain.asString().toLowerCase(Locale.US), LimitField.MAX_STORAGE);
         return longToQuotaSize(val);
     }
 
@@ -134,7 +134,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void removeMaxMessage(QuotaRoot quotaRoot) {
-        setUserLimit(quotaRoot.getValue(), "maxMessage", null);
+        setUserLimit(quotaRoot.getValue(), LimitField.MAX_MESSAGE, null);
     }
 
     @Override
@@ -144,7 +144,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void setGlobalMaxStorage(QuotaSizeLimit globalMaxStorage) {
-        setGlobalLimit("maxStorage", quotaValueToLong(Optional.of(globalMaxStorage)));
+        setGlobalLimit(LimitField.MAX_STORAGE, quotaValueToLong(Optional.of(globalMaxStorage)));
     }
 
     @Override
@@ -154,7 +154,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void removeGlobalMaxMessage() {
-        setGlobalLimit("maxMessage", null);
+        setGlobalLimit(LimitField.MAX_MESSAGE, null);
     }
 
     @Override
@@ -164,7 +164,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void setGlobalMaxMessage(QuotaCountLimit globalMaxMessageCount) {
-        setGlobalLimit("maxMessage", quotaValueToLong(Optional.of(globalMaxMessageCount)));
+        setGlobalLimit(LimitField.MAX_MESSAGE, quotaValueToLong(Optional.of(globalMaxMessageCount)));
     }
 
     @Override
@@ -174,7 +174,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Optional<QuotaSizeLimit> getGlobalMaxStorage() {
-        Long val = getLimit(SCOPE_GLOBAL, GLOBAL_KEY, "maxStorage");
+        Long val = getLimit(SCOPE_GLOBAL, GLOBAL_KEY, LimitField.MAX_STORAGE);
         return longToQuotaSize(val);
     }
 
@@ -185,7 +185,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public Optional<QuotaCountLimit> getGlobalMaxMessage() {
-        Long val = getLimit(SCOPE_GLOBAL, GLOBAL_KEY, "maxMessage");
+        Long val = getLimit(SCOPE_GLOBAL, GLOBAL_KEY, LimitField.MAX_MESSAGE);
         return longToQuotaCount(val);
     }
 
@@ -194,19 +194,67 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
         return blockingSupplier(this::getGlobalMaxMessage);
     }
 
+    private enum LimitField {
+        MAX_MESSAGE("maxMessage"),
+        MAX_STORAGE("maxStorage");
+
+        private final String fieldName;
+
+        LimitField(String fieldName) {
+            this.fieldName = fieldName;
+        }
+
+        public String getFieldName() {
+            return fieldName;
+        }
+    }
+
     @Override
     public Publisher<QuotaDetails> quotaDetailsReactive(QuotaRoot quotaRoot) {
-        return Mono.zip(
-                Mono.fromCallable(() -> listMaxMessagesDetails(quotaRoot)),
-                Mono.fromCallable(() -> listMaxStorageDetails(quotaRoot)))
-            .map(tuple -> new QuotaDetails(tuple.getT1(), tuple.getT2()))
-            .subscribeOn(Schedulers.boundedElastic());
+        return Mono.fromCallable(() -> {
+            String userKey = quotaRoot.getValue();
+            String domainKey = quotaRoot.getDomain().map(d -> d.asString().toLowerCase(Locale.US)).orElse(null);
+
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT scope, quotaKey, maxMessage, maxStorage FROM JamesQuotaLimit WHERE "
+                + "(scope = 'USER' AND quotaKey = :userKey) OR "
+                + "(scope = 'DOMAIN' AND quotaKey = :domainKey) OR "
+                + "(scope = 'GLOBAL' AND quotaKey = :globalKey)",
+                "userKey", userKey,
+                "domainKey", domainKey != null ? domainKey : "",
+                "globalKey", GLOBAL_KEY);
+
+            Map<Quota.Scope, QuotaCountLimit> messageMap = new java.util.EnumMap<>(Quota.Scope.class);
+            Map<Quota.Scope, QuotaSizeLimit> storageMap = new java.util.EnumMap<>(Quota.Scope.class);
+
+            for (Map<String, Object> row : rows) {
+                String scopeStr = String.valueOf(row.get("scope"));
+                Quota.Scope scope = switch (scopeStr) {
+                    case SCOPE_USER -> Quota.Scope.User;
+                    case SCOPE_DOMAIN -> Quota.Scope.Domain;
+                    case SCOPE_GLOBAL -> Quota.Scope.Global;
+                    default -> null;
+                };
+                if (scope == null) {
+                    continue;
+                }
+                Object msgObj = row.get(LimitField.MAX_MESSAGE.getFieldName());
+                if (msgObj instanceof Number n) {
+                    longToQuotaCount(n.longValue()).ifPresent(limit -> messageMap.put(scope, limit));
+                }
+                Object stgObj = row.get(LimitField.MAX_STORAGE.getFieldName());
+                if (stgObj instanceof Number n) {
+                    longToQuotaSize(n.longValue()).ifPresent(limit -> storageMap.put(scope, limit));
+                }
+            }
+            return new QuotaDetails(messageMap, storageMap);
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
     public Map<Quota.Scope, QuotaCountLimit> listMaxMessagesDetails(QuotaRoot quotaRoot) {
         return Stream.of(
-                Pair.of(Quota.Scope.User, longToQuotaCount(getLimit(SCOPE_USER, quotaRoot.getValue(), "maxMessage"))),
+                Pair.of(Quota.Scope.User, longToQuotaCount(getLimit(SCOPE_USER, quotaRoot.getValue(), LimitField.MAX_MESSAGE))),
                 Pair.of(Quota.Scope.Domain, quotaRoot.getDomain().flatMap(this::getDomainMaxMessage)),
                 Pair.of(Quota.Scope.Global, getGlobalMaxMessage()))
             .filter(pair -> pair.getValue().isPresent())
@@ -216,7 +264,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
     @Override
     public Map<Quota.Scope, QuotaSizeLimit> listMaxStorageDetails(QuotaRoot quotaRoot) {
         return Stream.of(
-                Pair.of(Quota.Scope.User, longToQuotaSize(getLimit(SCOPE_USER, quotaRoot.getValue(), "maxStorage"))),
+                Pair.of(Quota.Scope.User, longToQuotaSize(getLimit(SCOPE_USER, quotaRoot.getValue(), LimitField.MAX_STORAGE))),
                 Pair.of(Quota.Scope.Domain, quotaRoot.getDomain().flatMap(this::getDomainMaxStorage)),
                 Pair.of(Quota.Scope.Global, getGlobalMaxStorage()))
             .filter(pair -> pair.getValue().isPresent())
@@ -225,7 +273,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void removeMaxStorage(QuotaRoot quotaRoot) {
-        setUserLimit(quotaRoot.getValue(), "maxStorage", null);
+        setUserLimit(quotaRoot.getValue(), LimitField.MAX_STORAGE, null);
     }
 
     @Override
@@ -235,7 +283,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
     @Override
     public void removeGlobalMaxStorage() {
-        setGlobalLimit("maxStorage", null);
+        setGlobalLimit(LimitField.MAX_STORAGE, null);
     }
 
     @Override
@@ -243,19 +291,19 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
         return blockingRunnable(this::removeGlobalMaxStorage);
     }
 
-    private void setUserLimit(String key, String field, Long value) {
+    private void setUserLimit(String key, LimitField field, Long value) {
         setLimit(SCOPE_USER, key, field, value);
     }
 
-    private void setDomainLimit(String key, String field, Long value) {
+    private void setDomainLimit(String key, LimitField field, Long value) {
         setLimit(SCOPE_DOMAIN, key, field, value);
     }
 
-    private void setGlobalLimit(String field, Long value) {
+    private void setGlobalLimit(LimitField field, Long value) {
         setLimit(SCOPE_GLOBAL, GLOBAL_KEY, field, value);
     }
 
-    private void setLimit(String scope, String key, String field, Long value) {
+    private void setLimit(String scope, String key, LimitField field, Long value) {
         try {
             YouTrackDBTransactions.retryOnConflict(10, () -> {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
@@ -267,11 +315,11 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
                             tx.addV(CLASS_NAME)
                                 .property("scope", scope)
                                 .property("quotaKey", key)
-                                .property(field, value)
+                                .property(field.getFieldName(), value)
                                 .iterate();
                         }
                     } else {
-                        tx.command("UPDATE JamesQuotaLimit SET " + field + " = :val WHERE scope = :scope AND quotaKey = :key",
+                        tx.command("UPDATE JamesQuotaLimit SET " + field.getFieldName() + " = :val WHERE scope = :scope AND quotaKey = :key",
                             "val", value, "scope", scope, "key", key);
                     }
                 });
@@ -282,9 +330,9 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
         }
     }
 
-    private Long getLimit(String scope, String key, String field) {
+    private Long getLimit(String scope, String key, LimitField field) {
         List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-            "SELECT " + field + " AS val FROM JamesQuotaLimit WHERE scope = :scope AND quotaKey = :key",
+            "SELECT " + field.getFieldName() + " AS val FROM JamesQuotaLimit WHERE scope = :scope AND quotaKey = :key",
             "scope", scope, "key", key);
         if (rows.isEmpty()) {
             return null;
