@@ -378,4 +378,23 @@ public class YouTrackDBMessageMapperTest {
         List<MessageUid> uids = messageMapper.listAllMessageUids(mailbox).collectList().block();
         assertThat(uids).containsExactly(MessageUid.of(1L), MessageUid.of(2L), MessageUid.of(3L));
     }
+
+    @Test
+    void findFirstUnseenMessageUidShouldReturnFirstUnseenUid() throws Exception {
+        messageMapper.add(mailbox, createMessage("Msg 1", new Flags(Flag.SEEN)));
+        messageMapper.add(mailbox, createMessage("Msg 2", new Flags())); // unseen
+        messageMapper.add(mailbox, createMessage("Msg 3", new Flags())); // unseen
+
+        MessageUid firstUnseen = messageMapper.findFirstUnseenMessageUid(mailbox);
+        assertThat(firstUnseen).isEqualTo(MessageUid.of(2L));
+    }
+
+    @Test
+    void findFirstUnseenMessageUidShouldReturnNullWhenAllSeen() throws Exception {
+        messageMapper.add(mailbox, createMessage("Msg 1", new Flags(Flag.SEEN)));
+        messageMapper.add(mailbox, createMessage("Msg 2", new Flags(Flag.SEEN)));
+
+        MessageUid firstUnseen = messageMapper.findFirstUnseenMessageUid(mailbox);
+        assertThat(firstUnseen).isNull();
+    }
 }

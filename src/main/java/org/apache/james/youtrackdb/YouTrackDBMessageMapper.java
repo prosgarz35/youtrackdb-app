@@ -251,9 +251,9 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     public MessageUid findFirstUnseenMessageUid(Mailbox mailbox) throws MailboxException {
         try {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT min(uid) AS firstUnseen FROM JamesMailboxMessage WHERE mailboxId = :mbx AND NOT (flags CONTAINS 'SEEN')",
+                "SELECT uid FROM JamesMailboxMessage WHERE mailboxId = :mbx AND NOT (flags CONTAINS 'SEEN') ORDER BY uid ASC LIMIT 1",
                 "mbx", mailbox.getMailboxId().serialize());
-            if (!rows.isEmpty() && rows.getFirst().get("firstUnseen") instanceof Number n) {
+            if (!rows.isEmpty() && rows.getFirst().get(PROP_UID) instanceof Number n) {
                 return MessageUid.of(n.longValue());
             }
             return null;
