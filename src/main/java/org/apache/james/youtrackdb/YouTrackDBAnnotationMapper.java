@@ -1,6 +1,8 @@
 package org.apache.james.youtrackdb;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -34,28 +36,43 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
 
     @Override
     public List<MailboxAnnotation> getAllAnnotations(MailboxId mailboxId) {
-        return g.computeInTx(tx -> {
-            List<Vertex> vertices = tx.V().hasLabel(CLASS).has(PROP_MAILBOX_ID, mailboxId.serialize()).toList();
-            ImmutableList.Builder<MailboxAnnotation> builder = ImmutableList.builder();
-            for (Vertex v : vertices) {
-                var keyProp = v.property(PROP_KEY);
-                var valProp = v.property(PROP_VALUE);
-                if (keyProp.isPresent()) {
-                    String key = keyProp.value().toString();
-                    String val = valProp.isPresent() ? valProp.value().toString() : "";
-                    builder.add(MailboxAnnotation.newInstance(new MailboxAnnotationKey(key), val));
-                }
+        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+            "SELECT key, value FROM " + CLASS + " WHERE mailboxId = :mbx",
+            "mbx", mailboxId.serialize());
+        ImmutableList.Builder<MailboxAnnotation> builder = ImmutableList.builder();
+        for (Map<String, Object> row : rows) {
+            Object keyObj = row.get(PROP_KEY);
+            if (keyObj != null) {
+                String key = keyObj.toString();
+                Object valObj = row.get(PROP_VALUE);
+                String val = valObj != null ? valObj.toString() : "";
+                builder.add(MailboxAnnotation.newInstance(new MailboxAnnotationKey(key), val));
             }
-            return builder.build();
-        });
+        }
+        return builder.build();
     }
 
     @Override
     public List<MailboxAnnotation> getAnnotationsByKeys(MailboxId mailboxId, Set<MailboxAnnotationKey> keys) {
-        return getAllAnnotations(mailboxId)
-            .stream()
-            .filter(a -> keys.contains(a.getKey()))
-            .collect(ImmutableList.toImmutableList());
+        if (keys == null || keys.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> keyStrings = keys.stream().map(MailboxAnnotationKey::asString).toList();
+        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+            "SELECT key, value FROM " + CLASS + " WHERE mailboxId = :mbx AND key IN :keys",
+            "mbx", mailboxId.serialize(),
+            "keys", keyStrings);
+        ImmutableList.Builder<MailboxAnnotation> builder = ImmutableList.builder();
+        for (Map<String, Object> row : rows) {
+            Object keyObj = row.get(PROP_KEY);
+            if (keyObj != null) {
+                String key = keyObj.toString();
+                Object valObj = row.get(PROP_VALUE);
+                String val = valObj != null ? valObj.toString() : "";
+                builder.add(MailboxAnnotation.newInstance(new MailboxAnnotationKey(key), val));
+            }
+        }
+        return builder.build();
     }
 
     @Override
@@ -128,13 +145,9 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
 
         try {
             YouTrackDBTransactions.retryOnConflict(() -> {
-                YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                    tx.V().hasLabel(CLASS)
-                        .has(PROP_MAILBOX_ID, mId)
-                        .has(PROP_KEY, keyStr)
-                        .drop()
-                        .iterate();
-                });
+                YouTrackDBTransactions.executeStrictTx(g, tx ->
+                    tx.command("DELETE VERTEX " + CLASS + " WHERE mailboxId = :mbx AND key = :key",
+                        "mbx", mId, "key", keyStr));
                 return null;
             });
         } catch (Exception e) {
@@ -146,19 +159,21 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
     public boolean exist(MailboxId mailboxId, MailboxAnnotation mailboxAnnotation) {
         String mId = getMailboxIdString(mailboxId);
         String keyStr = mailboxAnnotation.getKey().asString();
-        return g.computeInTx(tx -> tx.V().hasLabel(CLASS)
-            .has(PROP_MAILBOX_ID, mId)
-            .has(PROP_KEY, keyStr)
-            .hasNext());
+        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+            "SELECT 1 FROM " + CLASS + " WHERE mailboxId = :mbx AND key = :key LIMIT 1",
+            "mbx", mId, "key", keyStr);
+        return !rows.isEmpty();
     }
 
     @Override
     public int countAnnotations(MailboxId mailboxId) {
         String mId = getMailboxIdString(mailboxId);
-        long count = g.computeInTx(tx -> tx.V().hasLabel(CLASS)
-            .has(PROP_MAILBOX_ID, mId)
-            .count()
-            .next());
-        return Math.toIntExact(count);
+        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+            "SELECT count(*) AS cnt FROM " + CLASS + " WHERE mailboxId = :mbx",
+            "mbx", mId);
+        if (!rows.isEmpty() && rows.getFirst().get("cnt") instanceof Number n) {
+            return n.intValue();
+        }
+        return 0;
     }
 }
