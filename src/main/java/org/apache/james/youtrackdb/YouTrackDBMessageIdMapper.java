@@ -1,6 +1,8 @@
 package org.apache.james.youtrackdb;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -169,23 +171,38 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
                                                             MessageManager.FlagsUpdateMode updateMode) {
         return findReactive(ImmutableList.of(messageId), MessageMapper.FetchType.METADATA)
             .filter(message -> mailboxIds.contains(message.getMailboxId()))
-            .concatMap(message -> updateMessage(newState, updateMode, message))
+            .collect(java.util.stream.Collectors.groupingBy(
+                MailboxMessage::getMailboxId,
+                java.util.stream.Collectors.mapping(MailboxMessage::getUid, java.util.stream.Collectors.toList())))
+            .flatMapMany(uidsByMailbox -> Flux.fromIterable(uidsByMailbox.entrySet()))
+            .concatMap(entry -> updateMailboxFlags(entry.getKey(), entry.getValue(), newState, updateMode))
             .distinct()
             .collect(ImmutableListMultimap.toImmutableListMultimap(Pair::getKey, Pair::getValue));
     }
 
-    private Mono<Pair<MailboxId, UpdatedFlags>> updateMessage(Flags newState,
-                                                             MessageManager.FlagsUpdateMode updateMode,
-                                                             MailboxMessage message) {
+    private Flux<Pair<MailboxId, UpdatedFlags>> updateMailboxFlags(MailboxId mailboxId,
+                                                                   List<MessageUid> uids,
+                                                                   Flags newState,
+                                                                   MessageManager.FlagsUpdateMode updateMode) {
+        if (uids.isEmpty()) {
+            return Flux.empty();
+        }
         FlagsUpdateCalculator flagsUpdateCalculator = new FlagsUpdateCalculator(newState, updateMode);
-        return mailboxMapper.findMailboxById(message.getMailboxId())
-            .flatMap(mailbox -> {
+        return mailboxMapper.findMailboxById(mailboxId)
+            .flatMapMany(mailbox -> {
                 try {
-                    return Mono.justOrEmpty(messageMapper.updateFlags(mailbox, message.getUid(), flagsUpdateCalculator));
+                    List<UpdatedFlags> result = new ArrayList<>();
+                    for (MessageRange range : MessageRange.toRanges(uids)) {
+                        Iterator<UpdatedFlags> it = messageMapper.updateFlags(mailbox, flagsUpdateCalculator, range);
+                        while (it.hasNext()) {
+                            result.add(it.next());
+                        }
+                    }
+                    return Flux.fromIterable(result);
                 } catch (MailboxException e) {
-                    return Mono.error(e);
+                    return Flux.error(e);
                 }
             })
-            .map(updatedFlags -> Pair.of(message.getMailboxId(), updatedFlags));
+            .map(updatedFlags -> Pair.of(mailboxId, updatedFlags));
     }
 }

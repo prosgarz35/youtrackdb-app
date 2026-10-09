@@ -23,6 +23,7 @@ import org.apache.james.mailbox.MessageUid;
 import org.apache.james.mailbox.ModSeq;
 import org.apache.james.mailbox.model.ByteContent;
 import org.apache.james.mailbox.model.Mailbox;
+import org.apache.james.mailbox.model.MailboxId;
 import org.apache.james.mailbox.model.MailboxPath;
 import org.apache.james.mailbox.model.MessageMetaData;
 import org.apache.james.mailbox.model.MessageRange;
@@ -444,5 +445,38 @@ public class YouTrackDBMessageMapperTest {
 
         assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(0L);
         assertThat(messageMapper.countMessagesInMailbox(otherMailbox)).isEqualTo(1L);
+    }
+
+    @Test
+    void messageIdMapperSetFlagsShouldBatchUpdateFlagsAcrossTargetMailboxes() throws Exception {
+        org.apache.james.youtrackdb.YouTrackDBMessageIdMapper msgIdMapper =
+            new org.apache.james.youtrackdb.YouTrackDBMessageIdMapper(mailboxMapper, messageMapper, g);
+
+        Mailbox otherMailbox = mailboxMapper.create(MailboxPath.forUser(Username.of("alice"), "Work"), UidValidity.of(777L)).block();
+
+        YouTrackDBMessageId sharedMsgId = YouTrackDBMessageId.generate();
+        SimpleMailboxMessage msgInInbox = createMessage(mailbox, sharedMsgId, "Shared message", new Flags());
+        messageMapper.add(mailbox, msgInInbox);
+
+        SimpleMailboxMessage msgInWork = createMessage(otherMailbox, sharedMsgId, "Shared message", new Flags());
+        messageMapper.add(otherMailbox, msgInWork);
+
+        // Update flags in both mailboxes via setFlags
+        Flags seenFlag = new Flags(Flag.SEEN);
+        com.google.common.collect.Multimap<MailboxId, UpdatedFlags> updated = msgIdMapper.setFlags(
+            sharedMsgId,
+            ImmutableList.of(mailbox.getMailboxId(), otherMailbox.getMailboxId()),
+            seenFlag,
+            org.apache.james.mailbox.MessageManager.FlagsUpdateMode.ADD
+        ).block();
+
+        assertThat(updated.keySet()).containsExactlyInAnyOrder(mailbox.getMailboxId(), otherMailbox.getMailboxId());
+
+        // Verify messages in both mailboxes now have SEEN flag
+        Iterator<MailboxMessage> inboxIt = messageMapper.findInMailbox(mailbox, MessageRange.all(), FetchType.METADATA, 1);
+        assertThat(inboxIt.next().isSeen()).isTrue();
+
+        Iterator<MailboxMessage> workIt = messageMapper.findInMailbox(otherMailbox, MessageRange.all(), FetchType.METADATA, 1);
+        assertThat(workIt.next().isSeen()).isTrue();
     }
 }
