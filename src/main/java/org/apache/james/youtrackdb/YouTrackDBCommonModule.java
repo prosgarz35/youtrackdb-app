@@ -43,7 +43,7 @@ public class YouTrackDBCommonModule extends AbstractModule {
             Configuration ytdbConfig = new org.apache.commons.configuration2.BaseConfiguration();
             // High-throughput storage defaults for mail workloads (strict ACID, zero loss)
             ytdbConfig.setProperty("youtrackdb.storage.diskCache.bufferSize", 2048);
-            ytdbConfig.setProperty("youtrackdb.storage.diskCache.writeCachePart", 15);
+            ytdbConfig.setProperty("youtrackdb.storage.diskCache.writeCachePart", 25);
             ytdbConfig.setProperty("youtrackdb.storage.diskCache.writeCachePageFlushInterval", 25);
             ytdbConfig.setProperty("youtrackdb.storage.wal.bufferSize", 256);
             ytdbConfig.setProperty("youtrackdb.storage.wal.cacheSize", 65536);
@@ -57,14 +57,17 @@ public class YouTrackDBCommonModule extends AbstractModule {
                 dbName = conf.getString("youtrackdb.database", DB_NAME);
                 dbUser = conf.getString("youtrackdb.user", DB_USER);
                 dbPass = conf.getString("youtrackdb.password", DB_PASS);
-                // Merge overrides from configuration file
+                // Merge overrides from configuration file if present
                 var keys = conf.getKeys();
                 while (keys.hasNext()) {
                     String k = keys.next();
-                    ytdbConfig.setProperty(k, conf.getProperty(k));
+                    Object val = conf.getProperty(k);
+                    if (val != null && !val.toString().isBlank()) {
+                        ytdbConfig.setProperty(k, val);
+                    }
                 }
             } catch (ConfigurationException e) {
-                LOGGER.info("youtrackdb.properties not found, using default settings with path {}", DEFAULT_PATH);
+                LOGGER.info("youtrackdb.properties not found, using default high-performance settings with path {}", DEFAULT_PATH);
             }
 
             File dir = new File(path).isAbsolute() ? new File(path) : new File(fileSystem.getBasedir(), path);
