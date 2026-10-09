@@ -6,69 +6,69 @@
 
 ## Overview
 
-**James YouTrack Mail Server** — это современный, полностью автономный почтовый сервер нового поколения, созданный на стыке стека **[Apache James](https://github.com/apache/james-project)** и встраиваемой мультимодельной графовой базы данных **[JetBrains YouTrackDB](https://github.com/JetBrains/youtrackdb)**.
+**James YouTrack Mail Server** is a modern, autonomous next-generation mail server appliance combining **[Apache James](https://github.com/apache/james-project)** mail protocols with the embedded multi-model graph database **[JetBrains YouTrackDB](https://github.com/JetBrains/youtrackdb)**.
 
-Решение объединяет полный спектр почтовых протоколов корпоративного уровня в едином процессе без потребности во внешних базах данных и системных администраторах СУБД.
-
----
-
-### 🌟 Почему это решение опережает классические почтовые серверы
-
-1. **Единый In-VM процесс (True Appliance Architecture)**
-   - Больше никаких тяжелых внешних кластеров СУБД (PostgreSQL, MySQL, Cassandra). 
-   - Сервер почты и база данных работают в общем адресном пространстве одного процесса JVM: нулевой сетевой оверхед, отсутствие сериализации через TCP-сокеты и накладных расходов на пулы соединений.
-
-2. **Мультимодельная база данных (Graph + YQL + Document)**
-   - База данных YouTrackDB оптимизирована под сверхнизкие задержки: прямой обход графа связей через B-Tree, точечные запросы через декларативный язык YQL (YouTrackDB SQL) и прямой доступ к памяти (Direct Memory).
-   - Быстрый запуск, отсутствие блокировок и деградации производительности на больших объемах почты.
-
-3. **Строгая надежность и сохранность данных (ACID & WAL)**
-   - Защита от сбоев питания и аварийных остановок благодаря полноценному Write-Ahead-Log (WAL) и синхронной фиксации транзакций.
-   - Любое письмо гарантированно сохранено в журнале до ответа клиенту `250 OK`.
-
-4. **Двухуровневое сжатие и эффективное дисковое хранилище**
-   - Прозрачное сжатие тел писем через Zstandard (Zstd) и трехуровневое шардирование контента.
-   - Минимальный износ дисков (SSD/NVMe) за счет пакетной групповой записи и резидентных страниц в памяти.
-
-5. **Полная совместимость со стандартами IMAP4rev1 и IMAP4rev2**
-   - Честная поддержка обоих стандартов (RFC 3501 и RFC 9051) с динамическим переключением возможностей (`ENABLE IMAP4rev2`, `UNAUTHENTICATE`, автоматический `ESEARCH`, подавление устаревшего `RECENT`) «из коробки» без дополнительных конфигураций.
+It delivers a complete enterprise-grade mail stack running within a single JVM process, requiring no external databases, message brokers, or dedicated database administrators.
 
 ---
 
-### 🛠️ Поддерживаемые стандарты и стек
+### 🌟 Why This Architecture Outperforms Traditional Mail Servers
 
-* **База данных**: JetBrains YouTrackDB 0.5.0 (ветка `develop`) с прямым B-Tree доступом и декларативным YQL.
-* **Почтовое ядро**: Apache James 3.10.0 (ветка `master`).
-* **Платформа**: Java 21 (Microsoft Build of OpenJDK).
-* **Сетевые протоколы**:
-  * **SMTP / SMTPS**: RFC 5321, RFC 4954 (Auth), RFC 3207 (STARTTLS) на портах 25, 465, 587.
+1. **Single In-VM Process (True Appliance Architecture)**
+   - No external database clusters (PostgreSQL, MySQL, Cassandra) to maintain or operate.
+   - Mail server and database engine share the same JVM address space: zero network latency, no TCP socket serialization, and zero connection pool overhead.
+
+2. **Multi-Model Graph & Document Engine (Graph + YQL + Document)**
+   - Powered by YouTrackDB optimized for ultra-low latency: direct B-Tree graph traversals, precise declarative queries with YQL (YouTrackDB SQL), and off-heap direct memory management.
+   - Instant startup with predictable tail latencies even under massive mail volumes.
+
+3. **Strict Durability & Resilience (ACID & WAL)**
+   - Built-in crash resilience against sudden power loss through a dedicated Write-Ahead Log (WAL) and synchronous transaction commits.
+   - Every message is safely persisted to journal disk pages before issuing the `250 OK` acknowledgment to the client.
+
+4. **Two-Tier Storage & Transparent Compression**
+   - Transparent message body compression using Zstandard (Zstd) paired with three-tier content-addressed blob sharding.
+   - Minimal SSD/NVMe wear via batched group page flushing and resident memory page caching.
+
+5. **Strict IMAP4rev1 & RFC 9051 IMAP4rev2 Compliance**
+   - Out-of-the-box dual-standard support (RFC 3501 and RFC 9051) with dynamic capability negotiation (`ENABLE IMAP4rev2`, `UNAUTHENTICATE`, automatic `ESEARCH`, suppression of deprecated `RECENT`).
+
+---
+
+### 🛠️ Supported Standards & Tech Stack
+
+* **Database Engine**: JetBrains YouTrackDB 0.5.0 (`develop` branch) with direct B-Tree indexing and declarative YQL.
+* **Mail Core**: Apache James 3.10.0 (`master` branch).
+* **Platform**: Java 21 ([Microsoft Build of OpenJDK](https://www.microsoft.com/openjdk)).
+* **Network Protocols**:
+  * **SMTP / SMTPS**: RFC 5321, RFC 4954 (Auth), RFC 3207 (STARTTLS) on ports 25, 465, 587.
   * **Email Format**: RFC 5322 (Internet Message Format) & MIME RFC 2045–2049.
-  * **IMAP4rev1 & IMAP4rev2**: RFC 3501 и RFC 9051 на портах 143, 993.
-  * **IMAP Quotas & Metadata**: RFC 9208 (QUOTA) и RFC 5464 (METADATA).
-  * **ManageSieve**: RFC 5804 на порту 4190.
-  * **WebAdmin REST API**: порт 8000.
+  * **IMAP4rev1 & IMAP4rev2**: RFC 3501 and RFC 9051 on ports 143, 993.
+  * **IMAP Quotas & Metadata**: RFC 9208 (QUOTA) and RFC 5464 (METADATA).
+  * **ManageSieve**: RFC 5804 on port 4190.
+  * **WebAdmin REST API**: Port 8000.
 
 ---
 
-### 🚀 Сборка и запуск
+### 🚀 Building & Running
 
-#### Требования
+#### Requirements
 * **Java 21** ([Microsoft Build of OpenJDK](https://www.microsoft.com/openjdk))
 * **Maven 3.9+**
 
-#### Сборка из исходников
+#### Building from Source
 ```bash
-# 1. Сборка ядра YouTrackDB
+# 1. Build and install YouTrackDB
 git clone https://github.com/JetBrains/youtrackdb.git
 cd youtrackdb
 mvn clean install -DskipTests
 
-# 2. Сборка почтового сервера
+# 2. Build James YouTrack Mail Server
 cd /path/to/youtrackdb-app
 mvn clean package -DskipTests
 ```
 
-#### Запуск сервера
+#### Launching the Server
 * **Linux / macOS:**
   ```bash
   java -XX:+UseZGC -XX:+ZGenerational -Xms2g -Xmx4g -jar target/james-server-youtrackdb-app.jar
@@ -80,13 +80,13 @@ mvn clean package -DskipTests
 
 ---
 
-### 🛡️ Управление и мониторинг через WebAdmin
+### 🛡️ WebAdmin Administration & Operations
 
-#### Проверка состояния базы данных
+#### Database Health & Integrity Check
 ```bash
 curl -X GET http://localhost:8000/youtrackdb/check
 ```
-*Ответ:*
+*Response:*
 ```json
 {
   "status": "HEALTHY",
@@ -97,12 +97,12 @@ curl -X GET http://localhost:8000/youtrackdb/check
 }
 ```
 
-#### Горячий бэкап (Disaster Recovery)
+#### Online Hot Backup (Disaster Recovery)
 ```bash
 curl -X POST "http://localhost:8000/youtrackdb/backup?backupDir=var/backups"
 ```
 
-#### Очистка осиротевших блобов (Garbage Collection)
+#### Orphan Blobs Garbage Collection
 ```bash
 curl -X POST http://localhost:8000/youtrackdb/blobs/gc
 ```
