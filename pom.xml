@@ -111,6 +111,14 @@
                     <groupId>${james.groupId}</groupId>
                     <artifactId>james-server-guice-jmap</artifactId>
                 </exclusion>
+                <exclusion>
+                    <groupId>${james.groupId}</groupId>
+                    <artifactId>apache-mailet-icalendar</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>${james.groupId}</groupId>
+                    <artifactId>james-server-mailbox-plugin-deleted-messages-vault-guice</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <dependency>
