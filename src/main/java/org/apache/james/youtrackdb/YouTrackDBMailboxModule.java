@@ -11,12 +11,6 @@ import org.apache.james.adapter.mailbox.MailboxUsernameChangeTaskStep;
 import org.apache.james.adapter.mailbox.QuotaUsernameChangeTaskStep;
 import org.apache.james.adapter.mailbox.UserRepositoryAuthenticator;
 import org.apache.james.events.EventListener;
-import org.apache.james.jmap.api.change.EmailChangeRepository;
-import org.apache.james.jmap.api.change.Limit;
-import org.apache.james.jmap.api.change.MailboxChangeRepository;
-import org.apache.james.jmap.api.change.State;
-import org.apache.james.jmap.memory.change.MemoryEmailChangeRepository;
-import org.apache.james.jmap.memory.change.MemoryMailboxChangeRepository;
 import org.apache.james.mailbox.AttachmentContentLoader;
 import org.apache.james.mailbox.AttachmentIdFactory;
 import org.apache.james.mailbox.AttachmentManager;
@@ -71,8 +65,6 @@ import com.google.inject.name.Names;
 
 public class YouTrackDBMailboxModule extends AbstractModule {
 
-    private static final Limit DEFAULT_CHANGE_LIMIT = Limit.of(256);
-
     @Override
     protected void configure() {
         install(new DefaultEventModule());
@@ -114,25 +106,15 @@ public class YouTrackDBMailboxModule extends AbstractModule {
 
         bind(MessageIdManager.class).to(StoreMessageIdManager.class);
 
-        bind(State.Factory.class).toInstance(State.Factory.DEFAULT);
-
-        bind(MailboxChangeRepository.class).to(MemoryMailboxChangeRepository.class);
-        bind(EmailChangeRepository.class).to(MemoryEmailChangeRepository.class);
-
         bind(MailboxCounterCorrector.class).toInstance(MailboxCounterCorrector.DEFAULT);
 
         bind(UserRepositoryAuthenticator.class).in(Scopes.SINGLETON);
         bind(YouTrackDBMailboxManager.class).in(Scopes.SINGLETON);
-        bind(MemoryMailboxChangeRepository.class).in(Scopes.SINGLETON);
-        bind(MemoryEmailChangeRepository.class).in(Scopes.SINGLETON);
         bind(YouTrackDBMessageId.Factory.class).in(Scopes.SINGLETON);
         bind(StoreMessageIdManager.class).in(Scopes.SINGLETON);
         bind(StoreAttachmentManager.class).in(Scopes.SINGLETON);
         bind(StoreRightManager.class).in(Scopes.SINGLETON);
         bind(SessionProviderImpl.class).in(Scopes.SINGLETON);
-
-        bind(Limit.class).annotatedWith(Names.named(MemoryEmailChangeRepository.LIMIT_NAME)).toInstance(DEFAULT_CHANGE_LIMIT);
-        bind(Limit.class).annotatedWith(Names.named(MemoryMailboxChangeRepository.LIMIT_NAME)).toInstance(DEFAULT_CHANGE_LIMIT);
 
         bind(ReIndexerImpl.class).in(Scopes.SINGLETON);
         bind(ReIndexer.class).to(ReIndexerImpl.class);

@@ -1,8 +1,6 @@
 package org.apache.james.youtrackdb;
 
 import org.apache.james.events.EventListener;
-import org.apache.james.jmap.api.upload.UploadUsageRepository;
-import org.apache.james.jmap.memory.upload.InMemoryUploadUsageRepository;
 import org.apache.james.mailbox.quota.CurrentQuotaManager;
 import org.apache.james.mailbox.quota.MaxQuotaManager;
 import org.apache.james.mailbox.quota.QuotaManager;
@@ -33,7 +31,6 @@ public class YouTrackDBQuotaModule extends AbstractModule {
         bind(MaxQuotaManager.class).to(YouTrackDBPerUserMaxQuotaManager.class);
         bind(QuotaManager.class).to(StoreQuotaManager.class);
         bind(CurrentQuotaManager.class).to(YouTrackDBCurrentQuotaManager.class);
-        bind(UploadUsageRepository.class).to(InMemoryUploadUsageRepository.class);
 
         bind(ListeningCurrentQuotaUpdater.class).in(Scopes.SINGLETON);
         bind(QuotaUpdater.class).to(ListeningCurrentQuotaUpdater.class);
