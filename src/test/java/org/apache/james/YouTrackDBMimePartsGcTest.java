@@ -89,7 +89,7 @@ public class YouTrackDBMimePartsGcTest {
                 PlainBlobId.Factory blobIdFactory = new PlainBlobId.Factory();
                 YouTrackDBBlobStoreDAO dao = new YouTrackDBBlobStoreDAO(g, blobIdFactory, fileSystem);
                 body.run(g, dao, new YouTrackDBBlobMailRepositoryFactory(dao, blobIdFactory, BucketName.DEFAULT),
-                    new YouTrackDBMimePartsGc(dao, BucketName.DEFAULT));
+                    new YouTrackDBMimePartsGc(dao, BucketName.DEFAULT, java.time.Duration.ZERO));
             }
         }
     }

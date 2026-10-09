@@ -94,6 +94,9 @@ public class YouTrackDBBackupTask implements Task {
         }
         try (var stream = java.nio.file.Files.walk(source)) {
             stream.forEach(src -> {
+                if (src.getFileName() != null && src.getFileName().toString().contains(".tmp.")) {
+                    return;
+                }
                 try {
                     Path dest = target.resolve(source.relativize(src));
                     if (java.nio.file.Files.isDirectory(src)) {
@@ -104,7 +107,11 @@ public class YouTrackDBBackupTask implements Task {
                         if (dest.getParent() != null && !java.nio.file.Files.exists(dest.getParent())) {
                             java.nio.file.Files.createDirectories(dest.getParent());
                         }
-                        java.nio.file.Files.copy(src, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        try {
+                            java.nio.file.Files.copy(src, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        } catch (java.nio.file.NoSuchFileException ignored) {
+                            // File was concurrently deleted or rotated: safe to skip during live snapshot
+                        }
                     }
                 } catch (java.io.IOException e) {
                     throw new RuntimeException("Failed copying blob file during backup: " + src, e);

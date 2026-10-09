@@ -66,16 +66,22 @@ public class YouTrackDBAdminRoutes implements Routes {
     private YouTrackDBBackupTask createBackupTask(Request request) throws FileNotFoundException {
         String backupDirParam = request.queryParams("backupDir");
         File baseDir = fileSystem.getBasedir();
+        java.nio.file.Path basePath = baseDir.toPath().toAbsolutePath().normalize();
+        java.nio.file.Path blobsPath = basePath.resolve("var/blobs").normalize();
+        java.nio.file.Path storePath = basePath.resolve("var/youtrackdb").normalize();
         File backupDir;
         if (backupDirParam != null && !backupDirParam.isBlank()) {
-            java.nio.file.Path basePath = baseDir.toPath().toAbsolutePath().normalize();
-            java.nio.file.Path targetPath = basePath.resolve(backupDirParam).normalize();
-            if (!targetPath.startsWith(basePath)) {
-                throw new IllegalArgumentException("Path traversal not allowed: backupDir must be within server base directory");
+            java.nio.file.Path targetPath = java.nio.file.Paths.get(backupDirParam);
+            if (!targetPath.isAbsolute()) {
+                targetPath = basePath.resolve(targetPath);
+            }
+            targetPath = targetPath.normalize();
+            if (!targetPath.startsWith(basePath) || targetPath.startsWith(blobsPath) || targetPath.startsWith(storePath)) {
+                throw new IllegalArgumentException("Path traversal or forbidden destination: backupDir must be within server base directory and outside blobs/database store");
             }
             backupDir = targetPath.toFile();
         } else {
-            backupDir = new File(baseDir, "var/backups");
+            backupDir = basePath.resolve("var/backups").toFile();
         }
         File blobsSourceDir = new File(baseDir, "var/blobs");
         return new YouTrackDBBackupTask(traversalSource, backupDir, blobsSourceDir);
@@ -104,7 +110,7 @@ public class YouTrackDBAdminRoutes implements Routes {
             result.put("totalUsers", counts[1]);
             result.put("totalDomains", counts[2]);
 
-            response.status(HttpStatus.OK_200);
+            response.status(dbOpen ? HttpStatus.OK_200 : HttpStatus.SERVICE_UNAVAILABLE_503);
             return result;
         } catch (Exception e) {
             LOGGER.error("Failed to check YouTrackDB integrity", e);

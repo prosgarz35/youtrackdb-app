@@ -28,6 +28,10 @@ public final class YouTrackDBTransactions {
 
     public static <X extends Exception> void executeStrictTx(YTDBGraphTraversalSource g,
                                                              FailableConsumer<YTDBGraphTraversalSource, X> action) throws X {
+        if (g.tx().isOpen()) {
+            action.accept(g);
+            return;
+        }
         g.executeInTx(tx -> {
             action.accept(tx);
             tx.tx().commit();
@@ -36,6 +40,9 @@ public final class YouTrackDBTransactions {
 
     public static <R, X extends Exception> R computeStrictTx(YTDBGraphTraversalSource g,
                                                              FailableFunction<YTDBGraphTraversalSource, R, X> action) throws X {
+        if (g.tx().isOpen()) {
+            return action.apply(g);
+        }
         return g.computeInTx(tx -> {
             R result = action.apply(tx);
             tx.tx().commit();
@@ -45,12 +52,12 @@ public final class YouTrackDBTransactions {
 
     /** True if {@code type} appears anywhere in the cause chain of {@code t}. */
     public static boolean hasCause(Throwable t, Class<? extends Throwable> type) {
-        for (Throwable current = t; current != null; current = current.getCause()) {
+        if (t == null) {
+            return false;
+        }
+        for (Throwable current : com.google.common.base.Throwables.getCausalChain(t)) {
             if (type.isInstance(current)) {
                 return true;
-            }
-            if (current.getCause() == current) {
-                break;
             }
         }
         return false;
@@ -61,6 +68,7 @@ public final class YouTrackDBTransactions {
      * Retries are limited to concurrent record updates/creates:
      * - ConcurrentModificationException (public API: optimistic lock conflict on update)
      * - ConcurrentCreateException (internal: simultaneous record creation conflict)
+     * - RecordDuplicatedException (transient unique index conflict in check-then-insert races)
      *
      * Other NeedRetryException subclasses (such as CommandInterruptedException or LinksConsistencyException)
      * are intentional cancellations or corruption errors and must not be retried.

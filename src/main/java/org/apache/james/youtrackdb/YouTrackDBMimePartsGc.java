@@ -44,15 +44,25 @@ public class YouTrackDBMimePartsGc {
     public record Result(long referencedParts, long deletedParts, long pendingParts) {
     }
 
+    public static final java.time.Duration DEFAULT_MIN_AGE = java.time.Duration.ofMinutes(10);
+
     private final YouTrackDBBlobStoreDAO blobStoreDAO;
     private final BucketName bucketName;
-    private Set<String> candidates = Set.of();
+    private final java.time.Duration minAge;
+    private java.util.Map<String, java.time.Instant> candidates = new java.util.HashMap<>();
 
     @Inject
     public YouTrackDBMimePartsGc(YouTrackDBBlobStoreDAO blobStoreDAO,
                                  @Named(BlobStore.DEFAULT_BUCKET_NAME_QUALIFIER) BucketName bucketName) {
+        this(blobStoreDAO, bucketName, DEFAULT_MIN_AGE);
+    }
+
+    public YouTrackDBMimePartsGc(YouTrackDBBlobStoreDAO blobStoreDAO,
+                                 BucketName bucketName,
+                                 java.time.Duration minAge) {
         this.blobStoreDAO = blobStoreDAO;
         this.bucketName = bucketName;
+        this.minAge = minAge;
     }
 
     public synchronized Result collect() {
@@ -74,11 +84,17 @@ public class YouTrackDBMimePartsGc {
         Set<String> orphans = new HashSet<>(partIds);
         orphans.removeAll(referenced);
 
-        Set<String> stillOrphans = new HashSet<>();
+        java.time.Instant now = java.time.Instant.now();
+        java.util.Map<String, java.time.Instant> stillOrphans = new java.util.HashMap<>();
         long deleted = 0;
         for (String orphan : orphans) {
-            if (!candidates.contains(orphan)) {
-                stillOrphans.add(orphan);
+            java.time.Instant firstSeen = candidates.get(orphan);
+            if (firstSeen == null) {
+                stillOrphans.put(orphan, now);
+                continue;
+            }
+            if (java.time.Duration.between(firstSeen, now).compareTo(minAge) < 0) {
+                stillOrphans.put(orphan, firstSeen);
                 continue;
             }
             try {
@@ -86,7 +102,7 @@ public class YouTrackDBMimePartsGc {
                 deleted++;
             } catch (RuntimeException e) {
                 LOGGER.warn("Cannot delete the orphaned MIME part {}", orphan, e);
-                stillOrphans.add(orphan);
+                stillOrphans.put(orphan, firstSeen);
             }
         }
         candidates = stillOrphans;

@@ -64,6 +64,8 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     private final YTDBGraphTraversalSource g;
     private final BlobId.Factory blobIdFactory;
     private final File blobsDirectory;
+    private final com.google.common.util.concurrent.Striped<java.util.concurrent.locks.Lock> stripedLocks =
+        com.google.common.util.concurrent.Striped.lazyWeakLock(256);
 
     @Inject
     public YouTrackDBBlobStoreDAO(YTDBGraphTraversalSource g, BlobId.Factory blobIdFactory, FileSystem fileSystem) {
@@ -130,8 +132,12 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     private void deleteStaleFile(BucketName bucketName, BlobId blobId) {
         if (isOverwritable(blobId)) {
             File stale = getFileForBlob(bucketName, blobId);
-            if (stale.exists() && stale.delete()) {
-                pruneEmptyParentDirectories(stale, pruneStopDir(bucketName, blobId));
+            try {
+                if (Files.deleteIfExists(stale.toPath())) {
+                    pruneEmptyParentDirectories(stale, pruneStopDir(bucketName, blobId));
+                }
+            } catch (IOException e) {
+                // Warning on delete failure so GC can clean it up later without crashing
             }
         }
     }
@@ -403,6 +409,9 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     public Publisher<Void> save(BucketName bucketName, BlobId blobId, Blob blob) {
         Preconditions.checkNotNull(blob);
         return Mono.<Void>fromRunnable(() -> {
+            String key = buildKey(bucketName, blobId);
+            java.util.concurrent.locks.Lock lock = stripedLocks.get(key);
+            lock.lock();
             try {
                 try (InputStream in = blob.asInputStream().payload()) {
                     // Read up to TIER2_DB_THRESHOLD + 1 bytes to determine tier without buffering huge payloads
@@ -438,29 +447,40 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                         boolean overwrite = isOverwritable(blobId);
                         if (overwrite || !file.exists()) {
                             File tempFile = new File(parent, file.getName() + ".tmp." + Thread.currentThread().threadId());
-                            try (FileOutputStream fos = new FileOutputStream(tempFile);
-                                 com.github.luben.zstd.ZstdOutputStream zos = new com.github.luben.zstd.ZstdOutputStream(fos, 1)) {
-                                zos.write(initialBuffer, 0, totalRead);
-                                byte[] transferBuf = new byte[8192];
-                                int bytesRead;
-                                while ((bytesRead = in.read(transferBuf)) != -1) {
-                                    zos.write(transferBuf, 0, bytesRead);
-                                }
-                                zos.flush();
-                                fos.getFD().sync();
-                            }
                             try {
-                                Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                            } catch (Exception e) {
-                                if (overwrite) {
-                                    tempFile.delete();
-                                    throw e;
+                                try (FileOutputStream fos = new FileOutputStream(tempFile);
+                                     com.github.luben.zstd.ZstdOutputStream zos = new com.github.luben.zstd.ZstdOutputStream(fos, 1)) {
+                                    zos.write(initialBuffer, 0, totalRead);
+                                    byte[] transferBuf = new byte[8192];
+                                    int bytesRead;
+                                    while ((bytesRead = in.read(transferBuf)) != -1) {
+                                        zos.write(transferBuf, 0, bytesRead);
+                                    }
+                                    zos.flush();
+                                    fos.getFD().sync();
                                 }
-                                if (!file.exists()) {
-                                    Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                                } else {
-                                    tempFile.delete();
+                                try {
+                                    Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                } catch (Exception e) {
+                                    if (overwrite) {
+                                        Files.deleteIfExists(tempFile.toPath());
+                                        throw e;
+                                    }
+                                    if (!file.exists()) {
+                                        Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                    } else {
+                                        Files.deleteIfExists(tempFile.toPath());
+                                    }
                                 }
+                            } catch (Exception ex) {
+                                Files.deleteIfExists(tempFile.toPath());
+                                throw ex;
+                            }
+                        } else {
+                            // Touch file modification time so active dedup blobs are not collected by orphan GC
+                            try {
+                                Files.setLastModifiedTime(file.toPath(), java.nio.file.attribute.FileTime.from(java.time.Instant.now()));
+                            } catch (Exception ignored) {
                             }
                         }
 
@@ -469,6 +489,8 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 }
             } catch (Exception e) {
                 throw new ObjectStoreIOException("Error saving blob " + blobId.asString(), e);
+            } finally {
+                lock.unlock();
             }
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
@@ -477,13 +499,25 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     public Publisher<Void> delete(BucketName bucketName, BlobId blobId) {
         return Mono.<Void>fromRunnable(() -> {
             String key = buildKey(bucketName, blobId);
-            File file = getFileForBlob(bucketName, blobId);
-            // Database first: a failure leaves an orphan file (collected by GC), not a record pointing to a missing file.
-            YouTrackDBTransactions.executeStrictTx(g, tx ->
-                tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = :key", "key", key));
-            if (file.exists()) {
-                file.delete();
-                pruneEmptyParentDirectories(file, pruneStopDir(bucketName, blobId));
+            java.util.concurrent.locks.Lock lock = stripedLocks.get(key);
+            lock.lock();
+            try {
+                File file = getFileForBlob(bucketName, blobId);
+                // Database first: a failure leaves an orphan file (collected by GC), not a record pointing to a missing file.
+                YouTrackDBTransactions.executeStrictTx(g, tx ->
+                    tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = :key", "key", key));
+                // Only delete file if no vertex exists in database with this key
+                BlobMeta meta = loadMeta(key);
+                if (meta == null && file.exists()) {
+                    try {
+                        if (Files.deleteIfExists(file.toPath())) {
+                            pruneEmptyParentDirectories(file, pruneStopDir(bucketName, blobId));
+                        }
+                    } catch (IOException ignored) {
+                    }
+                }
+            } finally {
+                lock.unlock();
             }
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
@@ -501,9 +535,21 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 }
             });
             files.forEach((blobId, file) -> {
-                if (file.exists()) {
-                    file.delete();
-                    pruneEmptyParentDirectories(file, pruneStopDir(bucketName, blobId));
+                String key = buildKey(bucketName, blobId);
+                java.util.concurrent.locks.Lock lock = stripedLocks.get(key);
+                lock.lock();
+                try {
+                    BlobMeta meta = loadMeta(key);
+                    if (meta == null && file.exists()) {
+                        try {
+                            if (Files.deleteIfExists(file.toPath())) {
+                                pruneEmptyParentDirectories(file, pruneStopDir(bucketName, blobId));
+                            }
+                        } catch (IOException ignored) {
+                        }
+                    }
+                } finally {
+                    lock.unlock();
                 }
             });
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
