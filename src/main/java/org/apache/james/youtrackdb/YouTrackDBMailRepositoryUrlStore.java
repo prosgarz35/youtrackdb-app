@@ -29,15 +29,11 @@ public class YouTrackDBMailRepositoryUrlStore implements MailRepositoryUrlStore 
         Objects.requireNonNull(url, "url must not be null");
         String urlStr = url.asString();
         try {
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                boolean exists = tx.V().hasLabel(CLASS).has(PROP_URL, urlStr).hasNext();
-                if (!exists) {
-                    tx.addV(CLASS).property(PROP_URL, urlStr).iterate();
-                }
-            });
+            YouTrackDBTransactions.executeStrictTx(g, tx ->
+                tx.addV(CLASS).property(PROP_URL, urlStr).iterate());
         } catch (Exception e) {
             if (YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)) {
-                // Concurrent insert already succeeded - idempotent
+                // Concurrent insert already succeeded - idempotent due to UNIQUE B-Tree index on (url)
                 return;
             }
             throw e;
@@ -46,10 +42,11 @@ public class YouTrackDBMailRepositoryUrlStore implements MailRepositoryUrlStore 
 
     @Override
     public Stream<MailRepositoryUrl> listDistinct() {
-        return g.computeInTx(tx -> tx.V().hasLabel(CLASS).values(PROP_URL).toList())
+        return YouTrackDBTransactions.queryRows(g, "SELECT DISTINCT(url) AS url FROM " + CLASS)
             .stream()
+            .map(row -> row.get(PROP_URL))
+            .filter(Objects::nonNull)
             .map(Object::toString)
-            .distinct()
             .map(MailRepositoryUrl::from);
     }
 
@@ -57,6 +54,7 @@ public class YouTrackDBMailRepositoryUrlStore implements MailRepositoryUrlStore 
     public boolean contains(MailRepositoryUrl url) {
         Objects.requireNonNull(url, "url must not be null");
         String urlStr = url.asString();
-        return g.computeInTx(tx -> tx.V().hasLabel(CLASS).has(PROP_URL, urlStr).hasNext());
+        return !YouTrackDBTransactions.queryRows(g,
+            "SELECT 1 FROM " + CLASS + " WHERE url = :url LIMIT 1", "url", urlStr).isEmpty();
     }
 }
