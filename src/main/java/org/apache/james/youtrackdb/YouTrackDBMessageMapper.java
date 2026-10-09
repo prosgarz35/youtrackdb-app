@@ -178,23 +178,32 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
 
     @Override
     public Map<MessageUid, MessageMetaData> deleteMessages(Mailbox mailbox, List<MessageUid> uids) throws MailboxException {
+        if (uids == null || uids.isEmpty()) {
+            return Collections.emptyMap();
+        }
         try {
-            Map<MessageUid, MessageMetaData> result = new HashMap<>();
-            for (MessageUid uid : uids) {
-                Iterator<MailboxMessage> it = findInMailbox(mailbox, MessageRange.one(uid), FetchType.METADATA, 1);
-                if (it.hasNext()) {
-                    MailboxMessage msg = it.next();
-                    result.put(uid, msg.metaData());
-                }
+            String mailboxId = mailbox.getMailboxId().serialize();
+            List<Long> uidLongs = uids.stream().map(MessageUid::asLong).toList();
+
+            String metadataCols = String.join(", ",
+                PROP_MAILBOX_ID, PROP_MESSAGE_ID, PROP_THREAD_ID, PROP_UID, PROP_MODSEQ,
+                PROP_INTERNAL_DATE, PROP_SAVE_DATE, PROP_SIZE, PROP_BODY_START, PROP_FLAGS, PROP_USER_FLAGS);
+
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT " + metadataCols + " FROM " + CLASS_NAME + " WHERE mailboxId = :mbx AND uid IN :uids",
+                "mbx", mailboxId,
+                "uids", uidLongs);
+
+            Map<MessageUid, MessageMetaData> result = new HashMap<>(rows.size());
+            for (Map<String, Object> row : rows) {
+                MailboxMessage msg = readMessage(row, mailbox.getMailboxId(), FetchType.METADATA);
+                result.put(msg.getUid(), msg.metaData());
             }
 
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                for (MessageUid uid : uids) {
-                    tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :mbx AND uid = :uid",
-                        "mbx", mailbox.getMailboxId().serialize(),
-                        "uid", uid.asLong());
-                }
-            });
+            YouTrackDBTransactions.executeStrictTx(g, tx ->
+                tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :mbx AND uid IN :uids",
+                    "mbx", mailboxId,
+                    "uids", uidLongs));
 
             return result;
         } catch (Exception e) {
