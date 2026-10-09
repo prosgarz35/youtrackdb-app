@@ -25,10 +25,9 @@
         <bind>0.0.0.0:0</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="false" startTLS="false">
-            <keystore>file://conf/keystore</keystore>
-            <secret>james72laBalle</secret>
-            <provider>org.bouncycastle.jce.provider.BouncyCastleProvider</provider>
-            <algorithm>SunX509</algorithm>
+            <privateKey>classpath://private.key</privateKey>
+            <certificates>classpath://certs.self-signed.csr</certificates>
+            <secret>123456</secret>
         </tls>
         <connectiontimeout>360</connectiontimeout>
         <connectionLimit>0</connectionLimit>
@@ -53,10 +52,9 @@
         <bind>0.0.0.0:0</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="false" startTLS="false">
-            <keystore>file://conf/keystore</keystore>
-            <secret>james72laBalle</secret>
-            <provider>org.bouncycastle.jce.provider.BouncyCastleProvider</provider>
-            <algorithm>SunX509</algorithm>
+            <privateKey>classpath://private.key</privateKey>
+            <certificates>classpath://certs.self-signed.csr</certificates>
+            <secret>123456</secret>
         </tls>
         <connectiontimeout>360</connectiontimeout>
         <connectionLimit>0</connectionLimit>
@@ -82,10 +80,9 @@
         <bind>0.0.0.0:0</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="false" startTLS="false">
-            <keystore>file://conf/keystore</keystore>
-            <secret>james72laBalle</secret>
-            <provider>org.bouncycastle.jce.provider.BouncyCastleProvider</provider>
-            <algorithm>SunX509</algorithm>
+            <privateKey>classpath://private.key</privateKey>
+            <certificates>classpath://certs.self-signed.csr</certificates>
+            <secret>123456</secret>
         </tls>
         <connectiontimeout>360</connectiontimeout>
         <connectionLimit>0</connectionLimit>

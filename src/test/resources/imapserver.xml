@@ -26,12 +26,9 @@ under the License.
         <bind>0.0.0.0:0</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="false" startTLS="false">
-            <!-- To create a new keystore execute:
-            keytool -genkey -alias james -keyalg RSA -keystore /path/to/james/conf/keystore
-              -->
-            <keystore>classpath://keystore</keystore>
-            <secret>james72laBalle</secret>
-            <provider>org.bouncycastle.jce.provider.BouncyCastleProvider</provider>
+            <privateKey>classpath://private.key</privateKey>
+            <certificates>classpath://certs.self-signed.csr</certificates>
+            <secret>123456</secret>
         </tls>
         <connectionLimit>0</connectionLimit>
         <connectionLimitPerIP>0</connectionLimitPerIP>
@@ -43,12 +40,9 @@ under the License.
         <bind>0.0.0.0:0</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="false" startTLS="true">
-            <!-- To create a new keystore execute:
-              keytool -genkey -alias james -keyalg RSA -keystore /path/to/james/conf/keystore
-             -->
-            <keystore>classpath://keystore</keystore>
-            <secret>james72laBalle</secret>
-            <provider>org.bouncycastle.jce.provider.BouncyCastleProvider</provider>
+            <privateKey>classpath://private.key</privateKey>
+            <certificates>classpath://certs.self-signed.csr</certificates>
+            <secret>123456</secret>
         </tls>
         <connectionLimit>0</connectionLimit>
         <connectionLimitPerIP>0</connectionLimitPerIP>

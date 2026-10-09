@@ -28,11 +28,10 @@
         <bind>0.0.0.0:25</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="false" startTLS="true">
-            <keystore>file://conf/keystore</keystore>
-            <keystoreType>PKCS12</keystoreType>
-            <secret>james72laBalle</secret>
-            <provider>org.bouncycastle.jce.provider.BouncyCastleProvider</provider>
-            <algorithm>SunX509</algorithm>
+            <privateKey>file://conf/private.key</privateKey>
+            <certificates>file://conf/certs.self-signed.csr</certificates>
+            <!-- An optional secret might be specified for the private key -->
+            <secret>123456</secret>
         </tls>
         <connectiontimeout>360</connectiontimeout>
         <connectionLimit>0</connectionLimit>
@@ -57,11 +56,10 @@
         <bind>0.0.0.0:465</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="true" startTLS="false">
-            <keystore>file://conf/keystore</keystore>
-            <keystoreType>PKCS12</keystoreType>
-            <secret>james72laBalle</secret>
-            <provider>org.bouncycastle.jce.provider.BouncyCastleProvider</provider>
-            <algorithm>SunX509</algorithm>
+            <privateKey>file://conf/private.key</privateKey>
+            <certificates>file://conf/certs.self-signed.csr</certificates>
+            <!-- An optional secret might be specified for the private key -->
+            <secret>123456</secret>
         </tls>
         <connectiontimeout>360</connectiontimeout>
         <connectionLimit>0</connectionLimit>
@@ -93,11 +91,10 @@
         <bind>0.0.0.0:587</bind>
         <connectionBacklog>200</connectionBacklog>
         <tls socketTLS="false" startTLS="true">
-            <keystore>file://conf/keystore</keystore>
-            <keystoreType>PKCS12</keystoreType>
-            <secret>james72laBalle</secret>
-            <provider>org.bouncycastle.jce.provider.BouncyCastleProvider</provider>
-            <algorithm>SunX509</algorithm>
+            <privateKey>file://conf/private.key</privateKey>
+            <certificates>file://conf/certs.self-signed.csr</certificates>
+            <!-- An optional secret might be specified for the private key -->
+            <secret>123456</secret>
         </tls>
         <connectiontimeout>360</connectiontimeout>
         <connectionLimit>0</connectionLimit>
