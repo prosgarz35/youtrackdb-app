@@ -108,7 +108,10 @@ public final class YouTrackDBTransactions {
                 if (!isRetryableConflict(e) || attempt == maxRetries) {
                     throw e;
                 }
-                long sleepMs = 5L * attempt + java.util.concurrent.ThreadLocalRandom.current().nextInt(15);
+                // Exponential backoff with jitter to eliminate thundering herd under high concurrency:
+                // base 10ms, doubled per attempt up to a 250ms cap, plus random jitter [0, 25)ms.
+                long expDelay = Math.min(10L * (1L << (attempt - 1)), 250L);
+                long sleepMs = expDelay + java.util.concurrent.ThreadLocalRandom.current().nextInt(25);
                 try {
                     Thread.sleep(sleepMs);
                 } catch (InterruptedException ie) {
