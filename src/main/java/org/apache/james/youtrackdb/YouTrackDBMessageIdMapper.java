@@ -130,30 +130,36 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
 
     @Override
     public void delete(MessageId messageId) {
-        find(ImmutableList.of(messageId), MessageMapper.FetchType.METADATA)
-            .forEach(message -> {
-                try {
-                    Mailbox mailbox = MailboxReactorUtils.block(mailboxMapper.findMailboxById(message.getMailboxId()));
-                    messageMapper.delete(mailbox, message);
-                } catch (MailboxException e) {
-                    throw new RuntimeException("Failed to delete message " + messageId.serialize(), e);
-                }
-            });
+        List<MailboxMessage> messages = find(ImmutableList.of(messageId), MessageMapper.FetchType.METADATA);
+        deleteGroupedByMailbox(messageId, messages);
     }
 
     @Override
     public void delete(MessageId messageId, Collection<MailboxId> mailboxIds) {
-        find(ImmutableList.of(messageId), MessageMapper.FetchType.METADATA)
+        List<MailboxMessage> messages = find(ImmutableList.of(messageId), MessageMapper.FetchType.METADATA)
             .stream()
             .filter(message -> mailboxIds.contains(message.getMailboxId()))
-            .forEach(message -> {
-                try {
-                    Mailbox mailbox = MailboxReactorUtils.block(mailboxMapper.findMailboxById(message.getMailboxId()));
-                    messageMapper.delete(mailbox, message);
-                } catch (MailboxException e) {
-                    throw new RuntimeException("Failed to delete message " + messageId.serialize(), e);
-                }
-            });
+            .toList();
+        deleteGroupedByMailbox(messageId, messages);
+    }
+
+    private void deleteGroupedByMailbox(MessageId messageId, List<MailboxMessage> messages) {
+        if (messages.isEmpty()) {
+            return;
+        }
+        Map<MailboxId, List<MessageUid>> uidsByMailbox = messages.stream()
+            .collect(java.util.stream.Collectors.groupingBy(
+                MailboxMessage::getMailboxId,
+                java.util.stream.Collectors.mapping(MailboxMessage::getUid, java.util.stream.Collectors.toList())));
+
+        for (Map.Entry<MailboxId, List<MessageUid>> entry : uidsByMailbox.entrySet()) {
+            try {
+                Mailbox mailbox = MailboxReactorUtils.block(mailboxMapper.findMailboxById(entry.getKey()));
+                messageMapper.deleteMessages(mailbox, entry.getValue());
+            } catch (MailboxException e) {
+                throw new RuntimeException("Failed to delete message " + messageId.serialize() + " in mailbox " + entry.getKey().serialize(), e);
+            }
+        }
     }
 
     @Override

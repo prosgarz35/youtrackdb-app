@@ -132,10 +132,13 @@ public class YouTrackDBMessageMapperTest {
     }
 
     private SimpleMailboxMessage createMessage(String contentStr, Flags flags) {
+        return createMessage(mailbox, YouTrackDBMessageId.generate(), contentStr, flags);
+    }
+
+    private SimpleMailboxMessage createMessage(Mailbox targetMailbox, YouTrackDBMessageId msgId, String contentStr, Flags flags) {
         byte[] content = contentStr.getBytes(StandardCharsets.UTF_8);
-        YouTrackDBMessageId msgId = YouTrackDBMessageId.generate();
         return SimpleMailboxMessage.builder()
-            .mailboxId(mailbox.getMailboxId())
+            .mailboxId(targetMailbox.getMailboxId())
             .messageId(msgId)
             .threadId(ThreadId.fromBaseMessageId(msgId))
             .internalDate(new Date())
@@ -396,5 +399,50 @@ public class YouTrackDBMessageMapperTest {
 
         MessageUid firstUnseen = messageMapper.findFirstUnseenMessageUid(mailbox);
         assertThat(firstUnseen).isNull();
+    }
+
+    @Test
+    void messageIdMapperDeleteShouldBatchDeleteAcrossMailboxes() throws Exception {
+        org.apache.james.youtrackdb.YouTrackDBMessageIdMapper msgIdMapper =
+            new org.apache.james.youtrackdb.YouTrackDBMessageIdMapper(mailboxMapper, messageMapper, g);
+
+        Mailbox otherMailbox = mailboxMapper.create(MailboxPath.forUser(Username.of("alice"), "Trash"), UidValidity.of(888L)).block();
+
+        YouTrackDBMessageId sharedMsgId = YouTrackDBMessageId.generate();
+        SimpleMailboxMessage msgInInbox = createMessage(mailbox, sharedMsgId, "Shared message", new Flags());
+        messageMapper.add(mailbox, msgInInbox);
+
+        SimpleMailboxMessage msgInTrash = createMessage(otherMailbox, sharedMsgId, "Shared message", new Flags());
+        messageMapper.add(otherMailbox, msgInTrash);
+
+        assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(1L);
+        assertThat(messageMapper.countMessagesInMailbox(otherMailbox)).isEqualTo(1L);
+
+        // Delete messageId globally across all mailboxes
+        msgIdMapper.delete(sharedMsgId);
+
+        assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(0L);
+        assertThat(messageMapper.countMessagesInMailbox(otherMailbox)).isEqualTo(0L);
+    }
+
+    @Test
+    void messageIdMapperDeleteWithMailboxIdsShouldDeleteOnlyTargetMailboxes() throws Exception {
+        org.apache.james.youtrackdb.YouTrackDBMessageIdMapper msgIdMapper =
+            new org.apache.james.youtrackdb.YouTrackDBMessageIdMapper(mailboxMapper, messageMapper, g);
+
+        Mailbox otherMailbox = mailboxMapper.create(MailboxPath.forUser(Username.of("alice"), "Important"), UidValidity.of(999L)).block();
+
+        YouTrackDBMessageId sharedMsgId = YouTrackDBMessageId.generate();
+        SimpleMailboxMessage msgInInbox = createMessage(mailbox, sharedMsgId, "Shared message", new Flags());
+        messageMapper.add(mailbox, msgInInbox);
+
+        SimpleMailboxMessage msgInImportant = createMessage(otherMailbox, sharedMsgId, "Shared message", new Flags());
+        messageMapper.add(otherMailbox, msgInImportant);
+
+        // Delete only from mailbox (Inbox), keep otherMailbox (Important)
+        msgIdMapper.delete(sharedMsgId, ImmutableList.of(mailbox.getMailboxId()));
+
+        assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(0L);
+        assertThat(messageMapper.countMessagesInMailbox(otherMailbox)).isEqualTo(1L);
     }
 }
