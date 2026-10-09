@@ -201,27 +201,35 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
 
     @Override
     public MessageUid findFirstUnseenMessageUid(Mailbox mailbox) throws MailboxException {
-        Iterator<MailboxMessage> it = findInMailbox(mailbox, MessageRange.all(), FetchType.METADATA, UNLIMITED);
-        while (it.hasNext()) {
-            MailboxMessage msg = it.next();
-            if (!msg.isSeen()) {
-                return msg.getUid();
+        try {
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT min(uid) AS firstUnseen FROM JamesMailboxMessage WHERE mailboxId = :mbx AND NOT (flags CONTAINS 'SEEN')",
+                "mbx", mailbox.getMailboxId().serialize());
+            if (!rows.isEmpty() && rows.get(0).get("firstUnseen") instanceof Number n) {
+                return MessageUid.of(n.longValue());
             }
+            return null;
+        } catch (Exception e) {
+            throw new MailboxException("Failed to find first unseen message in mailbox " + mailbox.getMailboxId().serialize(), e);
         }
-        return null;
     }
 
     @Override
     public List<MessageUid> findRecentMessageUidsInMailbox(Mailbox mailbox) throws MailboxException {
-        Iterator<MailboxMessage> it = findInMailbox(mailbox, MessageRange.all(), FetchType.METADATA, UNLIMITED);
-        List<MessageUid> recent = new ArrayList<>();
-        while (it.hasNext()) {
-            MailboxMessage msg = it.next();
-            if (msg.isRecent()) {
-                recent.add(msg.getUid());
+        try {
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT uid FROM JamesMailboxMessage WHERE mailboxId = :mbx AND flags CONTAINS 'RECENT' ORDER BY uid ASC",
+                "mbx", mailbox.getMailboxId().serialize());
+            List<MessageUid> recent = new ArrayList<>(rows.size());
+            for (Map<String, Object> row : rows) {
+                if (row.get(PROP_UID) instanceof Number n) {
+                    recent.add(MessageUid.of(n.longValue()));
+                }
             }
+            return recent;
+        } catch (Exception e) {
+            throw new MailboxException("Failed to find recent messages in mailbox " + mailbox.getMailboxId().serialize(), e);
         }
-        return recent;
     }
 
     @Override
@@ -240,17 +248,17 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             return Collections.emptyIterator();
         }
         ModSeq modSeq = modSeqProvider.nextModSeq(mailbox);
-        while (messages.hasNext()) {
-            MailboxMessage member = messages.next();
-            Flags originalFlags = member.createFlags();
-            member.setFlags(flagsUpdateCalculator.buildNewFlags(originalFlags));
-            Flags newFlags = member.createFlags();
-            if (UpdatedFlags.flagsChanged(originalFlags, newFlags)) {
-                member.setModSeq(modSeq);
-                Set<String> systemFlags = extractSystemFlags(newFlags);
-                Set<String> userFlags = extractUserFlags(newFlags);
-                try {
-                    YouTrackDBTransactions.executeStrictTx(g, tx -> {
+        try {
+            YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                while (messages.hasNext()) {
+                    MailboxMessage member = messages.next();
+                    Flags originalFlags = member.createFlags();
+                    member.setFlags(flagsUpdateCalculator.buildNewFlags(originalFlags));
+                    Flags newFlags = member.createFlags();
+                    if (UpdatedFlags.flagsChanged(originalFlags, newFlags)) {
+                        member.setModSeq(modSeq);
+                        Set<String> systemFlags = extractSystemFlags(newFlags);
+                        Set<String> userFlags = extractUserFlags(newFlags);
                         long currentModSeq = member.getModSeq().asLong();
                         tx.command("UPDATE JamesMailboxMessage SET flags = :flags, userFlags = :userFlags, modSeq = :newModSeq WHERE mailboxId = :mbx AND uid = :uid AND (modSeq = :currModSeq OR modSeq < :newModSeq)",
                             "flags", systemFlags,
@@ -259,20 +267,20 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                             "mbx", mailbox.getMailboxId().serialize(),
                             "uid", member.getUid().asLong(),
                             "currModSeq", currentModSeq);
-                    });
-                } catch (Exception e) {
-                    throw new MailboxException("Failed to update flags for message " + member.getUid(), e);
-                }
-            }
+                    }
 
-            updatedFlags.add(UpdatedFlags.builder()
-                .uid(member.getUid())
-                .messageId(member.getMessageId())
-                .internalDate(member.getInternalDate())
-                .modSeq(member.getModSeq())
-                .newFlags(newFlags)
-                .oldFlags(originalFlags)
-                .build());
+                    updatedFlags.add(UpdatedFlags.builder()
+                        .uid(member.getUid())
+                        .messageId(member.getMessageId())
+                        .internalDate(member.getInternalDate())
+                        .modSeq(member.getModSeq())
+                        .newFlags(newFlags)
+                        .oldFlags(originalFlags)
+                        .build());
+                }
+            });
+        } catch (Exception e) {
+            throw new MailboxException("Failed to update flags in mailbox " + mailbox.getMailboxId().serialize(), e);
         }
 
         return updatedFlags.iterator();
