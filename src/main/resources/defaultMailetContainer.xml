@@ -28,7 +28,9 @@
 
     <processor state="error" enableJmx="false">
         <mailet match="All" class="Bounce"/>
-        <mailet match="All" class="Null"/>
+        <mailet match="All" class="ToRepository">
+            <repositoryPath>blob://var/mail/error/</repositoryPath>
+        </mailet>
     </processor>
 
 
