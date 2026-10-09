@@ -1,168 +1,92 @@
-# ⚡ Apache James :: YouTrackDB Server (Embedded Graph & Hybrid DB Mail Server)
+# ⚡ James YouTrack Mail Server
 
-[![Java 21](https://img.shields.io/badge/Java-21%2B-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://openjdk.org/)
-[![Apache James 3.10](https://img.shields.io/badge/Apache%20James-3.10.0--SNAPSHOT-D22128?style=for-the-badge&logo=apache&logoColor=white)](https://james.apache.org/)
-[![YouTrackDB](https://img.shields.io/badge/JetBrains-YouTrackDB%200.5.0-blueviolet?style=for-the-badge&logo=jetbrains&logoColor=white)](https://github.com/JetBrains/youtrackdb)
-[![Zstd Compression](https://img.shields.io/badge/Storage-Transparent%20Zstd-27AE60?style=for-the-badge)](https://facebook.github.io/zstd/)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](https://www.apache.org/licenses/LICENSE-2.0)
+[![Java 21](https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://www.microsoft.com/openjdk)
+[![Apache James 3.10.0 (master)](https://img.shields.io/badge/Apache%20James-3.10.0%20(master)-D22128?style=for-the-badge&logo=apache&logoColor=white)](https://github.com/apache/james-project)
+[![YouTrackDB 0.5.0 (develop)](https://img.shields.io/badge/YouTrackDB-0.5.0%20(develop)-blueviolet?style=for-the-badge&logo=jetbrains&logoColor=white)](https://github.com/JetBrains/youtrackdb)
 
-## Documentation
+## Overview
 
-**Apache James YouTrackDB Server** is an enterprise-grade, self-contained mail server engineered on top of **JetBrains YouTrackDB** — a next-generation multi-model embedded database engine combining TinkerPop graph traversal, document storage, unique B-Tree indexing, direct memory management, and declarative **YQL (YouTrackDB SQL)** queries.
+**James YouTrack Mail Server** — это современный, полностью автономный почтовый сервер нового поколения, созданный на стыке стека **[Apache James](https://github.com/apache/james-project)** и встраиваемой мультимодельной графовой базы данных **[JetBrains YouTrackDB](https://github.com/JetBrains/youtrackdb)**.
 
-It provides a modern appliance architecture: **zero external database dependencies**, **zero DBA maintenance overhead**, instant deployment, transparent Zstd compression for message bodies, ACID durability for database records (WAL), and **about 2.4x the throughput of the PostgreSQL 17 variant in the bundled benchmark** (see the table below: one machine, 5,000 messages).
+Решение объединяет полный спектр почтовых протоколов корпоративного уровня в едином процессе без потребности во внешних базах данных и системных администраторах СУБД.
 
 ---
 
-### 🎯 Key Architectural Advantages & Strengths
+### 🌟 Почему это решение опережает классические почтовые серверы
 
-#### 1. In-VM Architecture & Direct Memory Engine
-* **Single Process / Single Directory**: The entire mail stack (SMTP, IMAP, Spooler, Queues, Mailbox, Search, and Storage) runs inside a single JVM process.
-* **Persistent vs In-Memory Subsystems (Appliance Model)**:
-  * **Strictly Persisted in YouTrackDB (ACID / WAL)**: User accounts & credentials (`JamesUser`), Domains (`JamesDomain`), Virtual Aliases & Rewrites (`JamesRRTMapping`), Spooler Queue items (`JamesQueueItem`), Content-Addressed Blob Storage (`JamesBlob` + Tier 3 Zstd file tree), Mailboxes (`JamesMailbox`), Messages & Flags (`JamesMailboxMessage`), Quotas (`JamesQuotaLimit`, `JamesQuotaUsage`), Subscriptions (`JamesSubscription`), Mailbox Annotations (`JamesMailboxAnnotation`, RFC 5464), and Mail Repository URLs (`JamesMailRepositoryUrl`). All survive full server restarts with strict ACID durability via WAL.
-  * **In-Memory Buffering & Microsecond Cache Layer**:
-    * **Caffeine User Cache**: High-performance thread-safe in-memory cache in `YouTrackDBUsersDAO` (`maximumSize=10,000`, `expireAfterAccess=15m`) ensures instantaneous $O(1)$ credential verification and existence lookups with strict transaction-bound invalidation on user update/delete.
-    * **In-Memory DelayQueue Spooler**: Message dispatching uses an in-memory `DelayQueue` hydrated from persisted `JamesQueueItem` records on startup.
-    * **Full-Text Search**: Embedded Lucene indexing (`LuceneSearchMailboxModule`).
-    * **Mail Attachments**: Stored as MIME payload parts within the persisted messages and tiered blob store.
-    * **Dead Code & JMAP Elimination (KISS / YAGNI)**: The server purposefully focuses on IMAP4rev1/SMTP/ManageSieve protocols. All dead JMAP endpoints, repository bindings, and unneeded event-store layers have been completely eliminated for minimal footprint and maximum reliability.
-* **Direct Memory Pre-allocation**: Off-heap buffer caches with `memory.directMemory.preallocate = true` avoid on-the-fly JVM pause stalls and eliminate garbage collector pressure.
-* **No Network IPC Overhead**: Completely eliminates serialization, network socket hops, TCP connection pool starvation, and context switching found in client-server architectures like PostgreSQL, MySQL, or Cassandra.
-* **Zero DBA Footprint**: No background vacuuming stalls, no complex replication clustering, and no external schema migration scripts.
+1. **Единый In-VM процесс (True Appliance Architecture)**
+   - Больше никаких тяжелых внешних кластеров СУБД (PostgreSQL, MySQL, Cassandra). 
+   - Сервер почты и база данных работают в общем адресном пространстве одного процесса JVM: нулевой сетевой оверхед, отсутствие сериализации через TCP-сокеты и накладных расходов на пулы соединений.
 
-#### 2. Multi-Model Hybrid Storage (Graph + Relational YQL + Key-Value)
-* **B-Tree Point Lookups via Gremlin DSL**: Single-entity reads and writes (`save`, `readBytes`, `enQueue`) utilize direct TinkerPop traversal without SQL lexing/parsing overhead.
-* **Direct YQL Set-Based & Projection Acceleration**: Hot path lookups, administrative queries, and bulk operations execute directly via parameterized YQL:
-  * `SELECT password, algorithm FROM JamesUser WHERE username = :uname LIMIT 1` (Fast authentication lookup)
-  * `SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1` (Instant $O(1)$ user existence check)
-  * `SELECT 1 FROM JamesDomain WHERE domain = :domain LIMIT 1` (Instant $O(1)$ domain existence check)
-  * `SELECT mapping FROM JamesRRTMapping WHERE source = :src` (Direct routing projection from B-Tree index)
-  * `SELECT source, mapping FROM JamesRRTMapping` (Fast alias table dump)
-  * `SELECT domain FROM JamesDomain` and `SELECT username FROM JamesUser` (Scalar projections)
-  * `SELECT count(*) AS total FROM JamesUser` (Instant $O(1)$ count directly from cluster page headers)
-  * `SELECT blobId FROM JamesBlob WHERE bucket = :bucket`
-  * `SELECT DISTINCT(bucket) AS bucket FROM JamesBlob`
-  * `DELETE VERTEX JamesBlob WHERE bucketAndBlobId = ?`
-  * `DELETE VERTEX JamesQueueItem WHERE queueName = ?` (Bulk queue purge)
-  * `SELECT 1` (Zero-allocation engine health-check ping)
-* **Persistent Spooler with In-Memory DelayQueue & YouTrackDB WAL**:
-  * Persistent spooler queue stores all queue items as `JamesQueueItem` vertices in YouTrackDB with composite indices:
-    `CREATE INDEX JamesQueueItem.queueAndMail IF NOT EXISTS ON JamesQueueItem (queueName, mailName) UNIQUE`
-    `CREATE INDEX JamesQueueItem.queueAndDelivery IF NOT EXISTS ON JamesQueueItem (queueName, nextDelivery) NOTUNIQUE`
-  * Startup recovery restores pending messages directly via Gremlin vertex traversal, hydrating them into an in-memory `DelayQueue` ordered by `nextDelivery` timestamp for microsecond dispatch latency.
-  * RFC 5321 exponential retry backoffs (`enQueue(mail, delay)`) are handled seamlessly without stalling head-of-line messages.
-  * Batch removal `remove(Type, value)` and successful completions execute in strict transactions (`YouTrackDBTransactions.executeStrictTx`: explicit commit, so commit failures reach the caller), keeping database state synchronized with minimal WAL overhead.
+2. **Мультимодельная база данных (Graph + YQL + Document)**
+   - База данных YouTrackDB оптимизирована под сверхнизкие задержки: прямой обход графа связей через B-Tree, точечные запросы через декларативный язык YQL (YouTrackDB SQL) и прямой доступ к памяти (Direct Memory).
+   - Быстрый запуск, отсутствие блокировок и деградации производительности на больших объемах почты.
 
-#### 3. Tiered Hybrid Blob Storage Pipeline
-Storage is dynamically partitioned based on payload dimensions:
-* **Tier 1 (< 4 KB)**: Small headers and raw metadata are written directly into YouTrackDB data pages ($O(1)$ key lookup, zero file I/O).
-* **Tier 2 (4 KB .. 64 KB)**: High-speed Zstandard (level 1) compression stored inside database pages.
-* **Tier 3 (> 64 KB)**: **Streaming to disk** — payloads larger than 64 KB are streamed from the input stream into `ZstdOutputStream` on disk with fixed-size buffers (64 KB probe + 8 KB transfer), so heap usage does not grow with the payload size. Files are organized using 3-level directory sharding (`var/blobs/{bucket}/ab/cd/ef/{blobId}`) with atomic durability (`ATOMIC_MOVE` + `fsync`), eliminating database fragmentation and WAL bloat.
+3. **Строгая надежность и сохранность данных (ACID & WAL)**
+   - Защита от сбоев питания и аварийных остановок благодаря полноценному Write-Ahead-Log (WAL) и синхронной фиксации транзакций.
+   - Любое письмо гарантированно сохранено в журнале до ответа клиенту `250 OK`.
 
-#### 4. ACID Durability (Write-Ahead Log)
-* **Committed before `250 OK`**: every mail queue item is committed (explicit commit) before `enQueue` returns, i.e. before the SMTP `250 OK`. Durability across a power loss additionally relies on `youtrackdb.storage.callFsync=true` (the engine default); it is not covered by the tests below.
-* **Crash & Contention Resilient**: Validated by extensive stress tests under concurrency, abrupt thread deaths, and abrupt network dropouts (`YouTrackDBAcidCrashTest`) with no corrupted records observed. These tests close the database normally; they do not simulate a power loss or `kill -9`.
-* **Non-Blocking Dispatch**: Uses an in-memory `DelayQueue` for microsecond dispatching while persisting the backing state on disk.
+4. **Двухуровневое сжатие и эффективное дисковое хранилище**
+   - Прозрачное сжатие тел писем через Zstandard (Zstd) и трехуровневое шардирование контента.
+   - Минимальный износ дисков (SSD/NVMe) за счет пакетной групповой записи и резидентных страниц в памяти.
 
-#### 5. Comprehensive Dual-Tier Backup System
-The server provides two complementary backup mechanisms tailored for different operational scenarios:
-* **Infrastructure Bare-Metal Hot Backup (`POST /youtrackdb/backup`)**:
-  * Triggers an online hot backup directly via the YouTrackDB engine (`traversalSource.backup(path)`) alongside filesystem blobs (`var/blobs`).
-  * Enables full disaster recovery (bare-metal restore) of the entire mail server with all users, domains, mailboxes, quotas, queues, and B-Tree indexes.
-  * Verified end-to-end via automated disaster recovery integration tests (`YouTrackDBBackupRestoreTest`).
-* **Logical Mailbox Export / Portability (`POST /users/{username}/mailboxes?task=export`)**:
-  * Triggers an asynchronous user mailbox export via James WebAdmin tasks.
-  * Packs the user's mailboxes and messages into a portable, standard ZIP archive of RFC 5322 EML files.
-  * Ideal for user account migrations, GDPR compliance, data portability, and selective mailbox restores.
+5. **Полная совместимость со стандартами IMAP4rev1 и IMAP4rev2**
+   - Честная поддержка обоих стандартов (RFC 3501 и RFC 9051) с динамическим переключением возможностей (`ENABLE IMAP4rev2`, `UNAUTHENTICATE`, автоматический `ESEARCH`, подавление устаревшего `RECENT`) «из коробки» без дополнительных конфигураций.
 
 ---
 
-### 📊 Benchmark: YouTrackDB vs. PostgreSQL 17.11
+### 🛠️ Поддерживаемые стандарты и стек
 
-A head-to-head load benchmark was executed on the same hardware environment under identical test conditions:
-* **Workload**: End-to-end SMTP mail injection ➔ spooling ➔ mailbox delivery ➔ IMAP verification.
-* **Volume**: **5,000 messages** under 8 concurrent worker threads.
-* **Storage Mode**: Full in-database storage (headers, envelope metadata, mail bodies, and attachments).
-
-#### Head-to-Head Comparison Table
-
-| Metric / Parameter | `postgres-app` (PostgreSQL 17.11) | `youtrackdb-app` (Initial Baseline) | `youtrackdb-app` (YQL + Streaming Optimized) | Advantage / Gain vs PostgreSQL |
-| :--- | :---: | :---: | :---: | :---: |
-| **Total Injected Messages** | 5,000 | 5,000 | **5,000** | — |
-| **Delivery & Verification Rate** | **5,000 / 5,000 (100%)** | **5,000 / 5,000 (100%)** | **5,000 / 5,000 (100%)** | **100% Reliable** |
-| **Failed Injections / Errors** | **0** | **0** | **0** | **No failed injections** |
-| **Total Benchmark Time** | **32.70 s** (32,700 ms) | 17.50 s | **13.70 s** (13,701 ms) | **2.4x faster** (-58% elapsed time) |
-| **Throughput** | **152.93 msgs/sec** | 280–300 msgs/sec | **364.94 msgs/sec** | **+138.6% (+212 msgs/sec)** |
-| **Min Latency** | **7.0 ms** | 4.0 ms | **4.0 ms** | **-43% lower** |
-| **Average Latency (Avg)** | **51.85 ms** | 26.80 ms | **21.31 ms** | **2.4x lower** (-59%) |
-| **Median Latency (P50)** | **42.0 ms** | 21.0 ms | **18.0 ms** | **2.3x lower** (-57%) |
-| **95th Percentile (P95)** | **126.0 ms** | 68.0 ms | **44.0 ms** | **2.9x lower** (-65%) |
-| **99th Percentile (P99)** | **287.0 ms** | 120.0 ms | **76.0 ms** | **3.8x lower** (-73.5%) |
-| **Max Latency (Tail)** | **3,909.0 ms** | 277.0 ms | **256.0 ms** | **15.3x lower** (predictable tail) |
-| **ACID Durability** | Active fsync | Active fsync + WAL | **Full ACID / active fsync + WAL** | — |
-| **Full Test Suite (`mvn test`)**| > 2 minutes | ~58 seconds | **~53 seconds** | **> 2x faster verification** |
-
----
-
-### 🛠️ Technology Stack & RFC Standards
-
-* **Database Engine**: JetBrains YouTrackDB (`io.youtrackdb:youtrackdb-core:0.5.0-SNAPSHOT`) with Apache TinkerPop Gremlin DSL and declarative YQL.
-* **Authentication & Users**: `YouTrackDBUsersDAO` with PBKDF2 password hashing and unique B-Tree indexing on `JamesUser.username`.
-* **Domain Management**: `YouTrackDBDomainList` enforcing standard domain normalization.
-* **Virtual Aliases**: `YouTrackDBRecipientRewriteTable` supporting alias, regex, error, forward, and group mapping rules with direct YQL projections.
-* **Full-Text Search**: Embedded Apache Lucene (`LuceneSearchMailboxModule`).
-* **Supported RFC Standards**:
-  * **SMTP / SMTPS**: RFC 5321 (Simple Mail Transfer Protocol), RFC 4954 (SMTP Authentication), RFC 3207 (STARTTLS) on Ports 25, 465, 587.
+* **База данных**: JetBrains YouTrackDB 0.5.0 (ветка `develop`) с прямым B-Tree доступом и декларативным YQL.
+* **Почтовое ядро**: Apache James 3.10.0 (ветка `master`).
+* **Платформа**: Java 21 (Microsoft Build of OpenJDK).
+* **Сетевые протоколы**:
+  * **SMTP / SMTPS**: RFC 5321, RFC 4954 (Auth), RFC 3207 (STARTTLS) на портах 25, 465, 587.
   * **Email Format**: RFC 5322 (Internet Message Format) & MIME RFC 2045–2049.
-  * **IMAP4rev1**: RFC 3501 (Internet Message Access Protocol) on Ports 143, 993.
-  * **IMAP Quotas**: RFC 9208 (IMAP QUOTA Extension) with per-user limits and strict usage calculations.
-  * **IMAP Annotations**: RFC 5464 (IMAP METADATA Extension) persisted in YouTrackDB.
-  * **ManageSieve**: RFC 5804 (Sieve Script Management Protocol) on Port 4190.
-  * **WebAdmin API**: Administrative REST API on Port 8000.
+  * **IMAP4rev1 & IMAP4rev2**: RFC 3501 и RFC 9051 на портах 143, 993.
+  * **IMAP Quotas & Metadata**: RFC 9208 (QUOTA) и RFC 5464 (METADATA).
+  * **ManageSieve**: RFC 5804 на порту 4190.
+  * **WebAdmin REST API**: порт 8000.
 
 ---
 
-### 🚀 Building & Running
+### 🚀 Сборка и запуск
 
-#### Requirements
-* Java 21+ OpenJDK
-* Maven 3.9+
+#### Требования
+* **Java 21** ([Microsoft Build of OpenJDK](https://www.microsoft.com/openjdk))
+* **Maven 3.9+**
 
-#### Build from Sources
+#### Сборка из исходников
 ```bash
-# 1. Build and install YouTrackDB core
+# 1. Сборка ядра YouTrackDB
 git clone https://github.com/JetBrains/youtrackdb.git
 cd youtrackdb
 mvn clean install -DskipTests
 
-# 2. Build youtrackdb-app
+# 2. Сборка почтового сервера
 cd /path/to/youtrackdb-app
-mvn clean package -Dcheckstyle.skip=true -DskipTests
+mvn clean package -DskipTests
 ```
 
-#### Run Tests & Benchmarks
-```bash
-# Run all unit and integration tests
-mvn clean test -Dcheckstyle.skip=true
-
-# Run the 5,000-message load benchmark
-mvn test -Dcheckstyle.skip=true -Dtest=YouTrackDBBenchmarkTest
-```
-
-#### Launch the Server
-```bash
-java -Dworking.directory=. -jar target/james-server-youtrackdb-app.jar
-```
+#### Запуск сервера
+* **Linux / macOS:**
+  ```bash
+  java -XX:+UseZGC -XX:+ZGenerational -Xms2g -Xmx4g -jar target/james-server-youtrackdb-app.jar
+  ```
+* **Windows:**
+  ```powershell
+  java -XX:+UseZGC -XX:+ZGenerational -Xms2g -Xmx4g -jar .\target\james-server-youtrackdb-app.jar
+  ```
 
 ---
 
-### 🛡️ WebAdmin Administration & Operations
+### 🛡️ Управление и мониторинг через WebAdmin
 
-#### Health & Integrity Check
+#### Проверка состояния базы данных
 ```bash
 curl -X GET http://localhost:8000/youtrackdb/check
 ```
-*Response:*
+*Ответ:*
 ```json
 {
   "status": "HEALTHY",
@@ -173,63 +97,12 @@ curl -X GET http://localhost:8000/youtrackdb/check
 }
 ```
 
-#### Standard James HealthCheck
-```bash
-curl -X GET http://localhost:8000/healthcheck
-```
-Includes the native `YouTrackDBHealthCheck` component reporting the live operational status of the embedded database engine directly in the standard JSON health response.
-
-#### Triggering an Online Hot Backup (Disaster Recovery)
+#### Горячий бэкап (Disaster Recovery)
 ```bash
 curl -X POST "http://localhost:8000/youtrackdb/backup?backupDir=var/backups"
 ```
-The server runs the backup as a WebAdmin task while it stays online: an incremental backup of the database plus a copy of the `var/blobs` tree (not atomic across the two).
 
-#### Exporting User Mailboxes (Portable ZIP Archive)
-```bash
-curl -X POST "http://localhost:8000/users/user@domain.local/mailboxes?task=export"
-```
-Creates an asynchronous WebAdmin task (`MailboxesExportTask`) that extracts all messages of the specified user into a portable ZIP archive.
-
-#### Blobs Garbage Collection (Orphan Blobs GC)
+#### Очистка осиротевших блобов (Garbage Collection)
 ```bash
 curl -X POST http://localhost:8000/youtrackdb/blobs/gc
-```
-*Response:*
-```json
-{
-  "status": "COMPLETED",
-  "deletedOrphanBlobs": 0
-}
-```
-Traverses the content-addressed blob directory and securely purges unreferenced orphaned payload files, reclaiming disk space.
-
----
-
-### ⚙️ Configuration & Storage Layout
-
-Default data directory layout in `var/`:
-* `var/youtrackdb/` — Embedded YouTrackDB graph database files, Lucene index segments, WAL, and in-database binary blobs (< 64 KB).
-* `var/blobs/` — Sharded directory structure for large attachments & message bodies (> 64 KB) with transparent Zstd compression.
-* `var/backups/` — Destination directory for online backups.
-
-#### 🗄️ Mailbox Storage Format & Canonical Identifiers
-* **`JamesMailbox.mailboxId` Format**: Mailbox identifiers strictly follow canonical uppercase UUID representation (e.g. `12345678-ABCD-EF01-2345-6789ABCDEF01`). 
-* **Startup Integrity Guard**: During schema initialization, YouTrackDB James inspects existing `JamesMailbox` records and refuses to boot with an explicit error if any lowercase or malformed identifier is detected.
-
-Optional configuration file: `conf/youtrackdb.properties`
-```properties
-# Custom path for YouTrackDB storage (defaults to var/youtrackdb)
-youtrackdb.path=var/youtrackdb
-
-# Dedicated path for Write-Ahead Log (WAL) to isolate sequential journal I/O from page cache I/O (optional)
-# youtrackdb.storage.wal.path=/fast_wal_nvme/youtrackdb_wal
-
-# High-throughput storage defaults for mail workloads (durable commits, tuned for mail workloads)
-youtrackdb.storage.diskCache.bufferSize=2048
-youtrackdb.storage.diskCache.writeCachePart=15
-youtrackdb.storage.diskCache.writeCachePageFlushInterval=25
-youtrackdb.storage.wal.bufferSize=128
-youtrackdb.storage.wal.cacheSize=65536
-youtrackdb.storage.wal.commitTimeout=50
 ```
