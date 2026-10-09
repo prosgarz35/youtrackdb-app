@@ -267,19 +267,14 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
 
     @Override
     public Mono<Boolean> hasChildren(Mailbox mailbox, char delimiter) {
-        String childPrefix = mailbox.getName() + delimiter;
+        String childPrefixPattern = mailbox.getName() + delimiter + "%";
         return Mono.fromCallable(() -> {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT FROM JamesMailbox WHERE namespace = :ns AND user = :user",
+                "SELECT 1 FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name LIKE :prefix LIMIT 1",
                 "ns", mailbox.getNamespace(),
-                "user", mailbox.getUser() != null ? mailbox.getUser().asString() : "");
-            for (Map<String, Object> row : rows) {
-                Object nameObj = row.get(PROP_NAME);
-                if (nameObj != null && nameObj.toString().startsWith(childPrefix)) {
-                    return true;
-                }
-            }
-            return false;
+                "user", mailbox.getUser() != null ? mailbox.getUser().asString() : "",
+                "prefix", childPrefixPattern);
+            return !rows.isEmpty();
         }).subscribeOn(Schedulers.boundedElastic());
     }
 

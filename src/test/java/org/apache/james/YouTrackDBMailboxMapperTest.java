@@ -268,4 +268,23 @@ public class YouTrackDBMailboxMapperTest {
         assertThat(annotAfter).isZero();
         assertThat(msgsAfter).isZero();
     }
+
+    @Test
+    void hasChildrenShouldCorrectlyDetectChildMailboxes() {
+        Username user = Username.of("alice");
+        Mailbox parent = mailboxMapper.create(MailboxPath.forUser(user, "INBOX"), UidValidity.of(10L)).block();
+        assertThat(mailboxMapper.hasChildren(parent, '.').block()).isFalse();
+
+        // Create child mailbox
+        mailboxMapper.create(MailboxPath.forUser(user, "INBOX.Archive"), UidValidity.of(11L)).block();
+        assertThat(mailboxMapper.hasChildren(parent, '.').block()).isTrue();
+
+        // Check child does not have children yet
+        Mailbox child = mailboxMapper.findMailboxByPath(MailboxPath.forUser(user, "INBOX.Archive")).block();
+        assertThat(mailboxMapper.hasChildren(child, '.').block()).isFalse();
+
+        // Check another unrelated mailbox
+        Mailbox unrelated = mailboxMapper.create(MailboxPath.forUser(user, "INBOX_OTHER"), UidValidity.of(12L)).block();
+        assertThat(mailboxMapper.hasChildren(unrelated, '.').block()).isFalse();
+    }
 }
