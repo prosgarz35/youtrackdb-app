@@ -133,6 +133,35 @@ class YouTrackDBWebAdminServerIntegrationTest implements JamesServerConcreteCont
     }
 
     @Test
+    void webAdminShouldExportUserMailboxes() throws Exception {
+        String exportDomain = "export.local";
+        String exportUser = "bob@" + exportDomain;
+        dataProbe.addDomain(exportDomain);
+        dataProbe.addUser(exportUser, "secret");
+        try {
+            String taskId = given()
+                .queryParam("task", "export")
+            .when()
+                .post("/users/" + exportUser + "/mailboxes")
+            .then()
+                .statusCode(HttpStatus.CREATED_201)
+                .header("Location", org.hamcrest.Matchers.startsWith("/tasks/"))
+                .extract()
+                .jsonPath()
+                .getString("taskId");
+
+            when()
+                .get("/tasks/" + taskId + "/await")
+            .then()
+                .statusCode(HttpStatus.OK_200)
+                .body("status", org.hamcrest.Matchers.equalTo("completed"))
+                .body("type", org.hamcrest.Matchers.equalTo("MailboxesExportTask"));
+        } finally {
+            dataProbe.removeDomain(exportDomain);
+        }
+    }
+
+    @Test
     void webAdminShouldRecomputeCurrentQuotas() throws Exception {
         dataProbe.addDomain(DOMAIN);
         dataProbe.addUser(USERNAME, "secret");
