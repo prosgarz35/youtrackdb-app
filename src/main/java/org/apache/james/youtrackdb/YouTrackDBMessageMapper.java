@@ -424,9 +424,9 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             String origMailboxId = original.getMailboxId().serialize();
             long origUid = original.getUid().asLong();
 
-            // Zero-copy: server-side query fetching content and attributes directly from original vertex
+            // Zero-copy: server-side query fetching content directly from original vertex
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT FROM JamesMailboxMessage WHERE mailboxId = :origMbx AND uid = :origUid",
+                "SELECT content FROM JamesMailboxMessage WHERE mailboxId = :origMbx AND uid = :origUid",
                 "origMbx", origMailboxId,
                 "origUid", origUid);
 

@@ -74,7 +74,7 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
 
                 String selectClause = (fetchType == MessageMapper.FetchType.METADATA)
                     ? "SELECT mailboxId, messageId, threadId, uid, modSeq, internalDate, saveDate, size, bodyStartOctet, flags, userFlags FROM JamesMailboxMessage"
-                    : "SELECT FROM JamesMailboxMessage";
+                    : "SELECT mailboxId, messageId, threadId, uid, modSeq, internalDate, saveDate, size, bodyStartOctet, flags, userFlags, content FROM JamesMailboxMessage";
 
                 List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                     selectClause + " WHERE messageId IN :mids",
