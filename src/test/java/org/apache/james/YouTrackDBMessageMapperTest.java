@@ -314,4 +314,26 @@ public class YouTrackDBMessageMapperTest {
             mailbox, MessageRange.one(MessageUid.of(1L)));
         assertThat(notDeleted).isEmpty();
     }
+
+    @Test
+    void moveShouldAtomicallyTransferMessageWithoutContentLoss() throws Exception {
+        Mailbox archive = mailboxMapper.create(MailboxPath.forUser(Username.of("alice"), "Archive"), UidValidity.of(54321L)).block();
+
+        SimpleMailboxMessage msg = createMessage("Important mail to archive", new Flags(Flag.FLAGGED));
+        MessageMetaData added = messageMapper.add(mailbox, msg);
+        assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(1L);
+        assertThat(messageMapper.countMessagesInMailbox(archive)).isEqualTo(0L);
+
+        MessageMetaData movedMeta = messageMapper.move(archive, msg);
+        assertThat(movedMeta.getUid()).isEqualTo(MessageUid.of(1L));
+        assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(0L);
+        assertThat(messageMapper.countMessagesInMailbox(archive)).isEqualTo(1L);
+
+        Iterator<MailboxMessage> archiveIt = messageMapper.findInMailbox(archive, MessageRange.one(movedMeta.getUid()), FetchType.FULL, 1);
+        assertThat(archiveIt.hasNext()).isTrue();
+        MailboxMessage movedMsg = archiveIt.next();
+        assertThat(movedMsg.isFlagged()).isTrue();
+        assertThat(new String(movedMsg.getFullContent().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8))
+            .contains("Important mail to archive");
+    }
 }

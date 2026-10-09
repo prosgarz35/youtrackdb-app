@@ -384,44 +384,24 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
         try {
             MessageUid newUid = uidProvider.nextUid(mailbox);
             ModSeq newModSeq = modSeqProvider.nextModSeq(mailbox);
+            long saveDateMs = clock.instant().toEpochMilli();
+
+            String newMailboxId = mailbox.getMailboxId().serialize();
+            String oldMailboxId = original.getMailboxId().serialize();
+            long oldUid = original.getUid().asLong();
+
+            YouTrackDBTransactions.executeStrictTx(g, tx ->
+                tx.command("UPDATE JamesMailboxMessage SET mailboxId = :newMbx, uid = :newUid, modSeq = :newModSeq, saveDate = :saveDate WHERE mailboxId = :oldMbx AND uid = :oldUid",
+                    "newMbx", newMailboxId,
+                    "newUid", newUid.asLong(),
+                    "newModSeq", newModSeq.asLong(),
+                    "saveDate", saveDateMs,
+                    "oldMbx", oldMailboxId,
+                    "oldUid", oldUid));
+
             SimpleMailboxMessage copy = SimpleMailboxMessage.copy(mailbox.getMailboxId(), original);
             copy.setUid(newUid);
             copy.setModSeq(newModSeq);
-
-            byte[] fullBytes;
-            try (InputStream is = copy.getFullContent()) {
-                fullBytes = IOUtils.toByteArray(is);
-            }
-
-            Set<String> systemFlags = extractSystemFlags(copy.createFlags());
-            Set<String> userFlags = extractUserFlags(copy.createFlags());
-            int bodyStart = (int) copy.getHeaderOctets();
-            long saveDateMs = clock.instant().toEpochMilli();
-            String threadId = original.getThreadId() != null && original.getThreadId().getBaseMessageId() != null
-                ? original.getThreadId().getBaseMessageId().serialize()
-                : original.getMessageId().serialize();
-
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                tx.addV(CLASS_NAME)
-                    .property(PROP_MAILBOX_ID, mailbox.getMailboxId().serialize())
-                    .property(PROP_MESSAGE_ID, copy.getMessageId().serialize())
-                    .property(PROP_THREAD_ID, threadId)
-                    .property(PROP_UID, copy.getUid().asLong())
-                    .property(PROP_MODSEQ, copy.getModSeq().asLong())
-                    .property(PROP_INTERNAL_DATE, copy.getInternalDate().getTime())
-                    .property(PROP_SAVE_DATE, saveDateMs)
-                    .property(PROP_SIZE, copy.getFullContentOctets())
-                    .property(PROP_BODY_START, bodyStart)
-                    .property(PROP_FLAGS, systemFlags)
-                    .property(PROP_USER_FLAGS, userFlags)
-                    .property(PROP_CONTENT, fullBytes)
-                    .iterate();
-
-                tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :mbx AND uid = :uid",
-                    "mbx", original.getMailboxId().serialize(),
-                    "uid", original.getUid().asLong());
-            });
-
             return copy.metaData();
         } catch (Exception e) {
             throw new MailboxException("Failed to move message " + original.getUid() + " to mailbox " + mailbox.getMailboxId().serialize(), e);
