@@ -129,15 +129,48 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
 
     @Override
     public List<MessageUid> retrieveMessagesMarkedForDeletion(Mailbox mailbox, MessageRange messageRange) throws MailboxException {
-        Iterator<MailboxMessage> it = findInMailbox(mailbox, messageRange, FetchType.METADATA, UNLIMITED);
-        List<MessageUid> result = new ArrayList<>();
-        while (it.hasNext()) {
-            MailboxMessage msg = it.next();
-            if (msg.isDeleted()) {
-                result.add(msg.getUid());
+        try {
+            String mailboxId = mailbox.getMailboxId().serialize();
+            String query;
+            List<Object> params = new ArrayList<>();
+            params.add("mbx");
+            params.add(mailboxId);
+
+            switch (messageRange.getType()) {
+                case ONE:
+                    query = "SELECT uid FROM " + CLASS_NAME + " WHERE mailboxId = :mbx AND uid = :uid AND flags CONTAINS 'DELETED'";
+                    params.add("uid");
+                    params.add(messageRange.getUidFrom().asLong());
+                    break;
+                case FROM:
+                    query = "SELECT uid FROM " + CLASS_NAME + " WHERE mailboxId = :mbx AND uid >= :from AND flags CONTAINS 'DELETED' ORDER BY uid ASC";
+                    params.add("from");
+                    params.add(messageRange.getUidFrom().asLong());
+                    break;
+                case RANGE:
+                    query = "SELECT uid FROM " + CLASS_NAME + " WHERE mailboxId = :mbx AND uid >= :from AND uid <= :to AND flags CONTAINS 'DELETED' ORDER BY uid ASC";
+                    params.add("from");
+                    params.add(messageRange.getUidFrom().asLong());
+                    params.add("to");
+                    params.add(messageRange.getUidTo().asLong());
+                    break;
+                case ALL:
+                default:
+                    query = "SELECT uid FROM " + CLASS_NAME + " WHERE mailboxId = :mbx AND flags CONTAINS 'DELETED' ORDER BY uid ASC";
+                    break;
             }
+
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, query, params.toArray());
+            List<MessageUid> result = new ArrayList<>(rows.size());
+            for (Map<String, Object> row : rows) {
+                if (row.get(PROP_UID) instanceof Number n) {
+                    result.add(MessageUid.of(n.longValue()));
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            throw new MailboxException("Failed to retrieve messages marked for deletion in mailbox " + mailbox.getMailboxId().serialize(), e);
         }
-        return result;
     }
 
     @Override
@@ -147,7 +180,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                 "SELECT count(*) AS cnt FROM JamesMailboxMessage WHERE mailboxId = :mbx",
                 "mbx", mailbox.getMailboxId().serialize());
             if (!rows.isEmpty()) {
-                Object cnt = rows.get(0).get("cnt");
+                Object cnt = rows.getFirst().get("cnt");
                 return cnt instanceof Number ? ((Number) cnt).longValue() : 0L;
             }
             return 0L;
@@ -162,7 +195,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                 "SELECT count(*) AS cnt FROM JamesMailboxMessage WHERE mailboxId = :mbx AND NOT (flags CONTAINS 'SEEN')",
                 "mbx", mailbox.getMailboxId().serialize());
-            if (!rows.isEmpty() && rows.get(0).get("cnt") instanceof Number n) {
+            if (!rows.isEmpty() && rows.getFirst().get("cnt") instanceof Number n) {
                 return n.longValue();
             }
             return 0L;
@@ -217,7 +250,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                 "SELECT min(uid) AS firstUnseen FROM JamesMailboxMessage WHERE mailboxId = :mbx AND NOT (flags CONTAINS 'SEEN')",
                 "mbx", mailbox.getMailboxId().serialize());
-            if (!rows.isEmpty() && rows.get(0).get("firstUnseen") instanceof Number n) {
+            if (!rows.isEmpty() && rows.getFirst().get("firstUnseen") instanceof Number n) {
                 return MessageUid.of(n.longValue());
             }
             return null;

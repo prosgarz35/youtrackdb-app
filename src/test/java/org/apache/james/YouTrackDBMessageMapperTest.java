@@ -286,4 +286,32 @@ public class YouTrackDBMessageMapperTest {
         assertThat(messageMapper.countUnseenMessagesInMailbox(mailbox)).isEqualTo(1L);
         assertThat(messageMapper.findFirstUnseenMessageUid(mailbox)).isEqualTo(MessageUid.of(3L));
     }
+
+    @Test
+    void retrieveMessagesMarkedForDeletionShouldFilterAccurately() throws Exception {
+        SimpleMailboxMessage msg1 = createMessage("Msg 1", new Flags());
+        SimpleMailboxMessage msg2 = createMessage("Msg 2", new Flags(Flag.DELETED));
+        SimpleMailboxMessage msg3 = createMessage("Msg 3", new Flags());
+        SimpleMailboxMessage msg4 = createMessage("Msg 4", new Flags(Flag.DELETED));
+
+        messageMapper.add(mailbox, msg1);
+        messageMapper.add(mailbox, msg2);
+        messageMapper.add(mailbox, msg3);
+        messageMapper.add(mailbox, msg4);
+
+        List<MessageUid> allDeleted = messageMapper.retrieveMessagesMarkedForDeletion(mailbox, MessageRange.all());
+        assertThat(allDeleted).containsExactly(MessageUid.of(2L), MessageUid.of(4L));
+
+        List<MessageUid> rangeDeleted = messageMapper.retrieveMessagesMarkedForDeletion(
+            mailbox, MessageRange.range(MessageUid.of(1L), MessageUid.of(3L)));
+        assertThat(rangeDeleted).containsExactly(MessageUid.of(2L));
+
+        List<MessageUid> oneDeleted = messageMapper.retrieveMessagesMarkedForDeletion(
+            mailbox, MessageRange.one(MessageUid.of(4L)));
+        assertThat(oneDeleted).containsExactly(MessageUid.of(4L));
+
+        List<MessageUid> notDeleted = messageMapper.retrieveMessagesMarkedForDeletion(
+            mailbox, MessageRange.one(MessageUid.of(1L)));
+        assertThat(notDeleted).isEmpty();
+    }
 }
