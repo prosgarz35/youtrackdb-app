@@ -5,7 +5,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.james.mailbox.model.MailboxAnnotation;
 import org.apache.james.mailbox.model.MailboxAnnotationKey;
 import org.apache.james.mailbox.model.MailboxId;
@@ -88,7 +87,7 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
     }
 
     private Predicate<MailboxAnnotationKey> filterAnnotationsByPrefix(final MailboxAnnotation input) {
-        return key -> key.equals(input.getKey()) || StringUtils.startsWith(input.getKey().asString(), key.asString() + "/");
+        return key -> key.equals(input.getKey()) || input.getKey().asString().startsWith(key.asString() + "/");
     }
 
     @Override

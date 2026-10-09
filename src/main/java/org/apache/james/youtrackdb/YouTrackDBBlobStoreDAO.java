@@ -372,15 +372,15 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 if (compressed == null || compressed.length == 0) {
                     return BytesBlob.of(new byte[0]);
                 }
-                long decompressedSize = com.github.luben.zstd.Zstd.decompressedSize(compressed);
-                if (decompressedSize > 0 && decompressedSize <= TIER2_DB_THRESHOLD * 2) {
-                    byte[] decompressed = com.github.luben.zstd.Zstd.decompress(compressed, (int) decompressedSize);
+                try {
+                    byte[] decompressed = com.github.luben.zstd.Zstd.decompress(compressed);
                     return BytesBlob.of(decompressed);
-                }
-                try (var is = new com.github.luben.zstd.ZstdInputStream(new ByteArrayInputStream(compressed))) {
-                    return BytesBlob.of(is.readAllBytes());
-                } catch (IOException e) {
-                    throw new ObjectStoreIOException("Error decompressing inline blob: " + key, e);
+                } catch (Exception e) {
+                    try (var is = new com.github.luben.zstd.ZstdInputStream(new ByteArrayInputStream(compressed))) {
+                        return BytesBlob.of(is.readAllBytes());
+                    } catch (IOException ioe) {
+                        throw new ObjectStoreIOException("Error decompressing inline blob: " + key, ioe);
+                    }
                 }
             } else if (STORAGE_FILE_ZSTD.equals(storageType) || LEGACY_STORAGE_FILE.equals(storageType)) {
                 File file = getFileForBlob(bucketName, blobId);
