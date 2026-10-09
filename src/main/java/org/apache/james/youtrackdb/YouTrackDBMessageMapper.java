@@ -40,6 +40,9 @@ import org.apache.james.mailbox.store.mail.utils.ApplicableFlagCalculator;
 import com.google.common.collect.ImmutableList;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
 public class YouTrackDBMessageMapper extends AbstractMessageMapper {
 
     private static final String CLASS_NAME = "JamesMailboxMessage";
@@ -275,6 +278,27 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
         } catch (Exception e) {
             throw new MailboxException("Failed to find recent messages in mailbox " + mailbox.getMailboxId().serialize(), e);
         }
+    }
+
+    @Override
+    public Flux<MessageUid> listAllMessageUids(Mailbox mailbox) {
+        return Mono.fromCallable(() -> {
+            try {
+                List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                    "SELECT uid FROM JamesMailboxMessage WHERE mailboxId = :mbx ORDER BY uid ASC",
+                    "mbx", mailbox.getMailboxId().serialize());
+                List<MessageUid> uids = new ArrayList<>(rows.size());
+                for (Map<String, Object> row : rows) {
+                    if (row.get(PROP_UID) instanceof Number n) {
+                        uids.add(MessageUid.of(n.longValue()));
+                    }
+                }
+                return uids;
+            } catch (Exception e) {
+                throw new MailboxException("Failed to list all message UIDs in mailbox " + mailbox.getMailboxId().serialize(), e);
+            }
+        }).flatMapMany(Flux::fromIterable)
+            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     @Override

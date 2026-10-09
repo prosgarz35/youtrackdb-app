@@ -368,4 +368,14 @@ public class YouTrackDBMessageMapperTest {
         assertThat(applicable.getUserFlags()).containsExactlyInAnyOrder("MyCustomFlag1", "MyCustomFlag2", "SharedFlag");
         assertThat(applicable.contains(Flag.SEEN)).isTrue();
     }
+
+    @Test
+    void listAllMessageUidsShouldReturnUidsOrdered() throws Exception {
+        messageMapper.add(mailbox, createMessage("Msg 1", new Flags()));
+        messageMapper.add(mailbox, createMessage("Msg 2", new Flags()));
+        messageMapper.add(mailbox, createMessage("Msg 3", new Flags()));
+
+        List<MessageUid> uids = messageMapper.listAllMessageUids(mailbox).collectList().block();
+        assertThat(uids).containsExactly(MessageUid.of(1L), MessageUid.of(2L), MessageUid.of(3L));
+    }
 }
