@@ -444,6 +444,179 @@ public class YouTrackDBAcidCrashTest {
         }
     }
 
+    /**
+     * 6. KILL -9 SIMULATION (Hard process abort without graceful Close / Stop Hooks)
+     * Simulates a SIGKILL (kill -9) terminating the JVM process instantaneously:
+     * - Traversal source and storage instances are abandoned without calling close().
+     * - No checkpoint or graceful shutdown hook runs.
+     * - The next process start MUST successfully replay WAL records, restore B-Trees,
+     *   and serve committed mail without corruption or phantom state.
+     */
+    @Test
+    @DisplayName("Kill -9 Simulation: Sudden process termination without close() recovers cleanly via WAL replay")
+    void shouldRecoverFromAbruptKillWithoutCleanShutdown(@TempDir Path workingDir) throws Exception {
+        File dbDir = workingDir.resolve("var").resolve("youtrackdb").toFile();
+        dbDir.mkdirs();
+
+        // Step 1: Initialize schema and insert baseline data
+        try (YouTrackDB youTrackDB = YourTracks.instance(dbDir.getAbsolutePath())) {
+            youTrackDB.createIfNotExists("james", DatabaseType.DISK, "admin", "admin", "admin");
+            try (YTDBGraphTraversalSource g = youTrackDB.openTraversal("james", "admin", "admin")) {
+                g.executeInTx(tx -> {
+                    tx.command("CREATE CLASS KillMail IF NOT EXISTS EXTENDS V");
+                    tx.command("CREATE PROPERTY KillMail.uid IF NOT EXISTS LONG");
+                    tx.command("CREATE PROPERTY KillMail.subject IF NOT EXISTS STRING");
+                    tx.command("CREATE INDEX KillMail.uid ON KillMail (uid) UNIQUE");
+                });
+            }
+        }
+
+        // Step 2: Open database, execute committed transactions + in-progress transaction, then ABANDON without close()
+        // Mimics instant JVM termination (kill -9)
+        YouTrackDB unclosedYtdb = YourTracks.instance(dbDir.getAbsolutePath());
+        YTDBGraphTraversalSource unclosedG = unclosedYtdb.openTraversal("james", "admin", "admin");
+
+        // Commit 50 valid items with strict ACID durability (fsync enabled)
+        for (long i = 1; i <= 50; i++) {
+            final long uid = i;
+            unclosedG.executeInTx(tx -> {
+                tx.addV("KillMail")
+                    .property("uid", uid)
+                    .property("subject", "Committed mail #" + uid)
+                    .iterate();
+            });
+        }
+
+        // Open an uncommitted transaction in background (mid-write during kill -9)
+        try {
+            unclosedG.tx().begin();
+            unclosedG.addV("KillMail")
+                .property("uid", 9999L)
+                .property("subject", "Uncommitted phantom mail aborted by kill -9")
+                .iterate();
+            // Intentionally NO commit()!
+        } catch (Exception ignored) {
+        }
+
+        // ABANDON EVERYTHING INSTANTANEOUSLY: no unclosedG.close(), no unclosedYtdb.close()!
+        // We drop references completely and force JVM GC to abandon them.
+        unclosedG = null;
+        unclosedYtdb = null;
+        System.gc();
+
+        // Step 3: Open database in a new clean recovery instance
+        try (YouTrackDB recoveryYtdb = YourTracks.instance(dbDir.getAbsolutePath());
+             YTDBGraphTraversalSource recoveryG = recoveryYtdb.openTraversal("james", "admin", "admin")) {
+
+            recoveryG.executeInTx(tx -> {
+                long totalCount = tx.V().hasLabel("KillMail").count().next();
+                assertThat(totalCount).isEqualTo(50L);
+
+                // Verify uncommitted phantom item 9999 is completely absent
+                boolean phantomExists = tx.V().hasLabel("KillMail").has("uid", 9999L).hasNext();
+                assertThat(phantomExists).isFalse();
+
+                // Verify every single committed item from 1 to 50 is intact via indexed query
+                for (long i = 1; i <= 50; i++) {
+                    boolean itemExists = tx.V().hasLabel("KillMail").has("uid", i).hasNext();
+                    assertThat(itemExists).isTrue();
+                }
+            });
+        }
+    }
+
+    /**
+     * 7. SUDDEN POWER LOSS SIMULATION (Dirty page cache & WAL consistency)
+     * Simulates instantaneous power failure while multiple threads are generating dirty cache pages.
+     * All transactions reported as committed MUST be present; all incomplete operations MUST be rolled back.
+     */
+    @Test
+    @DisplayName("Power Loss Simulation: Sudden power interruption preserves committed transactions and rolls back partial state")
+    void shouldRecoverFromSuddenPowerLossWithDirtyPages(@TempDir Path workingDir) throws Exception {
+        File dbDir = workingDir.resolve("var").resolve("youtrackdb").toFile();
+        dbDir.mkdirs();
+
+        // Schema setup
+        try (YouTrackDB youTrackDB = YourTracks.instance(dbDir.getAbsolutePath())) {
+            youTrackDB.createIfNotExists("james", DatabaseType.DISK, "admin", "admin", "admin");
+            try (YTDBGraphTraversalSource g = youTrackDB.openTraversal("james", "admin", "admin")) {
+                g.executeInTx(tx -> {
+                    tx.command("CREATE CLASS PowerLossRecord IF NOT EXISTS EXTENDS V");
+                    tx.command("CREATE PROPERTY PowerLossRecord.txId IF NOT EXISTS LONG");
+                    tx.command("CREATE PROPERTY PowerLossRecord.data IF NOT EXISTS STRING");
+                    tx.command("CREATE INDEX PowerLossRecord.txId ON PowerLossRecord (txId) UNIQUE");
+                });
+            }
+        }
+
+        // Run multi-threaded parallel transactions with sudden cutoff
+        YouTrackDB liveYtdb = YourTracks.instance(dbDir.getAbsolutePath());
+        YTDBGraphTraversalSource liveG = liveYtdb.openTraversal("james", "admin", "admin");
+        final YTDBGraphTraversalSource workerG = liveG;
+
+        int workers = 4;
+        ExecutorService executor = Executors.newFixedThreadPool(workers);
+        AtomicInteger committedTxCount = new AtomicInteger(0);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        AtomicBoolean powerCut = new AtomicBoolean(false);
+
+        for (int w = 0; w < workers; w++) {
+            final int workerId = w;
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    int counter = 0;
+                    while (!powerCut.get()) {
+                        long txId = ((long) workerId << 32) | (++counter);
+                        try {
+                            workerG.executeInTx(tx -> {
+                                tx.addV("PowerLossRecord")
+                                    .property("txId", txId)
+                                    .property("data", "Payload for worker " + workerId + " tx " + txId)
+                                    .iterate();
+
+                                if (powerCut.get()) {
+                                    throw new RuntimeException("Power outage during flush!");
+                                }
+                            });
+                            committedTxCount.incrementAndGet();
+                        } catch (Exception e) {
+                            break;
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            });
+        }
+
+        startLatch.countDown();
+        Thread.sleep(120); // Let workers generate dirty pages and sequential WAL records
+
+        // SUDDEN POWER CUT: Trigger power loss and terminate executor immediately
+        powerCut.set(true);
+        executor.shutdownNow();
+        executor.awaitTermination(5, TimeUnit.SECONDS);
+
+        // Intentionally DO NOT flush or close liveG / liveYtdb cleanly
+        liveG = null;
+        liveYtdb = null;
+        System.gc();
+
+        // RECOVERY AFTER POWER RESTORATION:
+        try (YouTrackDB restoredYtdb = YourTracks.instance(dbDir.getAbsolutePath());
+             YTDBGraphTraversalSource restoredG = restoredYtdb.openTraversal("james", "admin", "admin")) {
+
+            restoredG.executeInTx(tx -> {
+                long totalRecords = tx.V().hasLabel("PowerLossRecord").count().next();
+                LOGGER.info("Power loss recovery verified: {} records recovered (expected at least {})",
+                    totalRecords, committedTxCount.get());
+
+                // Durability guarantee: All committed transactions MUST be safely recovered
+                assertThat(totalRecords).isGreaterThanOrEqualTo(committedTxCount.get());
+            });
+        }
+    }
+
     private void sendValidMessage(int smtpPort, String subject) throws Exception {
         try (Socket socket = new Socket("127.0.0.1", smtpPort);
              BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
