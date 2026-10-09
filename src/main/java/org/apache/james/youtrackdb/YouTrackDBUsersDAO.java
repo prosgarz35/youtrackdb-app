@@ -110,13 +110,16 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
 
         try {
             YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_USERNAME, username.asString());
-                if (!traversal.hasNext()) {
+                boolean exists = !YouTrackDBTransactions.queryRows(tx,
+                    "SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1",
+                    "uname", username.asString()).isEmpty();
+                if (!exists) {
                     throw new UsersRepositoryException("User " + username.asString() + " not found to update");
                 }
-                var vertex = traversal.next();
-                vertex.property(PROP_PASSWORD, defaultUser.getHashedPassword());
-                vertex.property(PROP_ALGO, defaultUser.getHashAlgorithm().asString());
+                tx.command("UPDATE JamesUser SET password = :pwd, algorithm = :algo WHERE username = :uname",
+                    "pwd", defaultUser.getHashedPassword(),
+                    "algo", defaultUser.getHashAlgorithm().asString(),
+                    "uname", username.asString());
             });
             userCache.put(username, Optional.of(user));
         } catch (UsersRepositoryException e) {
@@ -131,12 +134,14 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
         boolean removed;
         try {
             removed = YouTrackDBTransactions.computeStrictTx(g, tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_USERNAME, name.asString());
-                if (traversal.hasNext()) {
-                    traversal.next().remove();
-                    return true;
+                boolean exists = !YouTrackDBTransactions.queryRows(tx,
+                    "SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1",
+                    "uname", name.asString()).isEmpty();
+                if (!exists) {
+                    return false;
                 }
-                return false;
+                tx.command("DELETE VERTEX JamesUser WHERE username = :uname", "uname", name.asString());
+                return true;
             });
         } catch (Exception e) {
             throw new UsersRepositoryException("Failed to remove user " + name.asString(), e);

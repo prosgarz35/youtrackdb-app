@@ -116,21 +116,24 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
 
         try {
             YouTrackDBTransactions.retryOnConflict(10, () -> {
-                YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                    var existing = tx.V().hasLabel(CLASS)
-                        .has(PROP_MAILBOX_ID, mId)
-                        .has(PROP_KEY, key)
-                        .tryNext();
-                    if (existing.isPresent()) {
-                        existing.get().property(PROP_VALUE, val);
-                    } else {
+                try {
+                    YouTrackDBTransactions.executeStrictTx(g, tx ->
                         tx.addV(CLASS)
                             .property(PROP_MAILBOX_ID, mId)
                             .property(PROP_KEY, key)
                             .property(PROP_VALUE, val)
-                            .iterate();
+                            .iterate());
+                } catch (Exception e) {
+                    if (YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)) {
+                        YouTrackDBTransactions.executeStrictTx(g, tx ->
+                            tx.command("UPDATE " + CLASS + " SET value = :val WHERE mailboxId = :mbx AND key = :key",
+                                "val", val,
+                                "mbx", mId,
+                                "key", key));
+                    } else {
+                        throw e;
                     }
-                });
+                }
                 return null;
             });
         } catch (Exception e) {
