@@ -113,6 +113,22 @@ public class YouTrackDBMailboxMapperTest {
     }
 
     @Test
+    void createAndFindSharedMailboxWithoutUserShouldWork() {
+        MailboxPath sharedPath = new MailboxPath("#shared", null, "Common");
+        UidValidity uidValidity = UidValidity.of(54321L);
+
+        Mailbox created = mailboxMapper.create(sharedPath, uidValidity).block();
+        assertThat(created).isNotNull();
+        assertThat(created.getName()).isEqualTo("Common");
+        assertThat(created.getUser()).isNull();
+
+        Mailbox found = mailboxMapper.findMailboxByPath(sharedPath).block();
+        assertThat(found).isNotNull();
+        assertThat(found.getMailboxId()).isEqualTo(created.getMailboxId());
+        assertThat(found.getUser()).isNull();
+    }
+
+    @Test
     void createDuplicateMailboxShouldFail() {
         MailboxPath path = MailboxPath.forUser(Username.of("alice"), "INBOX");
         mailboxMapper.create(path, UidValidity.of(12345L)).block();

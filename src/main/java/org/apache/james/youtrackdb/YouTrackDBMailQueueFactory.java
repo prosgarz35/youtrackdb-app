@@ -372,8 +372,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     for (YouTrackDBMailQueueItem item : snapshot) {
                         var traversal = tx.V().hasLabel(CLASS_NAME)
-                            .has(PROP_QUEUE_NAME, name.asString())
-                            .has(PROP_MAIL_NAME, item.getMail().getName());
+                            .has(PROP_ENQUEUE_ID, item.getEnqueueId());
                         if (traversal.hasNext()) {
                             traversal.next().property(PROP_NEXT_DELIVERY, now);
                         }
@@ -415,8 +414,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                         YouTrackDBTransactions.executeStrictTx(g, tx -> {
                             for (YouTrackDBMailQueueItem item : toBeRemoved) {
                                 var traversal = tx.V().hasLabel(CLASS_NAME)
-                                    .has(PROP_QUEUE_NAME, name.asString())
-                                    .has(PROP_MAIL_NAME, item.getMail().getName());
+                                    .has(PROP_ENQUEUE_ID, item.getEnqueueId());
                                 if (traversal.hasNext()) {
                                     traversal.next().remove();
                                 }

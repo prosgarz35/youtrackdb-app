@@ -152,10 +152,11 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
     @Override
     public Mono<Mailbox> findMailboxByPath(MailboxPath mailboxPath) {
         return Mono.fromCallable(() -> {
+            String userStr = mailboxPath.getUser() != null ? mailboxPath.getUser().asString() : "";
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                 "SELECT FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name",
                 "ns", mailboxPath.getNamespace(),
-                "user", mailboxPath.getUser().asString(),
+                "user", userStr,
                 "name", mailboxPath.getName());
             if (rows.isEmpty()) {
                 return Optional.<Mailbox>empty();

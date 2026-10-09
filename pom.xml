@@ -32,6 +32,7 @@
 
     <properties>
         <youtrackdb.version>0.5.0-SNAPSHOT</youtrackdb.version>
+        <surefire.excludedGroups>benchmark</surefire.excludedGroups>
     </properties>
 
     <dependencyManagement>
@@ -192,7 +193,7 @@
                     <reuseForks>false</reuseForks>
                     <forkCount>1C</forkCount>
                     <argLine>-Xms512m -Xmx1024m</argLine>
-                    <excludedGroups>benchmark</excludedGroups>
+                    <excludedGroups>${surefire.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
             <plugin>

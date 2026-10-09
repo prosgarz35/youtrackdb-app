@@ -261,4 +261,29 @@ public class YouTrackDBMessageMapperTest {
         assertThat(metaList.get(0).getFullContentOctets()).isEqualTo(payload20k.length);
         assertThat(fullList.get(0).getFullContent().readAllBytes()).hasSize(payload20k.length);
     }
+
+    @Test
+    void unseenAndRecentQueriesShouldBeAccurate() throws Exception {
+        SimpleMailboxMessage msg1 = createMessage("Msg 1", new Flags(Flag.RECENT));
+        SimpleMailboxMessage msg2 = createMessage("Msg 2", new Flags(Flag.SEEN));
+        SimpleMailboxMessage msg3 = createMessage("Msg 3", new Flags(Flag.RECENT));
+
+        messageMapper.add(mailbox, msg1);
+        messageMapper.add(mailbox, msg2);
+        messageMapper.add(mailbox, msg3);
+
+        assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(3L);
+        assertThat(messageMapper.countUnseenMessagesInMailbox(mailbox)).isEqualTo(2L);
+        assertThat(messageMapper.findFirstUnseenMessageUid(mailbox)).isEqualTo(MessageUid.of(1L));
+
+        List<MessageUid> recent = messageMapper.findRecentMessageUidsInMailbox(mailbox);
+        assertThat(recent).containsExactly(MessageUid.of(1L), MessageUid.of(3L));
+
+        // Mark msg1 as SEEN
+        FlagsUpdateCalculator seenCalculator = new FlagsUpdateCalculator(new Flags(Flag.SEEN), FlagsUpdateMode.ADD);
+        messageMapper.updateFlags(mailbox, seenCalculator, MessageRange.one(MessageUid.of(1L)));
+
+        assertThat(messageMapper.countUnseenMessagesInMailbox(mailbox)).isEqualTo(1L);
+        assertThat(messageMapper.findFirstUnseenMessageUid(mailbox)).isEqualTo(MessageUid.of(3L));
+    }
 }

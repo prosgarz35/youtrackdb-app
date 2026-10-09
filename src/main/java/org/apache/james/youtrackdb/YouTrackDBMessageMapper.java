@@ -157,15 +157,18 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     }
 
     @Override
-    protected long countUnseenMessagesInMailbox(Mailbox mailbox) throws MailboxException {
-        Iterator<MailboxMessage> it = findInMailbox(mailbox, MessageRange.all(), FetchType.METADATA, UNLIMITED);
-        long unseen = 0;
-        while (it.hasNext()) {
-            if (!it.next().isSeen()) {
-                unseen++;
+    public long countUnseenMessagesInMailbox(Mailbox mailbox) throws MailboxException {
+        try {
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT count(*) AS cnt FROM JamesMailboxMessage WHERE mailboxId = :mbx AND NOT (flags CONTAINS 'SEEN')",
+                "mbx", mailbox.getMailboxId().serialize());
+            if (!rows.isEmpty() && rows.get(0).get("cnt") instanceof Number n) {
+                return n.longValue();
             }
+            return 0L;
+        } catch (Exception e) {
+            throw new MailboxException("Failed to count unseen messages in mailbox " + mailbox.getMailboxId().serialize(), e);
         }
-        return unseen;
     }
 
     @Override
@@ -256,10 +259,10 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                     member.setFlags(flagsUpdateCalculator.buildNewFlags(originalFlags));
                     Flags newFlags = member.createFlags();
                     if (UpdatedFlags.flagsChanged(originalFlags, newFlags)) {
+                        long currentModSeq = member.getModSeq().asLong();
                         member.setModSeq(modSeq);
                         Set<String> systemFlags = extractSystemFlags(newFlags);
                         Set<String> userFlags = extractUserFlags(newFlags);
-                        long currentModSeq = member.getModSeq().asLong();
                         tx.command("UPDATE JamesMailboxMessage SET flags = :flags, userFlags = :userFlags, modSeq = :newModSeq WHERE mailboxId = :mbx AND uid = :uid AND (modSeq = :currModSeq OR modSeq < :newModSeq)",
                             "flags", systemFlags,
                             "userFlags", userFlags,
