@@ -10,9 +10,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -103,16 +105,11 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 throw e;
             }
             if (isOverwritable(blobId)) {
-                YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                    var existing = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-                    if (existing.hasNext()) {
-                        var vertex = existing.next();
-                        vertex.property(PROP_STORAGE_TYPE, storageType);
-                        vertex.property(PROP_PAYLOAD, payload);
-                    } else {
-                        addBlobVertex(tx, bucketName, blobId, key, storageType, payload);
-                    }
-                });
+                YouTrackDBTransactions.executeStrictTx(g, tx ->
+                    tx.command("UPDATE JamesBlob SET storageType = :st, payload = :payload WHERE bucketAndBlobId = :key",
+                        "st", storageType,
+                        "payload", payload,
+                        "key", key));
             }
         }
     }
@@ -279,18 +276,19 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     private record BlobMeta(String storageType, byte[] payload) {
     }
 
-    /** Reads the vertex in a short transaction; disk IO and decompression happen after it is closed. */
+    /** Reads the blob metadata in a short transaction; disk IO and decompression happen after it is closed. */
     private BlobMeta loadMeta(String key) {
-        return g.computeInTx(tx -> {
-            var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_KEY, key);
-            if (!traversal.hasNext()) {
-                return null;
-            }
-            var vertex = traversal.next();
-            String storageType = vertex.property(PROP_STORAGE_TYPE).isPresent() ? vertex.value(PROP_STORAGE_TYPE) : STORAGE_INLINE_RAW;
-            byte[] payload = vertex.value(PROP_PAYLOAD);
-            return new BlobMeta(storageType, payload);
-        });
+        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+            "SELECT storageType, payload FROM JamesBlob WHERE bucketAndBlobId = :key LIMIT 1",
+            "key", key);
+        if (rows.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> row = rows.getFirst();
+        Object storageTypeObj = row.get(PROP_STORAGE_TYPE);
+        String storageType = storageTypeObj != null ? storageTypeObj.toString() : STORAGE_INLINE_RAW;
+        byte[] payload = (byte[]) row.get(PROP_PAYLOAD);
+        return new BlobMeta(storageType, payload);
     }
 
     @Override
@@ -529,11 +527,12 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
             for (BlobId blobId : blobIds) {
                 files.put(blobId, getFileForBlob(bucketName, blobId));
             }
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                for (BlobId blobId : blobIds) {
-                    tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId = :key", "key", buildKey(bucketName, blobId));
-                }
-            });
+            List<String> keys = new ArrayList<>(blobIds.size());
+            for (BlobId blobId : blobIds) {
+                keys.add(buildKey(bucketName, blobId));
+            }
+            YouTrackDBTransactions.executeStrictTx(g, tx ->
+                tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId IN :keys", "keys", keys));
             files.forEach((blobId, file) -> {
                 String key = buildKey(bucketName, blobId);
                 java.util.concurrent.locks.Lock lock = stripedLocks.get(key);
