@@ -108,4 +108,60 @@ public class YouTrackDBStrictTxTest {
                 }))
                 .isInstanceOf(java.io.IOException.class));
     }
+
+    @Test
+    @DisplayName("retryOnConflict: successfully returns on first attempt without conflicts")
+    void retryOnConflictSucceedsImmediately() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        String result = YouTrackDBTransactions.retryOnConflict(() -> {
+            attempts.incrementAndGet();
+            return "ok";
+        });
+        assertThat(result).isEqualTo("ok");
+        assertThat(attempts.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("retryOnConflict: retries upon ConcurrentModificationException and succeeds")
+    void retryOnConflictRetriesAndSucceeds() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        String result = YouTrackDBTransactions.retryOnConflict(5, () -> {
+            if (attempts.incrementAndGet() < 3) {
+                throw new com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException(
+                    "james", new com.jetbrains.youtrackdb.internal.core.id.RecordId(1, 1), 1L, 2L, 1);
+            }
+            return "recovered";
+        });
+        assertThat(result).isEqualTo("recovered");
+        assertThat(attempts.get()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("retryOnConflict: does not retry non-retryable exceptions")
+    void retryOnConflictFailsFastOnNonRetryableException() {
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        assertThatThrownBy(() ->
+            YouTrackDBTransactions.retryOnConflict(5, () -> {
+                attempts.incrementAndGet();
+                throw new IllegalArgumentException("fatal validation error");
+            }))
+            .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(attempts.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("retryOnConflict: rethrows conflict exception when max retries exhausted")
+    void retryOnConflictExhaustsRetries() {
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        assertThatThrownBy(() ->
+            YouTrackDBTransactions.retryOnConflict(3, () -> {
+                attempts.incrementAndGet();
+                throw new com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException(
+                    "james", new com.jetbrains.youtrackdb.internal.core.id.RecordId(1, 1), 1L, 2L, 1);
+            }))
+            .isInstanceOf(com.jetbrains.youtrackdb.api.exception.ConcurrentModificationException.class);
+
+        assertThat(attempts.get()).isEqualTo(3);
+    }
 }
