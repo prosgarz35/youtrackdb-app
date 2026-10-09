@@ -21,6 +21,10 @@ import org.apache.james.user.lib.UsersDAO;
 import org.apache.james.user.lib.model.Algorithm;
 import org.apache.james.user.lib.model.DefaultUser;
 
+import java.time.Duration;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
@@ -32,6 +36,11 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
 
     private final YTDBGraphTraversalSource g;
     private volatile Algorithm algo;
+
+    private final Cache<Username, Optional<User>> userCache = Caffeine.newBuilder()
+        .maximumSize(10_000)
+        .expireAfterAccess(Duration.ofMinutes(15))
+        .build();
 
     public static final String DEFAULT_ALGORITHM = "PBKDF2-SHA512-210000";
 
@@ -57,6 +66,7 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
                 .property(PROP_PASSWORD, user.getHashedPassword())
                 .property(PROP_ALGO, user.getHashAlgorithm().asString())
                 .iterate());
+            userCache.put(username, Optional.of(user));
         } catch (Exception e) {
             if (YouTrackDBTransactions.hasCause(e, RecordDuplicatedException.class)) {
                 throw new AlreadyExistInUsersRepositoryException("User " + username.asString() + " already exists");
@@ -67,17 +77,25 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
 
     @Override
     public Optional<User> getUserByName(Username name) throws UsersRepositoryException {
+        Optional<User> cached = userCache.getIfPresent(name);
+        if (cached != null) {
+            return cached;
+        }
+
         try {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                 "SELECT password, algorithm FROM JamesUser WHERE username = :uname LIMIT 1", "uname", name.asString());
             if (rows.isEmpty()) {
+                userCache.put(name, Optional.empty());
                 return Optional.empty();
             }
             Map<String, Object> row = rows.get(0);
             Object storedPassword = row.get(PROP_PASSWORD);
             Object storedAlgo = row.get(PROP_ALGO);
             Algorithm userAlgo = storedAlgo != null ? Algorithm.of(storedAlgo.toString()) : algo;
-            return Optional.<User>of(new DefaultUser(name, storedPassword != null ? storedPassword.toString() : "", userAlgo, algo));
+            Optional<User> user = Optional.of(new DefaultUser(name, storedPassword != null ? storedPassword.toString() : "", userAlgo, algo));
+            userCache.put(name, user);
+            return user;
         } catch (Exception e) {
             throw new UsersRepositoryException("Failed to get user " + name.asString(), e);
         }
@@ -100,6 +118,7 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
                 vertex.property(PROP_PASSWORD, defaultUser.getHashedPassword());
                 vertex.property(PROP_ALGO, defaultUser.getHashAlgorithm().asString());
             });
+            userCache.put(username, Optional.of(user));
         } catch (UsersRepositoryException e) {
             throw e;
         } catch (Exception e) {
@@ -125,16 +144,16 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
         if (!removed) {
             throw new UsersRepositoryException("Unable to remove unknown user " + name.asString());
         }
+        userCache.invalidate(name);
     }
 
     @Override
     public boolean contains(Username name) throws UsersRepositoryException {
-        try {
-            return !YouTrackDBTransactions.queryRows(g,
-                "SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1", "uname", name.asString()).isEmpty();
-        } catch (Exception e) {
-            throw new UsersRepositoryException("Failed to check if user exists: " + name.asString(), e);
+        Optional<User> cached = userCache.getIfPresent(name);
+        if (cached != null) {
+            return cached.isPresent();
         }
+        return getUserByName(name).isPresent();
     }
 
     @Override

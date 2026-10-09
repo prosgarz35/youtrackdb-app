@@ -32,6 +32,11 @@ import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -51,8 +56,36 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final YTDBGraphTraversalSource g;
 
+    private final Cache<MailboxPath, Mailbox> mailboxByPathCache = Caffeine.newBuilder()
+        .maximumSize(50_000)
+        .expireAfterAccess(Duration.ofMinutes(15))
+        .build();
+
+    private final Cache<String, Mailbox> mailboxByIdCache = Caffeine.newBuilder()
+        .maximumSize(50_000)
+        .expireAfterAccess(Duration.ofMinutes(15))
+        .build();
+
     public YouTrackDBMailboxMapper(YTDBGraphTraversalSource g) {
         this.g = Objects.requireNonNull(g, "g must not be null");
+    }
+
+    private void invalidate(Mailbox mailbox) {
+        if (mailbox != null) {
+            if (mailbox.getMailboxId() != null) {
+                mailboxByIdCache.invalidate(mailbox.getMailboxId().serialize());
+            }
+            mailboxByPathCache.invalidate(mailbox.generateAssociatedPath());
+        }
+    }
+
+    private void putInCache(Mailbox mailbox) {
+        if (mailbox != null) {
+            mailboxByPathCache.put(mailbox.generateAssociatedPath(), mailbox);
+            if (mailbox.getMailboxId() != null) {
+                mailboxByIdCache.put(mailbox.getMailboxId().serialize(), mailbox);
+            }
+        }
     }
 
     @Override
@@ -91,6 +124,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 throw e;
             }
 
+            putInCache(mailbox);
             return mailbox;
         }).subscribeOn(Schedulers.boundedElastic());
     }
@@ -133,6 +167,11 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 throw e;
             }
 
+            // Invalidate old path and refresh cache
+            mailboxByIdCache.invalidate(mailbox.getMailboxId().serialize());
+            mailboxByPathCache.invalidateAll();
+            putInCache(mailbox);
+
             return mailbox.getMailboxId();
         }).subscribeOn(Schedulers.boundedElastic());
     }
@@ -146,12 +185,18 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 tx.command("DELETE VERTEX JamesMailboxAnnotation WHERE mailboxId = :id", "id", mId);
                 tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :id", "id", mId);
             });
+            invalidate(mailbox);
         }).subscribeOn(Schedulers.boundedElastic()).then();
     }
 
     @Override
     public Mono<Mailbox> findMailboxByPath(MailboxPath mailboxPath) {
         return Mono.fromCallable(() -> {
+            Mailbox cached = mailboxByPathCache.getIfPresent(mailboxPath);
+            if (cached != null) {
+                return Optional.of(cached);
+            }
+
             String userStr = mailboxPath.getUser() != null ? mailboxPath.getUser().asString() : "";
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                 "SELECT FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name",
@@ -161,7 +206,9 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             if (rows.isEmpty()) {
                 return Optional.<Mailbox>empty();
             }
-            return Optional.of(readMailbox(rows.get(0)));
+            Mailbox mailbox = readMailbox(rows.get(0));
+            putInCache(mailbox);
+            return Optional.of(mailbox);
         }).subscribeOn(Schedulers.boundedElastic())
           .flatMap(opt -> opt.map(Mono::just).orElseGet(Mono::empty));
     }
@@ -169,13 +216,20 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
     @Override
     public Mono<Mailbox> findMailboxById(MailboxId mailboxId) {
         return Mono.fromCallable(() -> {
+            Mailbox cached = mailboxByIdCache.getIfPresent(mailboxId.serialize());
+            if (cached != null) {
+                return Optional.of(cached);
+            }
+
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                 "SELECT FROM JamesMailbox WHERE mailboxId = :id",
                 "id", mailboxId.serialize());
             if (rows.isEmpty()) {
                 return Optional.<Mailbox>empty();
             }
-            return Optional.of(readMailbox(rows.get(0)));
+            Mailbox mailbox = readMailbox(rows.get(0));
+            putInCache(mailbox);
+            return Optional.of(mailbox);
         }).subscribeOn(Schedulers.boundedElastic())
           .flatMap(opt -> opt.map(Mono::just).orElseGet(Mono::empty))
           .switchIfEmpty(Mono.error(new MailboxNotFoundException(mailboxId)));
@@ -250,6 +304,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                     "id", mailbox.getMailboxId().serialize());
 
                 mailbox.setACL(newAcl);
+                putInCache(mailbox);
                 return ACLDiff.computeDiff(oldAcl, newAcl);
             });
         })).subscribeOn(Schedulers.boundedElastic());
@@ -270,6 +325,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                     "id", mailbox.getMailboxId().serialize());
 
                 mailbox.setACL(mailboxACL);
+                putInCache(mailbox);
                 return ACLDiff.computeDiff(oldAcl, mailboxACL);
             });
         })).subscribeOn(Schedulers.boundedElastic());
