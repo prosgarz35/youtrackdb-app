@@ -98,7 +98,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     String usernameStr = mailboxPath.getUser() != null ? mailboxPath.getUser().asString() : "";
                     List<Map<String, Object>> existing = YouTrackDBTransactions.queryRows(tx,
-                        "SELECT FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name",
+                        "SELECT 1 FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name LIMIT 1",
                         "ns", mailboxPath.getNamespace(),
                         "user", usernameStr,
                         "name", mailboxPath.getName());
@@ -138,7 +138,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     String usernameStr = mailbox.getUser() != null ? mailbox.getUser().asString() : "";
                     List<Map<String, Object>> existing = YouTrackDBTransactions.queryRows(tx,
-                        "SELECT FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name AND mailboxId <> :id",
+                        "SELECT 1 FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name AND mailboxId <> :id LIMIT 1",
                         "ns", mailbox.getNamespace(),
                         "user", usernameStr,
                         "name", mailbox.getName(),
@@ -148,7 +148,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                     }
 
                     List<Map<String, Object>> target = YouTrackDBTransactions.queryRows(tx,
-                        "SELECT FROM JamesMailbox WHERE mailboxId = :id",
+                        "SELECT 1 FROM JamesMailbox WHERE mailboxId = :id LIMIT 1",
                         "id", mailbox.getMailboxId().serialize());
                     if (target.isEmpty()) {
                         throw new MailboxNotFoundException(mailbox.getMailboxId());
@@ -344,7 +344,8 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
     @Override
     public Flux<Mailbox> list() {
         return Mono.fromCallable(() -> {
-            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, "SELECT FROM JamesMailbox");
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox");
             List<Mailbox> result = new ArrayList<>(rows.size());
             for (Map<String, Object> row : rows) {
                 result.add(readMailbox(row));
