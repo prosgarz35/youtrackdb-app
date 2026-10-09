@@ -41,7 +41,7 @@ public class YouTrackDBHealthCheck implements HealthCheck {
                 traversalSource.computeInTx(tx -> tx.yql("SELECT 1").toList());
                 return Result.healthy(COMPONENT_NAME);
             })
-            .subscribeOn(Schedulers.boundedElastic())
+            .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler())
             .timeout(Duration.ofSeconds(5))
             .onErrorResume(e -> Mono.just(Result.unhealthy(COMPONENT_NAME, "Failed to query YouTrackDB", e)));
     }

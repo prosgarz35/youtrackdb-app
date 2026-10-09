@@ -298,7 +298,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                 throw new MailboxException("Failed to list all message UIDs in mailbox " + mailbox.getMailboxId().serialize(), e);
             }
         }).flatMapMany(Flux::fromIterable)
-            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+            .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override

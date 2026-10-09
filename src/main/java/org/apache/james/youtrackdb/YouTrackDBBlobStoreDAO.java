@@ -350,7 +350,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
             }
         })
         .switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
-        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -402,7 +402,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
             }
         })
         .switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
-        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -492,7 +492,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
             } finally {
                 lock.unlock();
             }
-        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -519,7 +519,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
             } finally {
                 lock.unlock();
             }
-        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -552,7 +552,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                     lock.unlock();
                 }
             });
-        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -562,7 +562,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 tx.command("DELETE VERTEX JamesBlob WHERE bucket = :bucket", "bucket", bucketName.asString()));
             deleteTree(bucketDirOf(bucketName));
             deleteTree(hashedBucketDirOf(bucketName));
-        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -582,7 +582,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 return buckets;
             });
         }).flatMapMany(Flux::fromIterable)
-        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -605,7 +605,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 return blobIds;
             }))
             .flatMapMany(Flux::fromIterable)
-            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+            .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     public Mono<Long> countBlobs(BucketName bucketName, String prefix) {
@@ -616,7 +616,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 }
                 return 0L;
             }))
-            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+            .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     private static java.util.List<?> prefixQuery(YTDBGraphTraversalSource tx, String projection, BucketName bucketName, String prefix) {

@@ -126,7 +126,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
 
             putInCache(mailbox);
             return mailbox;
-        }).subscribeOn(Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -173,7 +173,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             putInCache(mailbox);
 
             return mailbox.getMailboxId();
-        }).subscribeOn(Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -186,7 +186,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :id", "id", mId);
             });
             invalidate(mailbox);
-        }).subscribeOn(Schedulers.boundedElastic()).then();
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler()).then();
     }
 
     @Override
@@ -209,7 +209,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             Mailbox mailbox = readMailbox(rows.getFirst());
             putInCache(mailbox);
             return Optional.of(mailbox);
-        }).subscribeOn(Schedulers.boundedElastic())
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler())
           .flatMap(opt -> opt.map(Mono::just).orElseGet(Mono::empty));
     }
 
@@ -230,7 +230,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             Mailbox mailbox = readMailbox(rows.getFirst());
             putInCache(mailbox);
             return Optional.of(mailbox);
-        }).subscribeOn(Schedulers.boundedElastic())
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler())
           .flatMap(opt -> opt.map(Mono::just).orElseGet(Mono::empty))
           .switchIfEmpty(Mono.error(new MailboxNotFoundException(mailboxId)));
     }
@@ -260,7 +260,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 result.add(readMailbox(row));
             }
             return result;
-        }).subscribeOn(Schedulers.boundedElastic())
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler())
           .flatMapIterable(list -> list)
           .filter(query::matches);
     }
@@ -275,7 +275,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 "user", mailbox.getUser() != null ? mailbox.getUser().asString() : "",
                 "prefix", childPrefixPattern);
             return !rows.isEmpty();
-        }).subscribeOn(Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     private boolean belongsToSameUser(Mailbox mailbox, Mailbox otherMailbox) {
@@ -302,7 +302,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 putInCache(mailbox);
                 return ACLDiff.computeDiff(oldAcl, newAcl);
             });
-        })).subscribeOn(Schedulers.boundedElastic());
+        })).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -323,7 +323,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 putInCache(mailbox);
                 return ACLDiff.computeDiff(oldAcl, mailboxACL);
             });
-        })).subscribeOn(Schedulers.boundedElastic());
+        })).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -350,7 +350,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 result.add(readMailbox(row));
             }
             return result;
-        }).subscribeOn(Schedulers.boundedElastic())
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler())
           .flatMapIterable(list -> list);
     }
 

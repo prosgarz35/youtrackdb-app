@@ -23,6 +23,14 @@ import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
  */
 public final class YouTrackDBTransactions {
 
+    private static final reactor.core.scheduler.Scheduler VIRTUAL_THREAD_SCHEDULER =
+        reactor.core.scheduler.Schedulers.fromExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+
+    /** Returns a Reactor Scheduler backed by Java 21 Virtual Threads for lightweight blocking I/O. */
+    public static reactor.core.scheduler.Scheduler virtualThreadScheduler() {
+        return VIRTUAL_THREAD_SCHEDULER;
+    }
+
     private YouTrackDBTransactions() {
     }
 

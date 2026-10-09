@@ -36,7 +36,7 @@ public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
         return Mono.fromCallable(() -> {
             CurrentQuotas quotas = retrieveQuotas(quotaRoot);
             return quotas.count();
-        }).subscribeOn(Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -44,26 +44,26 @@ public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
         return Mono.fromCallable(() -> {
             CurrentQuotas quotas = retrieveQuotas(quotaRoot);
             return quotas.size();
-        }).subscribeOn(Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
     public Mono<CurrentQuotas> getCurrentQuotas(QuotaRoot quotaRoot) {
         return Mono.fromCallable(() -> retrieveQuotas(quotaRoot))
-            .subscribeOn(Schedulers.boundedElastic());
+            .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
     public Mono<Void> increase(QuotaOperation quotaOperation) {
         return Mono.fromRunnable(() -> applyOperation(quotaOperation, 1L))
-            .subscribeOn(Schedulers.boundedElastic())
+            .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler())
             .then();
     }
 
     @Override
     public Mono<Void> decrease(QuotaOperation quotaOperation) {
         return Mono.fromRunnable(() -> applyOperation(quotaOperation, -1L))
-            .subscribeOn(Schedulers.boundedElastic())
+            .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler())
             .then();
     }
 
@@ -95,7 +95,7 @@ public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
             } catch (Exception e) {
                 throw new RuntimeException("Failed to set current quotas for " + rootVal, e);
             }
-        }).subscribeOn(Schedulers.boundedElastic()).then();
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler()).then();
     }
 
     private CurrentQuotas retrieveQuotas(QuotaRoot quotaRoot) {

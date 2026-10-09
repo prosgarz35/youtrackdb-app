@@ -88,7 +88,7 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
             } catch (Exception e) {
                 return Flux.error(new RuntimeException("Error finding messages by messageIds", e));
             }
-        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -111,7 +111,7 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
             } catch (Exception e) {
                 return Flux.error(e);
             }
-        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override

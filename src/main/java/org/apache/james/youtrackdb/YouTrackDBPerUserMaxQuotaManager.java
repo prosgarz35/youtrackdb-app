@@ -43,11 +43,11 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
     }
 
     private Mono<Void> blockingRunnable(Runnable action) {
-        return Mono.fromRunnable(action).subscribeOn(Schedulers.boundedElastic()).then();
+        return Mono.fromRunnable(action).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler()).then();
     }
 
     private <T> Mono<T> blockingSupplier(java.util.function.Supplier<Optional<T>> supplier) {
-        return Mono.fromSupplier(supplier).flatMap(Mono::justOrEmpty).subscribeOn(Schedulers.boundedElastic());
+        return Mono.fromSupplier(supplier).flatMap(Mono::justOrEmpty).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -248,7 +248,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
                 }
             }
             return new QuotaDetails(messageMap, storageMap);
-        }).subscribeOn(Schedulers.boundedElastic());
+        }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
