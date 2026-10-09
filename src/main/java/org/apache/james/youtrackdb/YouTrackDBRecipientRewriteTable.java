@@ -14,6 +14,8 @@ import org.apache.james.rrt.lib.MappingSource;
 import org.apache.james.rrt.lib.Mappings;
 import org.apache.james.rrt.lib.MappingsImpl;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
@@ -23,6 +25,9 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
     private static final String PROP_MAPPING = "mapping";
 
     private final YTDBGraphTraversalSource g;
+    private final Cache<MappingSource, Mappings> mappingsCache = Caffeine.newBuilder()
+        .maximumSize(50_000)
+        .build();
 
     @Inject
     public YouTrackDBRecipientRewriteTable(YTDBGraphTraversalSource g) {
@@ -36,6 +41,7 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
                 .property(PROP_SOURCE, source.asString())
                 .property(PROP_MAPPING, mapping.asString())
                 .iterate());
+            mappingsCache.invalidate(source);
         } catch (Exception e) {
             if (YouTrackDBTransactions.hasCause(e, RecordDuplicatedException.class)) {
                 return; // already exists (idempotent add)
@@ -50,6 +56,7 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
             YouTrackDBTransactions.executeStrictTx(g, tx ->
                 tx.command("DELETE VERTEX JamesRRTMapping WHERE source = :source AND mapping = :mapping",
                     "source", source.asString(), "mapping", mapping.asString()));
+            mappingsCache.invalidate(source);
         } catch (Exception e) {
             throw new RecipientRewriteTableException("Failed to remove mapping: " + source.asString() + " -> " + mapping.asString(), e);
         }
@@ -57,6 +64,11 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
 
     @Override
     public Mappings getStoredMappings(MappingSource source) throws RecipientRewriteTableException {
+        Mappings cached = mappingsCache.getIfPresent(source);
+        if (cached != null) {
+            return cached;
+        }
+
         try {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                 "SELECT mapping FROM JamesRRTMapping WHERE source = :src", "src", source.asString());
@@ -67,7 +79,9 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
                     mappings.add(Mapping.of(stored.toString()));
                 }
             }
-            return MappingsImpl.fromMappings(mappings.stream());
+            Mappings result = MappingsImpl.fromMappings(mappings.stream());
+            mappingsCache.put(source, result);
+            return result;
         } catch (Exception e) {
             throw new RecipientRewriteTableException("Failed to get stored mappings for " + source.asString(), e);
         }

@@ -379,7 +379,8 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
         try {
             byte[] fullBytes;
             try (InputStream is = message.getFullContent()) {
-                fullBytes = IOUtils.toByteArray(is);
+                long size = message.getFullContentOctets();
+                fullBytes = (size > 0 && size <= Integer.MAX_VALUE) ? is.readNBytes((int) size) : is.readAllBytes();
             }
 
             Set<String> systemFlags = extractSystemFlags(message.createFlags());
