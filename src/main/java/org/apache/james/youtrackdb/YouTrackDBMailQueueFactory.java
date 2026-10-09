@@ -13,6 +13,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
@@ -173,19 +174,21 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             try {
                 List<YouTrackDBMailQueueItem> recovered = g.computeInTx(tx -> {
                     List<YouTrackDBMailQueueItem> items = new ArrayList<>();
-                    var vertices = tx.V().hasLabel(CLASS_NAME)
-                        .has(PROP_QUEUE_NAME, name.asString())
-                        .toList();
-                    for (var v : vertices) {
+                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
+                        "SELECT enqueueId, serializedMail, nextDelivery FROM " + CLASS_NAME +
+                        " WHERE queueName = :qname ORDER BY nextDelivery ASC",
+                        "qname", name.asString());
+                    for (Map<String, Object> row : rows) {
                         try {
-                            String enqueueId = v.property(PROP_ENQUEUE_ID).isPresent()
-                                ? v.value(PROP_ENQUEUE_ID)
-                                : UUID.randomUUID().toString();
-                            byte[] data = v.value(PROP_SERIALIZED_MAIL);
-                            Long nextDeliveryMillis = v.property(PROP_NEXT_DELIVERY).isPresent() ? v.<Long>value(PROP_NEXT_DELIVERY) : 0L;
+                            String enqueueId = Objects.toString(row.get(PROP_ENQUEUE_ID), null);
+                            if (enqueueId == null) {
+                                enqueueId = UUID.randomUUID().toString();
+                            }
+                            byte[] data = (byte[]) row.get(PROP_SERIALIZED_MAIL);
+                            long nextDeliveryMillis = row.get(PROP_NEXT_DELIVERY) instanceof Number n ? n.longValue() : 0L;
                             if (data != null && data.length > 0) {
                                 Mail mail = deserializeMail(data);
-                                ZonedDateTime delivery = Instant.ofEpochMilli(nextDeliveryMillis != null ? nextDeliveryMillis : 0L).atZone(ZoneId.of("UTC"));
+                                ZonedDateTime delivery = Instant.ofEpochMilli(nextDeliveryMillis).atZone(ZoneId.of("UTC"));
                                 items.add(new YouTrackDBMailQueueItem(enqueueId, mail, this, clock, delivery));
                             }
                         } catch (Exception e) {
