@@ -125,14 +125,20 @@ public final class YouTrackDBTransactions {
         var list = tx.yql(query, params).toList();
         java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>(list.size());
         for (Object item : list) {
-            if (item instanceof java.util.Map<?, ?> m) {
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> casted = (java.util.Map<String, Object>) m;
-                rows.add(casted);
-            } else if (item instanceof org.apache.tinkerpop.gremlin.structure.Vertex v) {
-                java.util.Map<String, Object> map = new java.util.HashMap<>();
-                v.properties().forEachRemaining(p -> map.put(p.key(), p.value()));
-                rows.add(map);
+            switch (item) {
+                case java.util.Map<?, ?> m -> {
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, Object> casted = (java.util.Map<String, Object>) m;
+                    rows.add(casted);
+                }
+                case org.apache.tinkerpop.gremlin.structure.Vertex v -> {
+                    java.util.Map<String, Object> map = new java.util.HashMap<>();
+                    v.properties().forEachRemaining(p -> map.put(p.key(), p.value()));
+                    rows.add(map);
+                }
+                case null, default -> {
+                    // ignore null or unexpected entity types
+                }
             }
         }
         return rows;

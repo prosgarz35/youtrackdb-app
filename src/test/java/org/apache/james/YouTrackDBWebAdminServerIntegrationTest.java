@@ -104,6 +104,37 @@ class YouTrackDBWebAdminServerIntegrationTest implements JamesServerConcreteCont
     }
 
     @Test
+    void webAdminShouldManageAddressMappings() throws Exception {
+        String rrtDomain = "rrt.local";
+        dataProbe.addDomain(rrtDomain);
+        try {
+            when()
+                .post("/mappings/address/alias@" + rrtDomain + "/targets/dest@" + rrtDomain)
+            .then()
+                .statusCode(HttpStatus.NO_CONTENT_204);
+
+            when()
+                .get("/mappings")
+            .then()
+                .statusCode(HttpStatus.OK_200)
+                .body("'alias@" + rrtDomain + "'.mapping", hasItem("dest@" + rrtDomain));
+
+            when()
+                .delete("/mappings/address/alias@" + rrtDomain + "/targets/dest@" + rrtDomain)
+            .then()
+                .statusCode(HttpStatus.NO_CONTENT_204);
+
+            when()
+                .get("/mappings")
+            .then()
+                .statusCode(HttpStatus.OK_200)
+                .body("'alias@" + rrtDomain + "'", org.hamcrest.Matchers.nullValue());
+        } finally {
+            dataProbe.removeDomain(rrtDomain);
+        }
+    }
+
+    @Test
     void webAdminShouldCheckIntegrity() {
         when()
             .get("/youtrackdb/check")

@@ -50,6 +50,9 @@ public class YouTrackDBDeleteCommandsTest {
                     tx.command("CREATE CLASS JamesBlob IF NOT EXISTS EXTENDS V");
                     tx.command("CREATE PROPERTY JamesBlob.bucketAndBlobId IF NOT EXISTS STRING");
                     tx.command("CREATE PROPERTY JamesBlob.bucket IF NOT EXISTS STRING");
+                    tx.command("CREATE CLASS JamesDomain IF NOT EXISTS EXTENDS V");
+                    tx.command("CREATE PROPERTY JamesDomain.domain IF NOT EXISTS STRING");
+                    tx.command("CREATE INDEX JamesDomain.domain IF NOT EXISTS UNIQUE");
                     tx.command("CREATE CLASS JamesRRTMapping IF NOT EXISTS EXTENDS V");
                     tx.command("CREATE PROPERTY JamesRRTMapping.source IF NOT EXISTS STRING");
                     tx.command("CREATE PROPERTY JamesRRTMapping.mapping IF NOT EXISTS STRING");
@@ -142,6 +145,26 @@ public class YouTrackDBDeleteCommandsTest {
             boolean mappingExists = g.computeInTx(tx -> tx.V().hasLabel("JamesRRTMapping")
                 .has("source", "s1").has("mapping", "m1").hasNext());
             assertThat(mappingExists).isFalse();
+        });
+    }
+
+    @Test
+    @DisplayName("Domain delete command removes exact domain and preserves other domains")
+    void domainDeleteCommandRemovesExactDomain(@TempDir Path workingDir) throws Exception {
+        withGraph(workingDir, g -> {
+            for (String d : new String[] {"example.org", "domain.test"}) {
+                YouTrackDBTransactions.executeStrictTx(g, tx -> tx.addV("JamesDomain")
+                    .property("domain", d)
+                    .iterate());
+            }
+
+            YouTrackDBTransactions.executeStrictTx(g, tx ->
+                tx.command("DELETE VERTEX JamesDomain WHERE domain = :domain", "domain", "example.org"));
+
+            assertThat(count(g, "JamesDomain")).isEqualTo(1L);
+            boolean preserved = g.computeInTx(tx -> tx.V().hasLabel("JamesDomain")
+                .has("domain", "domain.test").hasNext());
+            assertThat(preserved).isTrue();
         });
     }
 

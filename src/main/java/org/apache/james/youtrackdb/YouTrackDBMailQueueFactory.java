@@ -131,6 +131,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         private final YTDBGraphTraversalSource g;
         private final Flux<MailQueueItem> flux;
         private final Scheduler scheduler;
+        private final Scheduler virtualThreadScheduler;
         private final Clock clock;
 
         public YouTrackDBMailQueue(MailQueueName name,
@@ -143,6 +144,8 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             this.mailItems = new DelayQueue<>();
             this.inProcessingMailItems = ConcurrentHashMap.newKeySet();
             this.scheduler = Schedulers.newSingle("ytdb-mail-queue-" + name.asString());
+            this.virtualThreadScheduler = Schedulers.fromExecutor(
+                java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
 
             // Recover persistent items from YouTrackDB on startup
             recoverItemsFromDatabase();
@@ -158,7 +161,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                         sink.success();
                     }
                 })
-                .subscribeOn(Schedulers.boundedElastic())
+                .subscribeOn(virtualThreadScheduler)
                 .repeat(() -> !closed)
                 .subscribeOn(scheduler)
                 .flatMap(item ->
@@ -212,6 +215,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             if (references.decrementAndGet() <= 0) {
                 this.closed = true;
                 this.scheduler.dispose();
+                this.virtualThreadScheduler.dispose();
                 mailItems.forEach(LifecycleUtil::dispose);
                 inProcessingMailItems.forEach(LifecycleUtil::dispose);
                 mailItems.clear();
@@ -268,14 +272,14 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         @Override
         public Publisher<Void> enqueueReactive(Mail mail) {
             return Mono.fromRunnable(Throwing.runnable(() -> enQueue(mail)).sneakyThrow())
-                .subscribeOn(Schedulers.boundedElastic())
+                .subscribeOn(virtualThreadScheduler)
                 .then();
         }
 
         @Override
         public Publisher<Void> enqueueReactive(Mail mail, Duration delay) {
             return Mono.fromRunnable(Throwing.runnable(() -> enQueue(mail, delay)).sneakyThrow())
-                .subscribeOn(Schedulers.boundedElastic())
+                .subscribeOn(virtualThreadScheduler)
                 .then();
         }
 

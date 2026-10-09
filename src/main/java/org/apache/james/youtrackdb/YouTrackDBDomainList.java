@@ -74,22 +74,15 @@ public class YouTrackDBDomainList extends AbstractDomainList {
 
     @Override
     protected void doRemoveDomain(Domain domain) throws DomainListException {
+        if (!containsDomain(domain)) {
+            throw new DomainListException(domain.name() + " was not found");
+        }
         String canon = canonicalDomain(domain);
-        boolean removed;
         try {
-            removed = YouTrackDBTransactions.computeStrictTx(g, tx -> {
-                var traversal = tx.V().hasLabel(CLASS_NAME).has(PROP_DOMAIN, canon);
-                if (traversal.hasNext()) {
-                    traversal.next().remove();
-                    return true;
-                }
-                return false;
-            });
+            YouTrackDBTransactions.executeStrictTx(g, tx ->
+                tx.command("DELETE VERTEX JamesDomain WHERE domain = :domain", "domain", canon));
         } catch (Exception e) {
             throw new DomainListException("Failed to remove domain: " + domain.name(), e);
-        }
-        if (!removed) {
-            throw new DomainListException(domain.name() + " was not found");
         }
     }
 }
