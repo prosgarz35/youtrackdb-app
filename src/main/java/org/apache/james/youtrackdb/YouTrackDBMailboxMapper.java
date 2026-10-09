@@ -199,7 +199,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
 
             String userStr = mailboxPath.getUser() != null ? mailboxPath.getUser().asString() : "";
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name",
+                "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name",
                 "ns", mailboxPath.getNamespace(),
                 "user", userStr,
                 "name", mailboxPath.getName());
@@ -222,7 +222,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             }
 
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT FROM JamesMailbox WHERE mailboxId = :id",
+                "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE mailboxId = :id",
                 "id", mailboxId.serialize());
             if (rows.isEmpty()) {
                 return Optional.<Mailbox>empty();
@@ -243,16 +243,16 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             String sql;
             List<Map<String, Object>> rows;
             if (fixedNamespace != null && fixedUser != null) {
-                sql = "SELECT FROM JamesMailbox WHERE namespace = :ns AND user = :user";
+                sql = "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns AND user = :user";
                 rows = YouTrackDBTransactions.queryRows(g, sql, "ns", fixedNamespace, "user", fixedUser);
             } else if (fixedNamespace != null) {
-                sql = "SELECT FROM JamesMailbox WHERE namespace = :ns";
+                sql = "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns";
                 rows = YouTrackDBTransactions.queryRows(g, sql, "ns", fixedNamespace);
             } else if (fixedUser != null) {
-                sql = "SELECT FROM JamesMailbox WHERE user = :user";
+                sql = "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE user = :user";
                 rows = YouTrackDBTransactions.queryRows(g, sql, "user", fixedUser);
             } else {
-                sql = "SELECT FROM JamesMailbox";
+                sql = "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox";
                 rows = YouTrackDBTransactions.queryRows(g, sql);
             }
             List<Mailbox> result = new ArrayList<>(rows.size());
@@ -360,7 +360,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
 
     private Mailbox findMailboxByIdSync(YTDBGraphTraversalSource traversal, MailboxId mailboxId) {
         List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(traversal,
-            "SELECT FROM JamesMailbox WHERE mailboxId = :id",
+            "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE mailboxId = :id",
             "id", mailboxId.serialize());
         if (rows.isEmpty()) {
             return null;

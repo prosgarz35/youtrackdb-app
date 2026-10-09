@@ -190,10 +190,12 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesMailboxMessage.bodyStartOctet IF NOT EXISTS INTEGER");
                     g.command("CREATE PROPERTY JamesMailboxMessage.flags IF NOT EXISTS EMBEDDEDSET STRING");
                     g.command("CREATE PROPERTY JamesMailboxMessage.userFlags IF NOT EXISTS EMBEDDEDSET STRING");
+                    g.command("CREATE PROPERTY JamesMailboxMessage.isSeen IF NOT EXISTS BOOLEAN");
                     g.command("CREATE PROPERTY JamesMailboxMessage.content IF NOT EXISTS BINARY");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndUid IF NOT EXISTS ON JamesMailboxMessage (mailboxId, uid) UNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndFlags IF NOT EXISTS ON JamesMailboxMessage (mailboxId, flags) NOTUNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndModSeq IF NOT EXISTS ON JamesMailboxMessage (mailboxId, modSeq) NOTUNIQUE");
+                    g.command("CREATE INDEX JamesMailboxMessage.mailboxAndIsSeen IF NOT EXISTS ON JamesMailboxMessage (mailboxId, isSeen) NOTUNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.messageId IF NOT EXISTS NOTUNIQUE");
 
                     // Classes for Quotas

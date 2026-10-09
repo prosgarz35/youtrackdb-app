@@ -57,6 +57,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     private static final String PROP_BODY_START = "bodyStartOctet";
     private static final String PROP_FLAGS = "flags";
     private static final String PROP_USER_FLAGS = "userFlags";
+    private static final String PROP_IS_SEEN = "isSeen";
     private static final String PROP_CONTENT = "content";
 
     private final YTDBGraphTraversalSource g;
@@ -196,7 +197,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     public long countUnseenMessagesInMailbox(Mailbox mailbox) throws MailboxException {
         try {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT count(*) AS cnt FROM JamesMailboxMessage WHERE mailboxId = :mbx AND NOT (flags CONTAINS 'SEEN')",
+                "SELECT count(*) AS cnt FROM JamesMailboxMessage WHERE mailboxId = :mbx AND (isSeen = false OR (isSeen IS NULL AND NOT (flags CONTAINS 'SEEN')))",
                 "mbx", mailbox.getMailboxId().serialize());
             if (!rows.isEmpty() && rows.getFirst().get("cnt") instanceof Number n) {
                 return n.longValue();
@@ -251,7 +252,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     public MessageUid findFirstUnseenMessageUid(Mailbox mailbox) throws MailboxException {
         try {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT uid FROM JamesMailboxMessage WHERE mailboxId = :mbx AND NOT (flags CONTAINS 'SEEN') ORDER BY uid ASC LIMIT 1",
+                "SELECT uid FROM JamesMailboxMessage WHERE mailboxId = :mbx AND (isSeen = false OR (isSeen IS NULL AND NOT (flags CONTAINS 'SEEN'))) ORDER BY uid ASC LIMIT 1",
                 "mbx", mailbox.getMailboxId().serialize());
             if (!rows.isEmpty() && rows.getFirst().get(PROP_UID) instanceof Number n) {
                 return MessageUid.of(n.longValue());
@@ -345,9 +346,11 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                         member.setModSeq(modSeq);
                         Set<String> systemFlags = extractSystemFlags(newFlags);
                         Set<String> userFlags = extractUserFlags(newFlags);
-                        tx.command("UPDATE JamesMailboxMessage SET flags = :flags, userFlags = :userFlags, modSeq = :newModSeq WHERE mailboxId = :mbx AND uid = :uid AND (modSeq = :currModSeq OR modSeq < :newModSeq)",
+                        boolean isSeen = systemFlags.contains("SEEN");
+                        tx.command("UPDATE JamesMailboxMessage SET flags = :flags, userFlags = :userFlags, isSeen = :isSeen, modSeq = :newModSeq WHERE mailboxId = :mbx AND uid = :uid AND (modSeq = :currModSeq OR modSeq < :newModSeq)",
                             "flags", systemFlags,
                             "userFlags", userFlags,
+                            "isSeen", isSeen,
                             "newModSeq", modSeq.asLong(),
                             "mbx", mailbox.getMailboxId().serialize(),
                             "uid", member.getUid().asLong(),
@@ -401,6 +404,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                     .property(PROP_BODY_START, bodyStart)
                     .property(PROP_FLAGS, systemFlags)
                     .property(PROP_USER_FLAGS, userFlags)
+                    .property(PROP_IS_SEEN, systemFlags.contains("SEEN"))
                     .property(PROP_CONTENT, fullBytes)
                     .iterate();
             });
@@ -448,6 +452,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                         .property(PROP_BODY_START, bodyStart)
                         .property(PROP_FLAGS, systemFlags)
                         .property(PROP_USER_FLAGS, userFlags)
+                        .property(PROP_IS_SEEN, systemFlags.contains("SEEN"))
                         .property(PROP_CONTENT, content != null ? content : new byte[0])
                         .iterate();
                 });

@@ -95,9 +95,11 @@ public class YouTrackDBMessageMapperTest {
             tx.command("CREATE PROPERTY JamesMailboxMessage.bodyStartOctet IF NOT EXISTS INTEGER");
             tx.command("CREATE PROPERTY JamesMailboxMessage.flags IF NOT EXISTS EMBEDDEDSET STRING");
             tx.command("CREATE PROPERTY JamesMailboxMessage.userFlags IF NOT EXISTS EMBEDDEDSET STRING");
+            tx.command("CREATE PROPERTY JamesMailboxMessage.isSeen IF NOT EXISTS BOOLEAN");
             tx.command("CREATE PROPERTY JamesMailboxMessage.content IF NOT EXISTS BINARY");
             tx.command("CREATE INDEX JamesMailboxMessage.mailboxAndUid IF NOT EXISTS ON JamesMailboxMessage (mailboxId, uid) UNIQUE");
             tx.command("CREATE INDEX JamesMailboxMessage.mailboxId IF NOT EXISTS NOTUNIQUE");
+            tx.command("CREATE INDEX JamesMailboxMessage.mailboxAndIsSeen IF NOT EXISTS ON JamesMailboxMessage (mailboxId, isSeen) NOTUNIQUE");
         });
 
         mailboxMapper = new YouTrackDBMailboxMapper(g);
@@ -502,5 +504,25 @@ public class YouTrackDBMessageMapperTest {
 
         Iterator<MailboxMessage> workIt = messageMapper.findInMailbox(otherMailbox, MessageRange.all(), FetchType.METADATA, 1);
         assertThat(workIt.next().isSeen()).isTrue();
+    }
+
+    @Test
+    void unseenMessagesOptimizationShouldWorkCorrectly() throws Exception {
+        SimpleMailboxMessage msg1 = createMessage(mailbox, YouTrackDBMessageId.generate(), "Unseen 1", new Flags());
+        SimpleMailboxMessage msg2 = createMessage(mailbox, YouTrackDBMessageId.generate(), "Seen 2", new Flags(Flag.SEEN));
+        SimpleMailboxMessage msg3 = createMessage(mailbox, YouTrackDBMessageId.generate(), "Unseen 3", new Flags());
+
+        messageMapper.add(mailbox, msg1);
+        messageMapper.add(mailbox, msg2);
+        messageMapper.add(mailbox, msg3);
+
+        assertThat(messageMapper.countUnseenMessagesInMailbox(mailbox)).isEqualTo(2L);
+        assertThat(messageMapper.findFirstUnseenMessageUid(mailbox)).isEqualTo(msg1.getUid());
+
+        // Mark msg1 as SEEN
+        messageMapper.updateFlags(mailbox, new FlagsUpdateCalculator(new Flags(Flag.SEEN), FlagsUpdateMode.ADD), MessageRange.one(msg1.getUid()));
+
+        assertThat(messageMapper.countUnseenMessagesInMailbox(mailbox)).isEqualTo(1L);
+        assertThat(messageMapper.findFirstUnseenMessageUid(mailbox)).isEqualTo(msg3.getUid());
     }
 }
