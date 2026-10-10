@@ -1,5 +1,0 @@
-#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
-#Tue Sep 29 12:53:25 ICT 2026
-event-sourcing-event-store-cassandra-3.10.0-SNAPSHOT-tests.jar>=
-event-sourcing-event-store-cassandra-3.10.0-SNAPSHOT.jar>=
-event-sourcing-event-store-cassandra-3.10.0-SNAPSHOT.pom>=

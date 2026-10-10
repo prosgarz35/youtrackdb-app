@@ -1,5 +1,0 @@
-#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
-#Tue Sep 29 12:53:45 ICT 2026
-james-server-data-jmap-3.10.0-SNAPSHOT-tests.jar>=
-james-server-data-jmap-3.10.0-SNAPSHOT.jar>=
-james-server-data-jmap-3.10.0-SNAPSHOT.pom>=

@@ -1,5 +1,0 @@
-#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
-#Tue Sep 29 13:41:34 ICT 2026
-metrics-logger-3.10.0-SNAPSHOT-tests.jar>=
-metrics-logger-3.10.0-SNAPSHOT.jar>=
-metrics-logger-3.10.0-SNAPSHOT.pom>=
