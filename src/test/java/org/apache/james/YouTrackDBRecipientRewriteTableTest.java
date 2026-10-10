@@ -92,4 +92,20 @@ public class YouTrackDBRecipientRewriteTableTest {
         Mappings mappings = rrt.getStoredMappings(source);
         assertThat(mappings.asStrings()).containsExactly(mapping.asString());
     }
+
+    @Test
+    void getAllMappingsShouldReturnAllGroupedMappings() throws Exception {
+        MappingSource source1 = MappingSource.fromUser("user1", Domain.of("example.com"));
+        MappingSource source2 = MappingSource.fromUser("user2", Domain.of("example.com"));
+        Mapping mapping1 = Mapping.alias("user1-alias@example.com");
+        Mapping mapping2 = Mapping.forward("user2-forward@example.com");
+
+        rrt.addMapping(source1, mapping1);
+        rrt.addMapping(source2, mapping2);
+
+        var all = rrt.getAllMappings();
+        assertThat(all).hasSize(2);
+        assertThat(all.get(source1).asStrings()).containsExactly(mapping1.asString());
+        assertThat(all.get(source2).asStrings()).containsExactly(mapping2.asString());
+    }
 }

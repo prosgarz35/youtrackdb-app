@@ -93,11 +93,11 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
                 .filter(row -> row.get(PROP_SOURCE) != null && row.get(PROP_MAPPING) != null)
                 .collect(java.util.stream.Collectors.groupingBy(
                     row -> MappingSource.parse(row.get(PROP_SOURCE).toString()),
-                    java.util.stream.Collectors.mapping(
-                        row -> Mapping.of(row.get(PROP_MAPPING).toString()),
-                        java.util.stream.Collectors.collectingAndThen(
-                            java.util.stream.Collectors.toList(),
-                            list -> MappingsImpl.fromMappings(list.stream())))));
+                    java.util.stream.Collector.of(
+                        MappingsImpl::builder,
+                        (builder, row) -> builder.add(Mapping.of(row.get(PROP_MAPPING).toString())),
+                        (b1, b2) -> { b1.addAll(b2.build()); return b1; },
+                        MappingsImpl.Builder::build)));
         } catch (Exception e) {
             throw new RecipientRewriteTableException("Failed to get all mappings", e);
         }
