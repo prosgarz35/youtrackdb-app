@@ -116,7 +116,7 @@ public class YouTrackDBMimePartsGc {
             if (metadata == null || metadata.payload() == null) {
                 return Set.of();
             }
-            return new HashSet<>(YouTrackDBMetadataUtils.extractReferencedPartIds(metadata.payload()));
+            return Set.copyOf(YouTrackDBMetadataUtils.extractReferencedPartIds(metadata.payload()));
         } catch (ObjectNotFoundException e) {
             return Set.of();
         } catch (Exception e) {

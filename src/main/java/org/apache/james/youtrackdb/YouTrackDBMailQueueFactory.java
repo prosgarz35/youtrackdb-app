@@ -46,8 +46,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.github.fge.lambdas.Throwing;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
 import reactor.core.publisher.Flux;
@@ -96,7 +94,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         return mailQueues.values()
             .stream()
             .map(YouTrackDBMailQueue::getName)
-            .collect(ImmutableSet.toImmutableSet());
+            .collect(java.util.stream.Collectors.toSet());
     }
 
     @Override
@@ -476,7 +474,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
         @Override
         public MailQueueIterator browse() {
-            Iterator<DefaultMailQueueItemView> underlying = ImmutableList.copyOf(mailItems)
+            Iterator<DefaultMailQueueItemView> underlying = List.copyOf(mailItems)
                 .stream()
                 .map(item -> new DefaultMailQueueItemView(item.getMail(), Optional.of(item.delivery)))
                 .iterator();

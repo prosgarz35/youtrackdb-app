@@ -11,7 +11,6 @@ import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -177,12 +176,9 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
      * hashed names used for ids that cannot be path segments (for example "var/mail/error/mailMetadata/x").
      */
     public static java.util.Set<String> fileNamesToKeep(Collection<String> blobIds) {
-        java.util.Set<String> names = new HashSet<>();
-        for (String blobId : blobIds) {
-            names.add(blobId);
-            names.add(sha256Hex(blobId));
-        }
-        return names;
+        return blobIds.stream()
+            .flatMap(blobId -> java.util.stream.Stream.of(blobId, sha256Hex(blobId)))
+            .collect(java.util.stream.Collectors.toSet());
     }
 
     /** var/blobs/{bucket}; a bucket that is not a plain segment gets a hashed directory instead of a traversal. */
