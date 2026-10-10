@@ -39,7 +39,8 @@ under the License.
         <jmxName>imapserver-ssl</jmxName>
         <bind>0.0.0.0:0</bind>
         <connectionBacklog>200</connectionBacklog>
-        <tls socketTLS="false" startTLS="true">
+        <!-- Port 993: forced SSL -->
+        <tls socketTLS="true" startTLS="false">
             <privateKey>classpath://private.key</privateKey>
             <certificates>classpath://certs.self-signed.csr</certificates>
             <secret>123456</secret>

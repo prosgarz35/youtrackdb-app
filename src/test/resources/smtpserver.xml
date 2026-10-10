@@ -24,7 +24,8 @@
         <jmxName>smtpserver-global</jmxName>
         <bind>0.0.0.0:0</bind>
         <connectionBacklog>200</connectionBacklog>
-        <tls socketTLS="false" startTLS="false">
+        <!-- Port 25: opportunistic STARTTLS (on request) -->
+        <tls socketTLS="false" startTLS="true">
             <privateKey>classpath://private.key</privateKey>
             <certificates>classpath://certs.self-signed.csr</certificates>
             <secret>123456</secret>
@@ -37,7 +38,6 @@
             <requireSSL>false</requireSSL>
             <plainAuthEnabled>true</plainAuthEnabled>
         </auth>
-        <authorizedAddresses>127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16</authorizedAddresses>
         <verifyIdentity>false</verifyIdentity>
         <maxmessagesize>0</maxmessagesize>
         <addressBracketsEnforcement>true</addressBracketsEnforcement>
@@ -52,7 +52,8 @@
         <jmxName>smtpserver-TLS</jmxName>
         <bind>0.0.0.0:0</bind>
         <connectionBacklog>200</connectionBacklog>
-        <tls socketTLS="false" startTLS="false">
+        <!-- Port 587 (Submission): opportunistic STARTTLS (on request) -->
+        <tls socketTLS="false" startTLS="true">
             <privateKey>classpath://private.key</privateKey>
             <certificates>classpath://certs.self-signed.csr</certificates>
             <secret>123456</secret>
@@ -81,7 +82,8 @@
         <jmxName>smtpserver-authenticated</jmxName>
         <bind>0.0.0.0:0</bind>
         <connectionBacklog>200</connectionBacklog>
-        <tls socketTLS="false" startTLS="false">
+        <!-- Port 465 (SMTPS): forced SSL -->
+        <tls socketTLS="true" startTLS="false">
             <privateKey>classpath://private.key</privateKey>
             <certificates>classpath://certs.self-signed.csr</certificates>
             <secret>123456</secret>
