@@ -346,8 +346,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
         if (rows.isEmpty()) {
             return null;
         }
-        Object obj = rows.get(0).get("val");
-        return obj instanceof Number ? ((Number) obj).longValue() : null;
+        return rows.getFirst().get("val") instanceof Number n ? n.longValue() : null;
     }
 
     private Long quotaValueToLong(Optional<? extends QuotaLimitValue<?>> quota) {

@@ -177,15 +177,14 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
     @Override
     public Iterator<Username> list() throws UsersRepositoryException {
         try {
-            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, "SELECT username FROM JamesUser");
-            List<Username> usernames = new ArrayList<>(rows.size());
-            for (Map<String, Object> row : rows) {
-                Object stored = row.get(PROP_USERNAME);
-                if (stored != null) {
-                    usernames.add(Username.of(stored.toString()));
-                }
-            }
-            return usernames.iterator();
+            return YouTrackDBTransactions.queryRows(g, "SELECT username FROM JamesUser")
+                .stream()
+                .map(row -> row.get(PROP_USERNAME))
+                .filter(java.util.Objects::nonNull)
+                .map(Object::toString)
+                .map(Username::of)
+                .toList()
+                .iterator();
         } catch (Exception e) {
             throw new UsersRepositoryException("Failed to list users", e);
         }

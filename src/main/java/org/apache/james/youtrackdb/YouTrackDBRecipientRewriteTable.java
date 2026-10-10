@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import jakarta.inject.Inject;
 
@@ -70,15 +71,14 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
         }
 
         try {
-            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT mapping FROM JamesRRTMapping WHERE source = :src", "src", source.asString());
-            List<Mapping> mappings = new ArrayList<>(rows.size());
-            for (Map<String, Object> row : rows) {
-                Object stored = row.get(PROP_MAPPING);
-                if (stored != null) {
-                    mappings.add(Mapping.of(stored.toString()));
-                }
-            }
+            List<Mapping> mappings = YouTrackDBTransactions.queryRows(g,
+                    "SELECT mapping FROM JamesRRTMapping WHERE source = :src", "src", source.asString())
+                .stream()
+                .map(row -> row.get(PROP_MAPPING))
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .map(Mapping::of)
+                .toList();
             Mappings result = MappingsImpl.fromMappings(mappings.stream());
             mappingsCache.put(source, result);
             return result;

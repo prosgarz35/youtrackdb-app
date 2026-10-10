@@ -1,8 +1,8 @@
 package org.apache.james.youtrackdb;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import jakarta.inject.Inject;
 
@@ -47,15 +47,13 @@ public class YouTrackDBDomainList extends AbstractDomainList {
     @Override
     protected List<Domain> getDomainListInternal() throws DomainListException {
         try {
-            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, "SELECT domain FROM JamesDomain");
-            List<Domain> domains = new ArrayList<>(rows.size());
-            for (Map<String, Object> row : rows) {
-                Object stored = row.get(PROP_DOMAIN);
-                if (stored != null) {
-                    domains.add(Domain.of(stored.toString()));
-                }
-            }
-            return domains;
+            return YouTrackDBTransactions.queryRows(g, "SELECT domain FROM JamesDomain")
+                .stream()
+                .map(row -> row.get(PROP_DOMAIN))
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .map(Domain::of)
+                .toList();
         } catch (Exception e) {
             throw new DomainListException("Failed to fetch domain list", e);
         }

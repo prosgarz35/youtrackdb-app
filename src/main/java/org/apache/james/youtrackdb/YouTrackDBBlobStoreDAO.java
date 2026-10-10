@@ -249,7 +249,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         }
         try (var stream = Files.walk(dir.toPath())) {
             stream.map(java.nio.file.Path::toFile)
-                .sorted((o1, o2) -> -o1.compareTo(o2))
+                .sorted(java.util.Comparator.reverseOrder())
                 .forEach(File::delete);
         } catch (Exception ignored) {
         }

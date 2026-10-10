@@ -266,16 +266,14 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     @Override
     public List<MessageUid> findRecentMessageUidsInMailbox(Mailbox mailbox) throws MailboxException {
         try {
-            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT uid FROM JamesMailboxMessage WHERE mailboxId = :mbx AND flags CONTAINS 'RECENT' ORDER BY uid ASC",
-                "mbx", mailbox.getMailboxId().serialize());
-            List<MessageUid> recent = new ArrayList<>(rows.size());
-            for (Map<String, Object> row : rows) {
-                if (row.get(PROP_UID) instanceof Number n) {
-                    recent.add(MessageUid.of(n.longValue()));
-                }
-            }
-            return recent;
+            return YouTrackDBTransactions.queryRows(g,
+                    "SELECT uid FROM JamesMailboxMessage WHERE mailboxId = :mbx AND flags CONTAINS 'RECENT' ORDER BY uid ASC",
+                    "mbx", mailbox.getMailboxId().serialize())
+                .stream()
+                .map(row -> row.get(PROP_UID))
+                .filter(Number.class::isInstance)
+                .map(n -> MessageUid.of(((Number) n).longValue()))
+                .toList();
         } catch (Exception e) {
             throw new MailboxException("Failed to find recent messages in mailbox " + mailbox.getMailboxId().serialize(), e);
         }
@@ -285,16 +283,14 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     public Flux<MessageUid> listAllMessageUids(Mailbox mailbox) {
         return Mono.fromCallable(() -> {
             try {
-                List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                    "SELECT uid FROM JamesMailboxMessage WHERE mailboxId = :mbx ORDER BY uid ASC",
-                    "mbx", mailbox.getMailboxId().serialize());
-                List<MessageUid> uids = new ArrayList<>(rows.size());
-                for (Map<String, Object> row : rows) {
-                    if (row.get(PROP_UID) instanceof Number n) {
-                        uids.add(MessageUid.of(n.longValue()));
-                    }
-                }
-                return uids;
+                return YouTrackDBTransactions.queryRows(g,
+                        "SELECT uid FROM JamesMailboxMessage WHERE mailboxId = :mbx ORDER BY uid ASC",
+                        "mbx", mailbox.getMailboxId().serialize())
+                    .stream()
+                    .map(row -> row.get(PROP_UID))
+                    .filter(Number.class::isInstance)
+                    .map(n -> MessageUid.of(((Number) n).longValue()))
+                    .toList();
             } catch (Exception e) {
                 throw new MailboxException("Failed to list all message UIDs in mailbox " + mailbox.getMailboxId().serialize(), e);
             }
