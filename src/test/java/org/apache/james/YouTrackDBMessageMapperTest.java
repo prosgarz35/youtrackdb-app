@@ -6,7 +6,6 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Clock;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
@@ -110,7 +109,7 @@ public class YouTrackDBMessageMapperTest {
             MailboxSession.SessionId.of(1L),
             Username.of("alice"),
             Optional.of(Username.of("alice")),
-            new ArrayList<>(),
+            List.of(),
             '.',
             MailboxSession.SessionType.User);
         messageMapper = new YouTrackDBMessageMapper(session, uidProvider, modSeqProvider, Clock.systemUTC(), g);
