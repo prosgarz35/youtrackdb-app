@@ -159,27 +159,26 @@ public class YouTrackDBAdminRoutes implements Routes {
             File blobsSourceDir = new File(fileSystem.getBasedir(), "var/blobs");
             long[] deleted = {0};
             if (blobsSourceDir.exists()) {
-                java.util.Set<String> activeBlobIds = YouTrackDBTransactions.queryRows(traversalSource,
-                    "SELECT blobId FROM JamesBlob")
-                    .stream()
-                    .map(row -> row.get("blobId"))
-                    .filter(java.util.Objects::nonNull)
-                    .map(Object::toString)
-                    .collect(java.util.stream.Collectors.toSet());
-
-                java.util.Set<String> keepNames = YouTrackDBBlobStoreDAO.fileNamesToKeep(activeBlobIds);
                 long gracePeriodCutoff = System.currentTimeMillis() - java.time.Duration.ofHours(1).toMillis();
                 try (var stream = java.nio.file.Files.walk(blobsSourceDir.toPath())) {
                     stream.filter(java.nio.file.Files::isRegularFile)
                         .forEach(path -> {
                             String fileName = path.getFileName().toString();
-                            if (!fileName.contains(".tmp.") && !keepNames.contains(fileName)) {
+                            if (!fileName.contains(".tmp.")) {
                                 try {
                                     long lastModified = java.nio.file.Files.getLastModifiedTime(path).toMillis();
-                                    // Only delete if older than grace period to protect active/in-flight writes
+                                    // Only consider if older than grace period to protect active/in-flight writes
                                     if (lastModified < gracePeriodCutoff) {
-                                        java.nio.file.Files.deleteIfExists(path);
-                                        deleted[0]++;
+                                        boolean isHashedPath = path.toString().replace('\\', '/').contains("/.hashed/");
+                                        boolean existsInDb = isHashedPath
+                                            // Non-plain blobIds are SHA-256 hashed into file names: keep all hashed blobs
+                                            // whose storageType is FILE_ZSTD
+                                            || !YouTrackDBTransactions.queryRows(traversalSource,
+                                                "SELECT 1 FROM JamesBlob WHERE blobId = :id LIMIT 1", "id", fileName).isEmpty();
+                                        if (!existsInDb) {
+                                            java.nio.file.Files.deleteIfExists(path);
+                                            deleted[0]++;
+                                        }
                                     }
                                 } catch (Exception ignored) {
                                 }

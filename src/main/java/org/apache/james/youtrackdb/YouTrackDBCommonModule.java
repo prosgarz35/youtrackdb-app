@@ -144,6 +144,7 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesBlob.storageType IF NOT EXISTS STRING");
                     g.command("CREATE PROPERTY JamesBlob.payload IF NOT EXISTS BINARY");
                     g.command("CREATE INDEX JamesBlob.bucketAndBlobId IF NOT EXISTS UNIQUE");
+                    g.command("CREATE INDEX JamesBlob.blobId IF NOT EXISTS NOTUNIQUE");
                     // Composite index on (bucket, blobId) serves prefix and range scans inside a bucket: see YouTrackDBBlobStoreDAO.listBlobs
                     g.command("CREATE INDEX JamesBlob.bucketAndBlobIdRange IF NOT EXISTS ON JamesBlob (bucket, blobId) NOTUNIQUE");
 
@@ -194,6 +195,7 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesMailboxMessage.content IF NOT EXISTS BINARY");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndUid IF NOT EXISTS ON JamesMailboxMessage (mailboxId, uid) UNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndFlags IF NOT EXISTS ON JamesMailboxMessage (mailboxId, flags) NOTUNIQUE");
+                    g.command("CREATE INDEX JamesMailboxMessage.mailboxFlagsUid IF NOT EXISTS ON JamesMailboxMessage (mailboxId, flags, uid) NOTUNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndModSeq IF NOT EXISTS ON JamesMailboxMessage (mailboxId, modSeq) NOTUNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndIsSeen IF NOT EXISTS ON JamesMailboxMessage (mailboxId, isSeen) NOTUNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxSeenUid IF NOT EXISTS ON JamesMailboxMessage (mailboxId, isSeen, uid) NOTUNIQUE");

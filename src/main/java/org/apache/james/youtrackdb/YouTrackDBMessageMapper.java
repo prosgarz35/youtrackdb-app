@@ -301,16 +301,18 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                     List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                         "SELECT userFlags FROM JamesMailboxMessage WHERE mailboxId = :mbx AND userFlags IS NOT NULL",
                         "mbx", k);
+                    java.util.Set<String> distinctFlags = new java.util.HashSet<>();
                     for (Map<String, Object> row : rows) {
                         Object ufObj = row.get(PROP_USER_FLAGS);
                         if (ufObj instanceof Iterable<?> it) {
                             for (Object f : it) {
                                 if (f != null) {
-                                    builder.add(f.toString());
+                                    distinctFlags.add(f.toString());
                                 }
                             }
                         }
                     }
+                    distinctFlags.forEach(builder::add);
                     return builder.build();
                 } catch (Exception e) {
                     throw new RuntimeException(e);
