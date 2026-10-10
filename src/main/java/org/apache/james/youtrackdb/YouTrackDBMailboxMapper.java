@@ -1,7 +1,5 @@
 package org.apache.james.youtrackdb;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -11,7 +9,6 @@ import org.apache.james.core.Username;
 import org.apache.james.mailbox.acl.ACLDiff;
 import org.apache.james.mailbox.exception.MailboxExistsException;
 import org.apache.james.mailbox.exception.MailboxNotFoundException;
-import org.apache.james.mailbox.exception.UnsupportedRightException;
 import org.apache.james.mailbox.model.Mailbox;
 import org.apache.james.mailbox.model.MailboxACL;
 import org.apache.james.mailbox.model.MailboxACL.NameType;
@@ -372,8 +369,10 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             return "{}";
         }
         try {
-            Map<String, String> map = new HashMap<>();
-            acl.getEntries().forEach((key, rights) -> map.put(key.serialize(), rights.serialize()));
+            Map<String, String> map = acl.getEntries().entrySet().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                    e -> e.getKey().serialize(),
+                    e -> e.getValue().serialize()));
             return OBJECT_MAPPER.writeValueAsString(map);
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize ACL", e);
@@ -386,7 +385,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
         }
         try {
             Map<String, String> map = OBJECT_MAPPER.readValue(json, new TypeReference<Map<String, String>>() {});
-            Map<MailboxACL.EntryKey, MailboxACL.Rfc4314Rights> entries = new HashMap<>();
+            Map<MailboxACL.EntryKey, MailboxACL.Rfc4314Rights> entries = new java.util.HashMap<>();
             for (Map.Entry<String, String> entry : map.entrySet()) {
                 entries.put(MailboxACL.EntryKey.deserialize(entry.getKey()), MailboxACL.Rfc4314Rights.fromSerializedRfc4314Rights(entry.getValue()));
             }

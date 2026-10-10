@@ -10,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -524,14 +523,17 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     @Override
     public Publisher<Void> delete(BucketName bucketName, Collection<BlobId> blobIds) {
         return Mono.<Void>fromRunnable(() -> {
-            Map<BlobId, File> files = new java.util.LinkedHashMap<>();
-            for (BlobId blobId : blobIds) {
-                files.put(blobId, getFileForBlob(bucketName, blobId));
-            }
-            List<String> keys = new ArrayList<>(blobIds.size());
-            for (BlobId blobId : blobIds) {
-                keys.add(buildKey(bucketName, blobId));
-            }
+            Map<BlobId, File> files = blobIds.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                    b -> b,
+                    b -> getFileForBlob(bucketName, b),
+                    (u, v) -> u,
+                    java.util.LinkedHashMap::new));
+
+            List<String> keys = blobIds.stream()
+                .map(blobId -> buildKey(bucketName, blobId))
+                .toList();
+
             YouTrackDBTransactions.executeStrictTx(g, tx ->
                 tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId IN :keys", "keys", keys));
             files.forEach((blobId, file) -> {

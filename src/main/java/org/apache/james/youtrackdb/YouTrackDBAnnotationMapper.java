@@ -11,10 +11,8 @@ import org.apache.james.mailbox.model.MailboxAnnotation;
 import org.apache.james.mailbox.model.MailboxAnnotationKey;
 import org.apache.james.mailbox.model.MailboxId;
 import org.apache.james.mailbox.store.mail.AnnotationMapper;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
 public class YouTrackDBAnnotationMapper implements AnnotationMapper {
@@ -32,20 +30,13 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
 
     @Override
     public List<MailboxAnnotation> getAllAnnotations(MailboxId mailboxId) {
-        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+        return YouTrackDBTransactions.queryRows(g,
             "SELECT key, value FROM " + CLASS + " WHERE mailboxId = :mbx",
-            "mbx", mailboxId.serialize());
-        ImmutableList.Builder<MailboxAnnotation> builder = ImmutableList.builder();
-        for (Map<String, Object> row : rows) {
-            Object keyObj = row.get(PROP_KEY);
-            if (keyObj != null) {
-                String key = keyObj.toString();
-                Object valObj = row.get(PROP_VALUE);
-                String val = valObj != null ? valObj.toString() : "";
-                builder.add(MailboxAnnotation.newInstance(new MailboxAnnotationKey(key), val));
-            }
-        }
-        return builder.build();
+            "mbx", mailboxId.serialize())
+            .stream()
+            .map(this::toMailboxAnnotation)
+            .filter(Objects::nonNull)
+            .toList();
     }
 
     @Override
@@ -54,21 +45,25 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
             return Collections.emptyList();
         }
         List<String> keyStrings = keys.stream().map(MailboxAnnotationKey::asString).toList();
-        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+        return YouTrackDBTransactions.queryRows(g,
             "SELECT key, value FROM " + CLASS + " WHERE mailboxId = :mbx AND key IN :keys",
             "mbx", mailboxId.serialize(),
-            "keys", keyStrings);
-        ImmutableList.Builder<MailboxAnnotation> builder = ImmutableList.builder();
-        for (Map<String, Object> row : rows) {
-            Object keyObj = row.get(PROP_KEY);
-            if (keyObj != null) {
-                String key = keyObj.toString();
-                Object valObj = row.get(PROP_VALUE);
-                String val = valObj != null ? valObj.toString() : "";
-                builder.add(MailboxAnnotation.newInstance(new MailboxAnnotationKey(key), val));
-            }
+            "keys", keyStrings)
+            .stream()
+            .map(this::toMailboxAnnotation)
+            .filter(Objects::nonNull)
+            .toList();
+    }
+
+    private MailboxAnnotation toMailboxAnnotation(Map<String, Object> row) {
+        Object keyObj = row.get(PROP_KEY);
+        if (keyObj == null) {
+            return null;
         }
-        return builder.build();
+        String key = keyObj.toString();
+        Object valObj = row.get(PROP_VALUE);
+        String val = valObj != null ? valObj.toString() : "";
+        return MailboxAnnotation.newInstance(new MailboxAnnotationKey(key), val);
     }
 
     @Override
@@ -76,7 +71,7 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
         return getAllAnnotations(mailboxId)
             .stream()
             .filter(getPredicateFilterByAll(keys))
-            .collect(ImmutableList.toImmutableList());
+            .toList();
     }
 
     @Override
@@ -84,7 +79,7 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
         return getAnnotationsByKeysWithAllDepth(mailboxId, keys)
             .stream()
             .filter(getPredicateFilterByOne(keys))
-            .collect(ImmutableList.toImmutableList());
+            .toList();
     }
 
     private Predicate<MailboxAnnotation> getPredicateFilterByAll(final Set<MailboxAnnotationKey> keys) {

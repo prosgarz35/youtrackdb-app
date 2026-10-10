@@ -2,10 +2,10 @@ package org.apache.james.youtrackdb;
 
 import static org.apache.james.user.lib.model.Algorithm.HashingMode.PLAIN;
 
-import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 import jakarta.inject.Inject;
@@ -89,7 +89,7 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
                 userCache.put(name, Optional.empty());
                 return Optional.empty();
             }
-            Map<String, Object> row = rows.get(0);
+            Map<String, Object> row = rows.getFirst();
             Object storedPassword = row.get(PROP_PASSWORD);
             Object storedAlgo = row.get(PROP_ALGO);
             Algorithm userAlgo = storedAlgo != null ? Algorithm.of(storedAlgo.toString()) : algo;
@@ -165,7 +165,7 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
     public int countUsers() throws UsersRepositoryException {
         try {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, "SELECT count(*) AS total FROM JamesUser");
-            if (!rows.isEmpty() && rows.get(0).get("total") instanceof Number total) {
+            if (!rows.isEmpty() && rows.getFirst().get("total") instanceof Number total) {
                 return Math.toIntExact(total.longValue());
             }
             return 0;
@@ -180,7 +180,7 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
             return YouTrackDBTransactions.queryRows(g, "SELECT username FROM JamesUser")
                 .stream()
                 .map(row -> row.get(PROP_USERNAME))
-                .filter(java.util.Objects::nonNull)
+                .filter(Objects::nonNull)
                 .map(Object::toString)
                 .map(Username::of)
                 .toList()
