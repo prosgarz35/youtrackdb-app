@@ -1,6 +1,8 @@
 target/
 *.class
 *.jar
+!repo/**/*.jar
+!repo/*.jar
 *.war
 *.ear
 *.log
