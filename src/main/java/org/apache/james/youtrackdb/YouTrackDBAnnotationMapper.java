@@ -1,6 +1,5 @@
 package org.apache.james.youtrackdb;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -42,7 +41,7 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
     @Override
     public List<MailboxAnnotation> getAnnotationsByKeys(MailboxId mailboxId, Set<MailboxAnnotationKey> keys) {
         if (keys == null || keys.isEmpty()) {
-            return Collections.emptyList();
+            return List.of();
         }
         List<String> keyStrings = keys.stream().map(MailboxAnnotationKey::asString).toList();
         return YouTrackDBTransactions.queryRows(g,

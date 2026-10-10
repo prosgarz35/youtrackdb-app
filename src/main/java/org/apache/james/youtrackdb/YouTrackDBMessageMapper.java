@@ -33,7 +33,6 @@ import org.apache.james.mailbox.store.mail.UidProvider;
 import org.apache.james.mailbox.store.mail.model.MailboxMessage;
 import org.apache.james.mailbox.store.mail.model.impl.SimpleMailboxMessage;
 
-import com.google.common.collect.ImmutableList;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
 import reactor.core.publisher.Flux;
@@ -203,13 +202,13 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
 
     @Override
     public void delete(Mailbox mailbox, MailboxMessage message) throws MailboxException {
-        deleteMessages(mailbox, ImmutableList.of(message.getUid()));
+        deleteMessages(mailbox, List.of(message.getUid()));
     }
 
     @Override
     public Map<MessageUid, MessageMetaData> deleteMessages(Mailbox mailbox, List<MessageUid> uids) throws MailboxException {
         if (uids == null || uids.isEmpty()) {
-            return Collections.emptyMap();
+            return Map.of();
         }
         try {
             String mailboxId = mailbox.getMailboxId().serialize();

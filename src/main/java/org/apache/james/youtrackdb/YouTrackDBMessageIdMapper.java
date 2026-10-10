@@ -28,7 +28,6 @@ import org.apache.james.mailbox.store.mail.MessageMapper;
 import org.apache.james.mailbox.store.mail.model.MailboxMessage;
 import org.reactivestreams.Publisher;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.Multimap;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
@@ -57,7 +56,7 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
 
     @Override
     public Publisher<ComposedMessageIdWithMetaData> findMetadata(MessageId messageId) {
-        return findReactive(ImmutableList.of(messageId), MessageMapper.FetchType.METADATA)
+        return findReactive(List.of(messageId), MessageMapper.FetchType.METADATA)
             .map(MailboxMessage::getComposedMessageIdWithMetaData);
     }
 
@@ -70,7 +69,7 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
             try {
                 List<String> serializedIds = messageIds.stream()
                     .map(MessageId::serialize)
-                    .collect(ImmutableList.toImmutableList());
+                    .toList();
 
                 String selectClause = (fetchType == MessageMapper.FetchType.METADATA)
                     ? "SELECT mailboxId, messageId, threadId, uid, modSeq, internalDate, saveDate, size, bodyStartOctet, flags, userFlags FROM JamesMailboxMessage"
@@ -133,13 +132,13 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
 
     @Override
     public void delete(MessageId messageId) {
-        List<MailboxMessage> messages = find(ImmutableList.of(messageId), MessageMapper.FetchType.METADATA);
+        List<MailboxMessage> messages = find(List.of(messageId), MessageMapper.FetchType.METADATA);
         deleteGroupedByMailbox(messageId, messages);
     }
 
     @Override
     public void delete(MessageId messageId, Collection<MailboxId> mailboxIds) {
-        List<MailboxMessage> messages = find(ImmutableList.of(messageId), MessageMapper.FetchType.METADATA)
+        List<MailboxMessage> messages = find(List.of(messageId), MessageMapper.FetchType.METADATA)
             .stream()
             .filter(message -> mailboxIds.contains(message.getMailboxId()))
             .toList();
@@ -170,7 +169,7 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
                                                             List<MailboxId> mailboxIds,
                                                             Flags newState,
                                                             MessageManager.FlagsUpdateMode updateMode) {
-        return findReactive(ImmutableList.of(messageId), MessageMapper.FetchType.METADATA)
+        return findReactive(List.of(messageId), MessageMapper.FetchType.METADATA)
             .filter(message -> mailboxIds.contains(message.getMailboxId()))
             .collect(java.util.stream.Collectors.groupingBy(
                 MailboxMessage::getMailboxId,
