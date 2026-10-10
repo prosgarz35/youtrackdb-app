@@ -407,9 +407,9 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
         @Override
         public long remove(Type type, String value) {
-            ImmutableList<YouTrackDBMailQueueItem> toBeRemoved = mailItems.stream()
+            List<YouTrackDBMailQueueItem> toBeRemoved = mailItems.stream()
                 .filter(item -> shouldRemove(item, type, value))
-                .collect(ImmutableList.toImmutableList());
+                .toList();
             if (!toBeRemoved.isEmpty()) {
                 if (!closed) {
                     try {
