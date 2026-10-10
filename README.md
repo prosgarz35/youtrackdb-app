@@ -69,14 +69,21 @@ mvn clean package -DskipTests
 ```
 
 #### Launching the Server
+Heap memory and Garbage Collector settings are centrally configured in `conf/jvm.properties` (defaults: `jvm.heap.min=3072m`, `jvm.heap.max=3072m`, `jvm.gc.type=ZGC`, `jvm.gc.generational=true`).
+
 * **Linux / macOS:**
   ```bash
-  java -XX:+UseZGC -XX:+ZGenerational -Xms2g -Xmx4g -jar target/james-server-youtrackdb-app.jar
+  ./run.sh
   ```
 * **Windows:**
   ```powershell
-  java -XX:+UseZGC -XX:+ZGenerational -Xms2g -Xmx4g -jar .\target\james-server-youtrackdb-app.jar
+  .\run.bat
   ```
+
+Alternatively, launch directly via `java`:
+```bash
+java -XX:+UseZGC -XX:+ZGenerational -Xms3072m -Xmx3072m -jar target/james-server-youtrackdb-app.jar
+```
 
 ---
 
