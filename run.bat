@@ -17,8 +17,8 @@ if not exist "%CONF_DIR%" (
 set "JVM_PROPS=%CONF_DIR%\jvm.properties"
 
 rem Default memory and GC settings
-set "JVM_HEAP_MIN=3072m"
-set "JVM_HEAP_MAX=3072m"
+set "JVM_HEAP_MIN=3g"
+set "JVM_HEAP_MAX=3g"
 set "JVM_GC_TYPE=ZGC"
 set "JVM_GC_GENERATIONAL=true"
 
@@ -41,13 +41,11 @@ if exist "%JVM_PROPS%" (
 
 rem Build JVM GC arguments
 set "GC_OPTS=-XX:+UseZGC"
-if /i "%JVM_GC_TYPE%"=="G1" set "GC_OPTS=-XX:+UseG1GC"
-if /i "%JVM_GC_TYPE%"=="G1GC" set "GC_OPTS=-XX:+UseG1GC"
-if /i "%JVM_GC_TYPE%"=="Parallel" set "GC_OPTS=-XX:+UseParallelGC"
-if /i "%JVM_GC_TYPE%"=="ParallelGC" set "GC_OPTS=-XX:+UseParallelGC"
-if /i "%JVM_GC_TYPE%"=="Serial" set "GC_OPTS=-XX:+UseSerialGC"
-if /i "%JVM_GC_TYPE%"=="SerialGC" set "GC_OPTS=-XX:+UseSerialGC"
-if /i "%JVM_GC_TYPE%"=="ZGC" (
+if /i "%JVM_GC_TYPE%"=="G1" (
+    set "GC_OPTS=-XX:+UseG1GC"
+) else if /i "%JVM_GC_TYPE%"=="G1GC" (
+    set "GC_OPTS=-XX:+UseG1GC"
+) else (
     set "GC_OPTS=-XX:+UseZGC"
     if /i "%JVM_GC_GENERATIONAL%"=="true" set "GC_OPTS=-XX:+UseZGC -XX:+ZGenerational"
 )

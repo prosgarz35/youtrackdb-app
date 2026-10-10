@@ -16,8 +16,8 @@ fi
 JVM_PROPS="${CONF_DIR}/jvm.properties"
 
 # Default memory and GC settings
-JVM_HEAP_MIN="3072m"
-JVM_HEAP_MAX="3072m"
+JVM_HEAP_MIN="3g"
+JVM_HEAP_MAX="3g"
 JVM_GC_TYPE="ZGC"
 JVM_GC_GENERATIONAL="true"
 
@@ -42,23 +42,14 @@ fi
 # Build JVM GC arguments
 GC_OPTS=""
 case "$JVM_GC_TYPE" in
-    ZGC|zgc)
+    G1|g1|G1GC|g1gc)
+        GC_OPTS="-XX:+UseG1GC"
+        ;;
+    ZGC|zgc|*)
         GC_OPTS="-XX:+UseZGC"
         if [ "$JVM_GC_GENERATIONAL" = "true" ]; then
             GC_OPTS="${GC_OPTS} -XX:+ZGenerational"
         fi
-        ;;
-    G1|g1|G1GC|g1gc)
-        GC_OPTS="-XX:+UseG1GC"
-        ;;
-    Parallel|parallel|ParallelGC)
-        GC_OPTS="-XX:+UseParallelGC"
-        ;;
-    Serial|serial|SerialGC)
-        GC_OPTS="-XX:+UseSerialGC"
-        ;;
-    *)
-        GC_OPTS="-XX:+UseZGC -XX:+ZGenerational"
         ;;
 esac
 

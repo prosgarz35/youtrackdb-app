@@ -224,7 +224,7 @@
                 <configuration>
                     <reuseForks>false</reuseForks>
                     <forkCount>1</forkCount>
-                    <argLine>-XX:+UseZGC -XX:+ZGenerational -Xms3072m -Xmx3072m</argLine>
+                    <argLine>-XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g</argLine>
                     <excludedGroups>${surefire.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>

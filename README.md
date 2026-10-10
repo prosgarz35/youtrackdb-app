@@ -69,7 +69,7 @@ mvn clean package -DskipTests
 ```
 
 #### Launching the Server
-Heap memory and Garbage Collector settings are centrally configured in `conf/jvm.properties` (defaults: `jvm.heap.min=3072m`, `jvm.heap.max=3072m`, `jvm.gc.type=ZGC`, `jvm.gc.generational=true`).
+Heap memory and Garbage Collector settings are centrally configured in `conf/jvm.properties` (defaults: `jvm.heap.min=3g`, `jvm.heap.max=3g`, `jvm.gc.type=ZGC`, `jvm.gc.generational=true`; alternative supported GC: `G1GC`).
 
 * **Linux / macOS:**
   ```bash
@@ -82,7 +82,7 @@ Heap memory and Garbage Collector settings are centrally configured in `conf/jvm
 
 Alternatively, launch directly via `java`:
 ```bash
-java -XX:+UseZGC -XX:+ZGenerational -Xms3072m -Xmx3072m -jar target/james-server-youtrackdb-app.jar
+java -XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g -jar target/james-server-youtrackdb-app.jar
 ```
 
 ---
