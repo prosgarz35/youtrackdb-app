@@ -77,13 +77,22 @@ public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
                 YouTrackDBTransactions.retryOnConflict(10, () -> {
                     YouTrackDBTransactions.executeStrictTx(g, tx -> {
                         List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
-                            "SELECT FROM JamesQuotaUsage WHERE quotaRoot = :qr", "qr", rootVal);
+                            "SELECT 1 FROM JamesQuotaUsage WHERE quotaRoot = :qr LIMIT 1", "qr", rootVal);
                         if (rows.isEmpty()) {
-                            tx.addV(CLASS_NAME)
-                                .property("quotaRoot", rootVal)
-                                .property("messageCount", count)
-                                .property("size", size)
-                                .iterate();
+                            try {
+                                tx.addV(CLASS_NAME)
+                                    .property("quotaRoot", rootVal)
+                                    .property("messageCount", count)
+                                    .property("size", size)
+                                    .iterate();
+                            } catch (Exception e) {
+                                if (YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)) {
+                                    tx.command("UPDATE JamesQuotaUsage SET messageCount = :mc, size = :sz WHERE quotaRoot = :qr",
+                                        "mc", count, "sz", size, "qr", rootVal);
+                                } else {
+                                    throw e;
+                                }
+                            }
                         } else {
                             tx.command("UPDATE JamesQuotaUsage SET messageCount = :mc, size = :sz WHERE quotaRoot = :qr",
                                 "mc", count, "sz", size, "qr", rootVal);
@@ -123,11 +132,20 @@ public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
                     List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
                         "SELECT 1 FROM JamesQuotaUsage WHERE quotaRoot = :qr LIMIT 1", "qr", rootVal);
                     if (rows.isEmpty()) {
-                        tx.addV(CLASS_NAME)
-                            .property("quotaRoot", rootVal)
-                            .property("messageCount", diffCount)
-                            .property("size", diffSize)
-                            .iterate();
+                        try {
+                            tx.addV(CLASS_NAME)
+                                .property("quotaRoot", rootVal)
+                                .property("messageCount", diffCount)
+                                .property("size", diffSize)
+                                .iterate();
+                        } catch (Exception e) {
+                            if (YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)) {
+                                tx.command("UPDATE JamesQuotaUsage SET messageCount = messageCount + :dc, size = size + :ds WHERE quotaRoot = :qr",
+                                    "dc", diffCount, "ds", diffSize, "qr", rootVal);
+                            } else {
+                                throw e;
+                            }
+                        }
                     } else {
                         tx.command("UPDATE JamesQuotaUsage SET messageCount = messageCount + :dc, size = size + :ds WHERE quotaRoot = :qr",
                             "dc", diffCount, "ds", diffSize, "qr", rootVal);

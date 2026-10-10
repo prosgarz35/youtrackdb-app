@@ -130,11 +130,20 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
         }
 
         private void cleanOldMimeParts(List<BlobId> oldParts) {
-            for (BlobId partId : oldParts) {
+            if (oldParts.isEmpty()) {
+                return;
+            }
+            if (oldParts.size() == 1) {
                 try {
-                    Mono.from(blobStoreDAO.delete(defaultBucketName, partId)).block();
+                    Mono.from(blobStoreDAO.delete(defaultBucketName, oldParts.getFirst())).block();
                 } catch (Exception e) {
-                    LOGGER.warn("Cannot delete the replaced blob {}: it is now orphaned", partId.asString(), e);
+                    LOGGER.warn("Cannot delete the replaced blob {}: it is now orphaned", oldParts.getFirst().asString(), e);
+                }
+            } else {
+                try {
+                    Mono.from(blobStoreDAO.delete(defaultBucketName, oldParts)).block();
+                } catch (Exception e) {
+                    LOGGER.warn("Cannot delete the replaced blobs: they are now orphaned", e);
                 }
             }
         }
