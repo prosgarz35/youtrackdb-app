@@ -317,39 +317,47 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             return Collections.emptyIterator();
         }
         ModSeq modSeq = modSeqProvider.nextModSeq(mailbox);
+        final int BATCH_SIZE = 500;
         try {
-            YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                while (messages.hasNext()) {
-                    MailboxMessage member = messages.next();
-                    Flags originalFlags = member.createFlags();
-                    member.setFlags(flagsUpdateCalculator.buildNewFlags(originalFlags));
-                    Flags newFlags = member.createFlags();
-                    if (UpdatedFlags.flagsChanged(originalFlags, newFlags)) {
-                        long currentModSeq = member.getModSeq().asLong();
-                        member.setModSeq(modSeq);
-                        Set<String> systemFlags = extractSystemFlags(newFlags);
-                        Set<String> userFlags = extractUserFlags(newFlags);
-                        boolean isSeen = systemFlags.contains("SEEN");
-                        tx.command("UPDATE JamesMailboxMessage SET flags = :flags, userFlags = :userFlags, isSeen = :isSeen, modSeq = :newModSeq WHERE mailboxId = :mbx AND uid = :uid AND (modSeq = :currModSeq OR modSeq < :newModSeq)",
-                            "flags", systemFlags,
-                            "userFlags", userFlags,
-                            "isSeen", isSeen,
-                            "newModSeq", modSeq.asLong(),
-                            "mbx", mailbox.getMailboxId().serialize(),
-                            "uid", member.getUid().asLong(),
-                            "currModSeq", currentModSeq);
-                    }
+            List<MailboxMessage> batch = new ArrayList<>(BATCH_SIZE);
+            while (messages.hasNext()) {
+                batch.add(messages.next());
+                if (batch.size() >= BATCH_SIZE || !messages.hasNext()) {
+                    List<MailboxMessage> currentBatch = new ArrayList<>(batch);
+                    batch.clear();
+                    YouTrackDBTransactions.executeStrictTx(g, tx -> {
+                        for (MailboxMessage member : currentBatch) {
+                            Flags originalFlags = member.createFlags();
+                            member.setFlags(flagsUpdateCalculator.buildNewFlags(originalFlags));
+                            Flags newFlags = member.createFlags();
+                            if (UpdatedFlags.flagsChanged(originalFlags, newFlags)) {
+                                long currentModSeq = member.getModSeq().asLong();
+                                member.setModSeq(modSeq);
+                                Set<String> systemFlags = extractSystemFlags(newFlags);
+                                Set<String> userFlags = extractUserFlags(newFlags);
+                                boolean isSeen = systemFlags.contains("SEEN");
+                                tx.command("UPDATE JamesMailboxMessage SET flags = :flags, userFlags = :userFlags, isSeen = :isSeen, modSeq = :newModSeq WHERE mailboxId = :mbx AND uid = :uid AND (modSeq = :currModSeq OR modSeq < :newModSeq)",
+                                    "flags", systemFlags,
+                                    "userFlags", userFlags,
+                                    "isSeen", isSeen,
+                                    "newModSeq", modSeq.asLong(),
+                                    "mbx", mailbox.getMailboxId().serialize(),
+                                    "uid", member.getUid().asLong(),
+                                    "currModSeq", currentModSeq);
+                            }
 
-                    updatedFlags.add(UpdatedFlags.builder()
-                        .uid(member.getUid())
-                        .messageId(member.getMessageId())
-                        .internalDate(member.getInternalDate())
-                        .modSeq(member.getModSeq())
-                        .newFlags(newFlags)
-                        .oldFlags(originalFlags)
-                        .build());
+                            updatedFlags.add(UpdatedFlags.builder()
+                                .uid(member.getUid())
+                                .messageId(member.getMessageId())
+                                .internalDate(member.getInternalDate())
+                                .modSeq(member.getModSeq())
+                                .newFlags(newFlags)
+                                .oldFlags(originalFlags)
+                                .build());
+                        }
+                    });
                 }
-            });
+            }
         } catch (Exception e) {
             throw new MailboxException("Failed to update flags in mailbox " + mailbox.getMailboxId().serialize(), e);
         }

@@ -77,27 +77,30 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
 
     @Override
     public Optional<User> getUserByName(Username name) throws UsersRepositoryException {
-        Optional<User> cached = userCache.getIfPresent(name);
-        if (cached != null) {
-            return cached;
+        try {
+            return userCache.get(name, this::loadUserByName);
+        } catch (Exception e) {
+            if (e.getCause() instanceof UsersRepositoryException ure) {
+                throw ure;
+            }
+            throw new UsersRepositoryException("Failed to get user " + name.asString(), e);
         }
+    }
 
+    private Optional<User> loadUserByName(Username name) {
         try {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                 "SELECT password, algorithm FROM JamesUser WHERE username = :uname LIMIT 1", "uname", name.asString());
             if (rows.isEmpty()) {
-                userCache.put(name, Optional.empty());
                 return Optional.empty();
             }
             Map<String, Object> row = rows.getFirst();
             Object storedPassword = row.get(PROP_PASSWORD);
             Object storedAlgo = row.get(PROP_ALGO);
             Algorithm userAlgo = storedAlgo != null ? Algorithm.of(storedAlgo.toString()) : algo;
-            Optional<User> user = Optional.of(new DefaultUser(name, storedPassword != null ? storedPassword.toString() : "", userAlgo, algo));
-            userCache.put(name, user);
-            return user;
+            return Optional.of(new DefaultUser(name, storedPassword != null ? storedPassword.toString() : "", userAlgo, algo));
         } catch (Exception e) {
-            throw new UsersRepositoryException("Failed to get user " + name.asString(), e);
+            throw new RuntimeException(new UsersRepositoryException("Failed to query user " + name.asString(), e));
         }
     }
 
