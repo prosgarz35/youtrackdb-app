@@ -96,7 +96,7 @@ java -XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g -Dextra.props=sample-configura
 
 #### Database Health & Integrity Check
 ```bash
-curl -u admin:secret -X GET http://localhost:8000/youtrackdb/check
+curl -u admin:secret -X GET http://127.0.0.1:8000/youtrackdb/check
 ```
 *Response:*
 ```json
@@ -112,7 +112,7 @@ curl -u admin:secret -X GET http://localhost:8000/youtrackdb/check
 #### Online Hot Backup (Disaster Recovery)
 Dispatches an asynchronous backup task managed by James TaskManager:
 ```bash
-curl -u admin:secret -X POST "http://localhost:8000/youtrackdb/backup?backupDir=var/backups"
+curl -u admin:secret -X POST "http://127.0.0.1:8000/youtrackdb/backup?backupDir=var/backups"
 ```
 *Response (HTTP 201 Created):*
 ```json
@@ -122,16 +122,16 @@ curl -u admin:secret -X POST "http://localhost:8000/youtrackdb/backup?backupDir=
 ```
 Track task progress:
 ```bash
-curl -u admin:secret -X GET http://localhost:8000/tasks/72921a9a-efbb-4034-8c8f-fcfa6aa80f58
+curl -u admin:secret -X GET http://127.0.0.1:8000/tasks/72921a9a-efbb-4034-8c8f-fcfa6aa80f58
 ```
 
 #### Orphan Blobs Garbage Collection
 ```bash
-curl -u admin:secret -X POST http://localhost:8000/youtrackdb/blobs/gc
+curl -u admin:secret -X POST http://127.0.0.1:8000/youtrackdb/blobs/gc
 ```
 
 #### Orphan MIME Parts Garbage Collection
 Two-phase cleanup: run twice a few minutes apart. The first execution only collects and reports pending candidates; the subsequent execution deletes them.
 ```bash
-curl -u admin:secret -X POST http://localhost:8000/youtrackdb/mime-parts/gc
+curl -u admin:secret -X POST http://127.0.0.1:8000/youtrackdb/mime-parts/gc
 ```

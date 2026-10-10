@@ -36,7 +36,6 @@
         <connectiontimeout>360</connectiontimeout>
         <connectionLimit>0</connectionLimit>
         <connectionLimitPerIP>0</connectionLimitPerIP>
-        <authorizedAddresses>127.0.0.0/8</authorizedAddresses>
         <verifyIdentity>true</verifyIdentity>
         <maxmessagesize>104857600</maxmessagesize>
         <addressBracketsEnforcement>true</addressBracketsEnforcement>
@@ -70,7 +69,7 @@
             <plainAuthEnabled>true</plainAuthEnabled>
             <required>true</required>
         </auth>
-        <authorizedAddresses>127.0.0.0/8</authorizedAddresses>
+        <authorizedAddresses>127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16</authorizedAddresses>
         <verifyIdentity>true</verifyIdentity>
         <maxmessagesize>104857600</maxmessagesize>
         <addressBracketsEnforcement>true</addressBracketsEnforcement>
@@ -105,7 +104,7 @@
             <plainAuthEnabled>true</plainAuthEnabled>
             <required>true</required>
         </auth>
-        <authorizedAddresses>127.0.0.0/8</authorizedAddresses>
+        <authorizedAddresses>127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16</authorizedAddresses>
         <verifyIdentity>true</verifyIdentity>
         <maxmessagesize>104857600</maxmessagesize>
         <addressBracketsEnforcement>true</addressBracketsEnforcement>
