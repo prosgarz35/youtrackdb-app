@@ -117,10 +117,9 @@ class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
             assertThat(okLine).startsWith("a001 OK");
             assertThat(capabilityLine).startsWith("* CAPABILITY ");
 
-            // Mandatory base IMAP4rev1 (RFC 3501) and IMAP4rev2 (RFC 9051)
+            // Mandatory base IMAP4rev1 (RFC 3501)
             assertThat(capabilityLine)
-                .contains("IMAP4REV1")
-                .contains("IMAP4REV2");
+                .contains("IMAP4REV1");
 
             // Mandatory RFC 9051 (IMAP4rev2) capabilities implemented by YouTrackDB & James:
             // MOVE (RFC 6855), OBJECTID (RFC 8474), SAVEDATE (RFC 8514), QUOTA (RFC 9208),
@@ -235,7 +234,7 @@ class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
             writer.println("c21 CAPABILITY");
             String capLine = reader.readLine();
             reader.readLine(); // OK
-            assertThat(capLine).contains("IMAP4REV2");
+            assertThat(capLine).contains("IMAP4REV1").contains("ENABLE");
 
             writer.println("c22 LOGIN " + USER + " " + PASSWORD);
             assertThat(reader.readLine()).startsWith("c22 OK");
