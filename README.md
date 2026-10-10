@@ -79,7 +79,7 @@ The launcher scripts automatically set the verified production defaults (`-XX:+U
 
 To override heap memory or GC options, pass the standard `JAVA_OPTS` variable:
 ```bash
-JAVA_OPTS="-XX:+UseG1GC -Xms4g -Xmx4g" ./run.sh
+JAVA_OPTS="-XX:+UseG1GC -Xms3g -Xmx3g" ./run.sh
 ```
 
 Alternatively, launch directly via `java`:
