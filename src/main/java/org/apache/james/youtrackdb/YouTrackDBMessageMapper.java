@@ -189,7 +189,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     public long countUnseenMessagesInMailbox(Mailbox mailbox) throws MailboxException {
         try {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT count(*) AS cnt FROM JamesMailboxMessage WHERE mailboxId = :mbx AND (isSeen = false OR (isSeen IS NULL AND NOT (flags CONTAINS 'SEEN')))",
+                "SELECT count(*) AS cnt FROM JamesMailboxMessage WHERE mailboxId = :mbx AND isSeen = false",
                 "mbx", mailbox.getMailboxId().serialize());
             if (!rows.isEmpty() && rows.getFirst().get("cnt") instanceof Number n) {
                 return n.longValue();
@@ -238,7 +238,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     public MessageUid findFirstUnseenMessageUid(Mailbox mailbox) throws MailboxException {
         try {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT uid FROM JamesMailboxMessage WHERE mailboxId = :mbx AND (isSeen = false OR (isSeen IS NULL AND NOT (flags CONTAINS 'SEEN'))) ORDER BY uid ASC LIMIT 1",
+                "SELECT uid FROM JamesMailboxMessage WHERE mailboxId = :mbx AND isSeen = false ORDER BY uid ASC LIMIT 1",
                 "mbx", mailbox.getMailboxId().serialize());
             if (!rows.isEmpty() && rows.getFirst().get(PROP_UID) instanceof Number n) {
                 return MessageUid.of(n.longValue());
