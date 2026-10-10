@@ -214,21 +214,22 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             String mailboxId = mailbox.getMailboxId().serialize();
             List<Long> uidLongs = uids.stream().map(MessageUid::asLong).toList();
 
-            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT " + METADATA_COLS + " FROM " + CLASS_NAME + " WHERE mailboxId = :mbx AND uid IN :uids",
-                "mbx", mailboxId,
-                "uids", uidLongs);
+            return YouTrackDBTransactions.computeStrictTx(g, tx -> {
+                List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
+                    "SELECT " + METADATA_COLS + " FROM " + CLASS_NAME + " WHERE mailboxId = :mbx AND uid IN :uids",
+                    "mbx", mailboxId,
+                    "uids", uidLongs);
 
-            Map<MessageUid, MessageMetaData> result = rows.stream()
-                .map(row -> readMessage(row, mailbox.getMailboxId(), FetchType.METADATA))
-                .collect(java.util.stream.Collectors.toMap(MailboxMessage::getUid, MailboxMessage::metaData));
+                Map<MessageUid, MessageMetaData> result = rows.stream()
+                    .map(row -> readMessage(row, mailbox.getMailboxId(), FetchType.METADATA))
+                    .collect(java.util.stream.Collectors.toMap(MailboxMessage::getUid, MailboxMessage::metaData));
 
-            YouTrackDBTransactions.executeStrictTx(g, tx ->
                 tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :mbx AND uid IN :uids",
                     "mbx", mailboxId,
-                    "uids", uidLongs));
+                    "uids", uidLongs);
 
-            return result;
+                return result;
+            });
         } catch (Exception e) {
             throw new MailboxException("Failed to delete messages in mailbox " + mailbox.getMailboxId().serialize(), e);
         }
