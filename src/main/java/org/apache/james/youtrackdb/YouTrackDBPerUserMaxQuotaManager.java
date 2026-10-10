@@ -307,16 +307,25 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
         try {
             YouTrackDBTransactions.retryOnConflict(10, () -> {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
-                        "SELECT FROM JamesQuotaLimit WHERE scope = :scope AND quotaKey = :key",
-                        "scope", scope, "key", key);
-                    if (rows.isEmpty()) {
+                    boolean exists = !YouTrackDBTransactions.queryRowsInTx(tx,
+                        "SELECT 1 FROM JamesQuotaLimit WHERE scope = :scope AND quotaKey = :key LIMIT 1",
+                        "scope", scope, "key", key).isEmpty();
+                    if (!exists) {
                         if (value != null) {
-                            tx.addV(CLASS_NAME)
-                                .property("scope", scope)
-                                .property("quotaKey", key)
-                                .property(field.getFieldName(), value)
-                                .iterate();
+                            try {
+                                tx.addV(CLASS_NAME)
+                                    .property("scope", scope)
+                                    .property("quotaKey", key)
+                                    .property(field.getFieldName(), value)
+                                    .iterate();
+                            } catch (Exception e) {
+                                if (YouTrackDBTransactions.hasCause(e, com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException.class)) {
+                                    tx.command("UPDATE JamesQuotaLimit SET " + field.getFieldName() + " = :val WHERE scope = :scope AND quotaKey = :key",
+                                        "val", value, "scope", scope, "key", key);
+                                } else {
+                                    throw e;
+                                }
+                            }
                         }
                     } else {
                         tx.command("UPDATE JamesQuotaLimit SET " + field.getFieldName() + " = :val WHERE scope = :scope AND quotaKey = :key",

@@ -567,19 +567,16 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     @Override
     public Publisher<BucketName> listBuckets() {
         return Mono.fromCallable(() -> {
-            return g.computeInTx(tx -> {
-                Set<BucketName> buckets = new HashSet<>();
-                var list = tx.yql("SELECT DISTINCT(bucket) AS bucket FROM JamesBlob").toList();
-                for (Object item : list) {
-                    if (item instanceof Map<?, ?> m) {
-                        Object b = m.get("bucket");
-                        if (b != null) {
-                            buckets.add(BucketName.of(b.toString()));
-                        }
-                    }
+            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                "SELECT DISTINCT(bucket) AS bucket FROM JamesBlob");
+            Set<BucketName> buckets = new HashSet<>(rows.size());
+            for (Map<String, Object> row : rows) {
+                Object b = row.get("bucket");
+                if (b != null) {
+                    buckets.add(BucketName.of(b.toString()));
                 }
-                return buckets;
-            });
+            }
+            return buckets;
         }).flatMapMany(Flux::fromIterable)
         .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
