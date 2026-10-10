@@ -259,4 +259,34 @@ public class YouTrackDBBlobPathTest {
         assertThat(names).contains(PLAIN_ID, SLASH_ID);
         assertThat(names).hasSize(4);
     }
+
+    @Test
+    @DisplayName("Regression: concurrent single and batch deletes execute without deadlock")
+    void deleteBatchConcurrentlyWithSingleBlobDoesNotDeadlock(@TempDir Path baseDir) throws Exception {
+        withDao(baseDir, (dao, g, base) -> {
+            String id1 = "blob11111111111111111111111111";
+            String id2 = "blob22222222222222222222222222";
+            String id3 = "blob33333333333333333333333333";
+            save(dao, BUCKET, id1, compressibleBytes(100));
+            save(dao, BUCKET, id2, compressibleBytes(100));
+            save(dao, BUCKET, id3, compressibleBytes(100));
+
+            java.util.concurrent.ExecutorService exec = java.util.concurrent.Executors.newFixedThreadPool(2);
+            try {
+                var f1 = exec.submit(() -> {
+                    Mono.from(dao.delete(BUCKET, List.of(id(id1), id(id2)))).block();
+                    return true;
+                });
+                var f2 = exec.submit(() -> {
+                    Mono.from(dao.delete(BUCKET, id(id2))).block();
+                    return true;
+                });
+
+                assertThat(f1.get(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                assertThat(f2.get(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            } finally {
+                exec.shutdownNow();
+            }
+        });
+    }
 }

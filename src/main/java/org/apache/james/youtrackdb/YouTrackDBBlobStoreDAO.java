@@ -517,18 +517,25 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     @Override
     public Publisher<Void> delete(BucketName bucketName, Collection<BlobId> blobIds) {
         return Mono.<Void>fromRunnable(() -> {
-            List<String> keys = blobIds.stream()
+            List<String> sortedKeys = blobIds.stream()
                 .map(blobId -> buildKey(bucketName, blobId))
+                .distinct()
+                .sorted()
                 .toList();
 
-            YouTrackDBTransactions.executeStrictTx(g, tx ->
-                tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId IN :keys", "keys", keys));
-
-            for (BlobId blobId : blobIds) {
-                String key = buildKey(bucketName, blobId);
+            List<java.util.concurrent.locks.Lock> acquiredLocks = new java.util.ArrayList<>(sortedKeys.size());
+            for (String key : sortedKeys) {
                 java.util.concurrent.locks.Lock lock = stripedLocks.get(key);
                 lock.lock();
-                try {
+                acquiredLocks.add(lock);
+            }
+
+            try {
+                YouTrackDBTransactions.executeStrictTx(g, tx ->
+                    tx.command("DELETE VERTEX JamesBlob WHERE bucketAndBlobId IN :keys", "keys", sortedKeys));
+
+                for (BlobId blobId : blobIds) {
+                    String key = buildKey(bucketName, blobId);
                     BlobMeta meta = loadMeta(key);
                     if (meta == null) {
                         File file = getFileForBlob(bucketName, blobId);
@@ -541,8 +548,10 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                             }
                         }
                     }
-                } finally {
-                    lock.unlock();
+                }
+            } finally {
+                for (int i = acquiredLocks.size() - 1; i >= 0; i--) {
+                    acquiredLocks.get(i).unlock();
                 }
             }
         }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());

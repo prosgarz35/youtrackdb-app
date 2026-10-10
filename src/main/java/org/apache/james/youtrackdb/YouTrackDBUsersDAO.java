@@ -124,10 +124,11 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
                     "algo", defaultUser.getHashAlgorithm().asString(),
                     "uname", username.asString());
             });
-            userCache.put(username, Optional.of(user));
+            userCache.invalidate(username);
         } catch (UsersRepositoryException e) {
             throw e;
         } catch (Exception e) {
+            userCache.invalidate(username);
             throw new UsersRepositoryException("Failed to update user " + username.asString(), e);
         }
     }
