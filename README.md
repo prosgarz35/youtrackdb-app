@@ -69,7 +69,7 @@ mvn clean package -DskipTests
 ```
 
 #### Launching the Server
-Heap memory and Garbage Collector settings are centrally configured in `conf/jvm.properties` (defaults: `jvm.heap.min=3g`, `jvm.heap.max=3g`, `jvm.gc.type=ZGC`, `jvm.gc.generational=true`; alternative supported GC: `G1GC`).
+The launcher scripts automatically set the verified production defaults (`-XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g`) and load properties from `conf/jvm.properties` (or `sample-configuration/jvm.properties`).
 
 * **Linux / macOS:**
   ```bash
@@ -80,9 +80,14 @@ Heap memory and Garbage Collector settings are centrally configured in `conf/jvm
   .\run.bat
   ```
 
+To override heap memory or GC options, pass the standard `JAVA_OPTS` variable:
+```bash
+JAVA_OPTS="-XX:+UseG1GC -Xms4g -Xmx4g" ./run.sh
+```
+
 Alternatively, launch directly via `java`:
 ```bash
-java -XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g -jar target/james-server-youtrackdb-app.jar
+java -XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g -Dextra.props=conf/jvm.properties -jar target/james-server-youtrackdb-app.jar
 ```
 
 ---
