@@ -114,10 +114,8 @@ public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
             return CurrentQuotas.emptyQuotas();
         }
         Map<String, Object> row = rows.getFirst();
-        Object cntObj = row.get("messageCount");
-        Object szObj = row.get("size");
-        long count = cntObj instanceof Number ? ((Number) cntObj).longValue() : NO_MESSAGES;
-        long size = szObj instanceof Number ? ((Number) szObj).longValue() : NO_STORED_BYTES;
+        long count = row.get("messageCount") instanceof Number n ? n.longValue() : NO_MESSAGES;
+        long size = row.get("size") instanceof Number n ? n.longValue() : NO_STORED_BYTES;
         return new CurrentQuotas(QuotaCountUsage.count(count), QuotaSizeUsage.size(size));
     }
 
