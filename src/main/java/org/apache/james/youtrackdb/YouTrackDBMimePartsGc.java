@@ -1,7 +1,6 @@
 package org.apache.james.youtrackdb;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -76,13 +75,13 @@ public class YouTrackDBMimePartsGc {
             }
         });
 
-        Set<String> referenced = new HashSet<>();
-        for (String metadataId : metadataIds) {
-            referenced.addAll(referencedParts(metadataId));
-        }
+        Set<String> referenced = metadataIds.stream()
+            .flatMap(metadataId -> referencedParts(metadataId).stream())
+            .collect(java.util.stream.Collectors.toSet());
 
-        Set<String> orphans = new HashSet<>(partIds);
-        orphans.removeAll(referenced);
+        Set<String> orphans = partIds.stream()
+            .filter(id -> !referenced.contains(id))
+            .collect(java.util.stream.Collectors.toSet());
 
         java.time.Instant now = java.time.Instant.now();
         java.util.Map<String, java.time.Instant> stillOrphans = new java.util.HashMap<>();
