@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +16,6 @@ import java.util.Set;
 import jakarta.mail.Flags;
 import jakarta.mail.Flags.Flag;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.james.mailbox.MailboxSession;
 import org.apache.james.mailbox.MessageUid;
 import org.apache.james.mailbox.ModSeq;
@@ -35,7 +33,6 @@ import org.apache.james.mailbox.store.mail.ModSeqProvider;
 import org.apache.james.mailbox.store.mail.UidProvider;
 import org.apache.james.mailbox.store.mail.model.MailboxMessage;
 import org.apache.james.mailbox.store.mail.model.impl.SimpleMailboxMessage;
-import org.apache.james.mailbox.store.mail.utils.ApplicableFlagCalculator;
 
 import com.google.common.collect.ImmutableList;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
@@ -560,13 +557,10 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     );
 
     private static Set<String> extractSystemFlags(Flags flags) {
-        Set<String> set = new HashSet<>();
-        for (Map.Entry<Flag, String> entry : SYSTEM_FLAG_TO_NAME.entrySet()) {
-            if (flags.contains(entry.getKey())) {
-                set.add(entry.getValue());
-            }
-        }
-        return set;
+        return SYSTEM_FLAG_TO_NAME.entrySet().stream()
+            .filter(entry -> flags.contains(entry.getKey()))
+            .map(Map.Entry::getValue)
+            .collect(java.util.stream.Collectors.toSet());
     }
 
     private static Set<String> extractUserFlags(Flags flags) {
