@@ -22,7 +22,6 @@ import org.apache.james.user.lib.UsersDAO;
 import org.apache.james.utils.InitializationOperation;
 import org.apache.james.utils.InitilizationOperationBuilder;
 
-import com.google.common.collect.ImmutableList;
 import com.google.inject.AbstractModule;
 import com.google.inject.Scopes;
 import com.google.inject.multibindings.Multibinder;
@@ -53,7 +52,7 @@ public class YouTrackDBDataModule extends AbstractModule {
 
         bind(MailRepositoryStoreConfiguration.Item.class)
             .toProvider(() -> new MailRepositoryStoreConfiguration.Item(
-                ImmutableList.of(new Protocol("memory")),
+                java.util.List.of(new Protocol("memory")),
                 MemoryMailRepository.class.getName(),
                 new BaseHierarchicalConfiguration()));
 

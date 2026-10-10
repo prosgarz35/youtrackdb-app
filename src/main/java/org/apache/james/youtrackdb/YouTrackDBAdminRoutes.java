@@ -159,15 +159,13 @@ public class YouTrackDBAdminRoutes implements Routes {
             File blobsSourceDir = new File(fileSystem.getBasedir(), "var/blobs");
             long[] deleted = {0};
             if (blobsSourceDir.exists()) {
-                List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(traversalSource,
-                    "SELECT blobId FROM JamesBlob");
-                java.util.Set<String> activeBlobIds = new java.util.HashSet<>(rows.size());
-                for (Map<String, Object> row : rows) {
-                    Object bId = row.get("blobId");
-                    if (bId != null) {
-                        activeBlobIds.add(bId.toString());
-                    }
-                }
+                java.util.Set<String> activeBlobIds = YouTrackDBTransactions.queryRows(traversalSource,
+                    "SELECT blobId FROM JamesBlob")
+                    .stream()
+                    .map(row -> row.get("blobId"))
+                    .filter(java.util.Objects::nonNull)
+                    .map(Object::toString)
+                    .collect(java.util.stream.Collectors.toSet());
 
                 java.util.Set<String> keepNames = YouTrackDBBlobStoreDAO.fileNamesToKeep(activeBlobIds);
                 long gracePeriodCutoff = System.currentTimeMillis() - java.time.Duration.ofHours(1).toMillis();
