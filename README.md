@@ -82,18 +82,21 @@ To override heap memory or GC options, pass the standard `JAVA_OPTS` variable:
 JAVA_OPTS="-XX:+UseG1GC -Xms3g -Xmx3g" ./run.sh
 ```
 
-Alternatively, launch directly via `java`:
+Alternatively, launch directly via `java` (pointing to `conf` or `sample-configuration` if `conf` is not yet created):
 ```bash
-java -XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g -Dextra.props=conf/jvm.properties -jar target/james-server-youtrackdb-app.jar
+java -XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g -Dextra.props=sample-configuration/jvm.properties -jar target/james-server-youtrackdb-app.jar
 ```
 
 ---
 
 ### 🛡️ WebAdmin Administration & Operations
 
+> [!NOTE]
+> By default, WebAdmin enables generated password authentication (`password.generate=true` in `webadmin.properties`). Provide Basic Auth credentials printed in the server startup logs (e.g. `-u james:<generated-password>`) or set `password.generate=false` for local testing.
+
 #### Database Health & Integrity Check
 ```bash
-curl -X GET http://localhost:8000/youtrackdb/check
+curl -u admin:secret -X GET http://localhost:8000/youtrackdb/check
 ```
 *Response:*
 ```json
@@ -107,16 +110,28 @@ curl -X GET http://localhost:8000/youtrackdb/check
 ```
 
 #### Online Hot Backup (Disaster Recovery)
+Dispatches an asynchronous backup task managed by James TaskManager:
 ```bash
-curl -X POST "http://localhost:8000/youtrackdb/backup?backupDir=var/backups"
+curl -u admin:secret -X POST "http://localhost:8000/youtrackdb/backup?backupDir=var/backups"
+```
+*Response (HTTP 201 Created):*
+```json
+{
+  "taskId": "72921a9a-efbb-4034-8c8f-fcfa6aa80f58"
+}
+```
+Track task progress:
+```bash
+curl -u admin:secret -X GET http://localhost:8000/tasks/72921a9a-efbb-4034-8c8f-fcfa6aa80f58
 ```
 
 #### Orphan Blobs Garbage Collection
 ```bash
-curl -X POST http://localhost:8000/youtrackdb/blobs/gc
+curl -u admin:secret -X POST http://localhost:8000/youtrackdb/blobs/gc
 ```
 
 #### Orphan MIME Parts Garbage Collection
+Two-phase cleanup: run twice a few minutes apart. The first execution only collects and reports pending candidates; the subsequent execution deletes them.
 ```bash
-curl -X POST http://localhost:8000/youtrackdb/mime-parts/gc
+curl -u admin:secret -X POST http://localhost:8000/youtrackdb/mime-parts/gc
 ```
