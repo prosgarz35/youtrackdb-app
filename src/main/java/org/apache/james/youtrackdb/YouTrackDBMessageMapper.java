@@ -63,6 +63,12 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     private final UidProvider uidProvider;
     private final ModSeqProvider modSeqProvider;
 
+    private static final com.github.benmanes.caffeine.cache.Cache<String, Flags> APPLICABLE_FLAGS_CACHE =
+        com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+            .maximumSize(10_000)
+            .expireAfterAccess(java.time.Duration.ofMinutes(15))
+            .build();
+
     public YouTrackDBMessageMapper(MailboxSession mailboxSession,
                                    UidProvider uidProvider,
                                    ModSeqProvider modSeqProvider,
@@ -288,21 +294,28 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     @Override
     public Flags getApplicableFlag(Mailbox mailbox) throws MailboxException {
         try {
-            org.apache.james.mailbox.ApplicableFlagBuilder builder = org.apache.james.mailbox.ApplicableFlagBuilder.builder();
-            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT userFlags FROM JamesMailboxMessage WHERE mailboxId = :mbx AND userFlags IS NOT NULL",
-                "mbx", mailbox.getMailboxId().serialize());
-            for (Map<String, Object> row : rows) {
-                Object ufObj = row.get(PROP_USER_FLAGS);
-                if (ufObj instanceof Iterable<?> it) {
-                    for (Object f : it) {
-                        if (f != null) {
-                            builder.add(f.toString());
+            String mailboxId = mailbox.getMailboxId().serialize();
+            return APPLICABLE_FLAGS_CACHE.get(mailboxId, k -> {
+                try {
+                    org.apache.james.mailbox.ApplicableFlagBuilder builder = org.apache.james.mailbox.ApplicableFlagBuilder.builder();
+                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                        "SELECT userFlags FROM JamesMailboxMessage WHERE mailboxId = :mbx AND userFlags IS NOT NULL",
+                        "mbx", k);
+                    for (Map<String, Object> row : rows) {
+                        Object ufObj = row.get(PROP_USER_FLAGS);
+                        if (ufObj instanceof Iterable<?> it) {
+                            for (Object f : it) {
+                                if (f != null) {
+                                    builder.add(f.toString());
+                                }
+                            }
                         }
                     }
+                    return builder.build();
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
                 }
-            }
-            return builder.build();
+            });
         } catch (Exception e) {
             throw new MailboxException("Failed to calculate applicable flags in mailbox " + mailbox.getMailboxId().serialize(), e);
         }
@@ -358,6 +371,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                     });
                 }
             }
+            APPLICABLE_FLAGS_CACHE.invalidate(mailbox.getMailboxId().serialize());
         } catch (Exception e) {
             throw new MailboxException("Failed to update flags in mailbox " + mailbox.getMailboxId().serialize(), e);
         }
@@ -400,6 +414,10 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                     .property(PROP_CONTENT, fullBytes)
                     .iterate();
             });
+
+            if (!userFlags.isEmpty()) {
+                APPLICABLE_FLAGS_CACHE.invalidate(mailbox.getMailboxId().serialize());
+            }
 
             return message.metaData();
         } catch (Exception e) {
