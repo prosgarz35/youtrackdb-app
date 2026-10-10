@@ -142,8 +142,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             this.mailItems = new DelayQueue<>();
             this.inProcessingMailItems = ConcurrentHashMap.newKeySet();
             this.scheduler = Schedulers.newSingle("ytdb-mail-queue-" + name.asString());
-            this.virtualThreadScheduler = Schedulers.fromExecutor(
-                java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+            this.virtualThreadScheduler = YouTrackDBTransactions.virtualThreadScheduler();
 
             // Recover persistent items from YouTrackDB on startup
             recoverItemsFromDatabase();
@@ -219,7 +218,6 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             if (references.decrementAndGet() <= 0) {
                 this.closed = true;
                 this.scheduler.dispose();
-                this.virtualThreadScheduler.dispose();
                 mailItems.forEach(LifecycleUtil::dispose);
                 inProcessingMailItems.forEach(LifecycleUtil::dispose);
                 mailItems.clear();
