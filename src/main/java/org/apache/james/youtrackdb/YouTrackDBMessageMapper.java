@@ -57,6 +57,10 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     private static final String PROP_IS_SEEN = "isSeen";
     private static final String PROP_CONTENT = "content";
 
+    private static final String METADATA_COLS = String.join(", ",
+        PROP_MAILBOX_ID, PROP_MESSAGE_ID, PROP_THREAD_ID, PROP_UID, PROP_MODSEQ,
+        PROP_INTERNAL_DATE, PROP_SAVE_DATE, PROP_SIZE, PROP_BODY_START, PROP_FLAGS, PROP_USER_FLAGS);
+
     private final YTDBGraphTraversalSource g;
     private final UidProvider uidProvider;
     private final ModSeqProvider modSeqProvider;
@@ -76,11 +80,8 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     public Iterator<MailboxMessage> findInMailbox(Mailbox mailbox, MessageRange range, FetchType type, int limit) throws MailboxException {
         try {
             String mailboxId = mailbox.getMailboxId().serialize();
-            String metadataCols = String.join(", ",
-                PROP_MAILBOX_ID, PROP_MESSAGE_ID, PROP_THREAD_ID, PROP_UID, PROP_MODSEQ,
-                PROP_INTERNAL_DATE, PROP_SAVE_DATE, PROP_SIZE, PROP_BODY_START, PROP_FLAGS, PROP_USER_FLAGS);
             String selectClause = (type == FetchType.METADATA)
-                ? "SELECT " + metadataCols + " FROM " + CLASS_NAME
+                ? "SELECT " + METADATA_COLS + " FROM " + CLASS_NAME
                 : "SELECT FROM " + CLASS_NAME;
             String query;
             List<Object> params = new ArrayList<>();
@@ -219,12 +220,8 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             String mailboxId = mailbox.getMailboxId().serialize();
             List<Long> uidLongs = uids.stream().map(MessageUid::asLong).toList();
 
-            String metadataCols = String.join(", ",
-                PROP_MAILBOX_ID, PROP_MESSAGE_ID, PROP_THREAD_ID, PROP_UID, PROP_MODSEQ,
-                PROP_INTERNAL_DATE, PROP_SAVE_DATE, PROP_SIZE, PROP_BODY_START, PROP_FLAGS, PROP_USER_FLAGS);
-
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT " + metadataCols + " FROM " + CLASS_NAME + " WHERE mailboxId = :mbx AND uid IN :uids",
+                "SELECT " + METADATA_COLS + " FROM " + CLASS_NAME + " WHERE mailboxId = :mbx AND uid IN :uids",
                 "mbx", mailboxId,
                 "uids", uidLongs);
 
