@@ -21,7 +21,7 @@ public final class YouTrackDBMetadataUtils {
             return List.of();
         }
         JsonNode json = JSON.readTree(payload);
-        return List.of("headerBlobId", "bodyBlobId").stream()
+        return java.util.stream.Stream.of("headerBlobId", "bodyBlobId")
             .map(json::path)
             .filter(JsonNode::isTextual)
             .map(JsonNode::asText)

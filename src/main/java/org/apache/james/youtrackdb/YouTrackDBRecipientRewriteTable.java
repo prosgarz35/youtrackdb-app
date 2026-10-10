@@ -1,7 +1,5 @@
 package org.apache.james.youtrackdb;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -90,18 +88,16 @@ public class YouTrackDBRecipientRewriteTable extends AbstractRecipientRewriteTab
     @Override
     public Map<MappingSource, Mappings> getAllMappings() throws RecipientRewriteTableException {
         try {
-            Map<MappingSource, List<Mapping>> grouped = new HashMap<>();
-            for (Map<String, Object> row : YouTrackDBTransactions.queryRows(g, "SELECT source, mapping FROM JamesRRTMapping")) {
-                Object storedSource = row.get(PROP_SOURCE);
-                Object storedMapping = row.get(PROP_MAPPING);
-                if (storedSource != null && storedMapping != null) {
-                    grouped.computeIfAbsent(MappingSource.parse(storedSource.toString()), s -> new ArrayList<>())
-                        .add(Mapping.of(storedMapping.toString()));
-                }
-            }
-            Map<MappingSource, Mappings> result = new HashMap<>();
-            grouped.forEach((source, mappings) -> result.put(source, MappingsImpl.fromMappings(mappings.stream())));
-            return result;
+            return YouTrackDBTransactions.queryRows(g, "SELECT source, mapping FROM JamesRRTMapping")
+                .stream()
+                .filter(row -> row.get(PROP_SOURCE) != null && row.get(PROP_MAPPING) != null)
+                .collect(java.util.stream.Collectors.groupingBy(
+                    row -> MappingSource.parse(row.get(PROP_SOURCE).toString()),
+                    java.util.stream.Collectors.mapping(
+                        row -> Mapping.of(row.get(PROP_MAPPING).toString()),
+                        java.util.stream.Collectors.collectingAndThen(
+                            java.util.stream.Collectors.toList(),
+                            list -> MappingsImpl.fromMappings(list.stream())))));
         } catch (Exception e) {
             throw new RecipientRewriteTableException("Failed to get all mappings", e);
         }
