@@ -22,10 +22,8 @@ import org.apache.james.mailbox.store.mail.MailboxMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.base.Preconditions;
 import com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -127,7 +125,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
 
     @Override
     public Mono<MailboxId> rename(Mailbox mailbox) {
-        Preconditions.checkNotNull(mailbox.getMailboxId(), "A mailbox we want to rename should have a defined mailboxId");
+        Objects.requireNonNull(mailbox.getMailboxId(), "A mailbox we want to rename should have a defined mailboxId");
 
         return Mono.fromCallable(() -> {
             try {

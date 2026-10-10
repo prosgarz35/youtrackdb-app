@@ -11,7 +11,6 @@ import org.apache.james.mailbox.model.MailboxAnnotationKey;
 import org.apache.james.mailbox.model.MailboxId;
 import org.apache.james.mailbox.store.mail.AnnotationMapper;
 
-import com.google.common.base.Preconditions;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
 public class YouTrackDBAnnotationMapper implements AnnotationMapper {
@@ -99,7 +98,9 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
 
     @Override
     public void insertAnnotation(MailboxId mailboxId, MailboxAnnotation mailboxAnnotation) {
-        Preconditions.checkArgument(!mailboxAnnotation.isNil());
+        if (mailboxAnnotation.isNil()) {
+            throw new IllegalArgumentException("mailboxAnnotation must not be nil");
+        }
         String mId = mailboxId.serialize();
         String key = mailboxAnnotation.getKey().asString();
         String val = mailboxAnnotation.getValue().orElse("");
