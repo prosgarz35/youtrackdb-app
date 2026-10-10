@@ -41,8 +41,16 @@ public final class YouTrackDBTransactions {
             return;
         }
         g.executeInTx(tx -> {
-            action.accept(tx);
-            tx.tx().commit();
+            try {
+                action.accept(tx);
+                tx.tx().commit();
+            } catch (Exception e) {
+                try {
+                    tx.tx().rollback();
+                } catch (Exception ignored) {
+                }
+                throw e;
+            }
         });
     }
 
@@ -52,9 +60,17 @@ public final class YouTrackDBTransactions {
             return action.apply(g);
         }
         return g.computeInTx(tx -> {
-            R result = action.apply(tx);
-            tx.tx().commit();
-            return result;
+            try {
+                R result = action.apply(tx);
+                tx.tx().commit();
+                return result;
+            } catch (Exception e) {
+                try {
+                    tx.tx().rollback();
+                } catch (Exception ignored) {
+                }
+                throw e;
+            }
         });
     }
 

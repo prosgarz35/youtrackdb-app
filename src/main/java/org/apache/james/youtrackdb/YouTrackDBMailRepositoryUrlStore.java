@@ -28,6 +28,9 @@ public class YouTrackDBMailRepositoryUrlStore implements MailRepositoryUrlStore 
     public void add(MailRepositoryUrl url) {
         Objects.requireNonNull(url, "url must not be null");
         String urlStr = url.asString();
+        if (contains(url)) {
+            return;
+        }
         try {
             YouTrackDBTransactions.executeStrictTx(g, tx ->
                 tx.addV(CLASS).property(PROP_URL, urlStr).iterate());
