@@ -97,7 +97,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             try {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     String usernameStr = mailboxPath.getUser() != null ? mailboxPath.getUser().asString() : "";
-                    List<Map<String, Object>> existing = YouTrackDBTransactions.queryRows(tx,
+                    List<Map<String, Object>> existing = YouTrackDBTransactions.queryRowsInTx(tx,
                         "SELECT 1 FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name LIMIT 1",
                         "ns", mailboxPath.getNamespace(),
                         "user", usernameStr,
@@ -137,7 +137,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             try {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     String usernameStr = mailbox.getUser() != null ? mailbox.getUser().asString() : "";
-                    List<Map<String, Object>> existing = YouTrackDBTransactions.queryRows(tx,
+                    List<Map<String, Object>> existing = YouTrackDBTransactions.queryRowsInTx(tx,
                         "SELECT 1 FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name = :name AND mailboxId <> :id LIMIT 1",
                         "ns", mailbox.getNamespace(),
                         "user", usernameStr,
@@ -147,7 +147,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                         throw new MailboxExistsException(mailbox.generateAssociatedPath().getName());
                     }
 
-                    List<Map<String, Object>> target = YouTrackDBTransactions.queryRows(tx,
+                    List<Map<String, Object>> target = YouTrackDBTransactions.queryRowsInTx(tx,
                         "SELECT 1 FROM JamesMailbox WHERE mailboxId = :id LIMIT 1",
                         "id", mailbox.getMailboxId().serialize());
                     if (target.isEmpty()) {

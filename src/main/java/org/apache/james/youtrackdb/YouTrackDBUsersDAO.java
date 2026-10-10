@@ -110,7 +110,7 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
 
         try {
             YouTrackDBTransactions.executeStrictTx(g, tx -> {
-                boolean exists = !YouTrackDBTransactions.queryRows(tx,
+                boolean exists = !YouTrackDBTransactions.queryRowsInTx(tx,
                     "SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1",
                     "uname", username.asString()).isEmpty();
                 if (!exists) {
@@ -134,7 +134,7 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
         boolean removed;
         try {
             removed = YouTrackDBTransactions.computeStrictTx(g, tx -> {
-                boolean exists = !YouTrackDBTransactions.queryRows(tx,
+                boolean exists = !YouTrackDBTransactions.queryRowsInTx(tx,
                     "SELECT 1 FROM JamesUser WHERE username = :uname LIMIT 1",
                     "uname", name.asString()).isEmpty();
                 if (!exists) {
