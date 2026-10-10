@@ -38,6 +38,7 @@
             <requireSSL>false</requireSSL>
             <plainAuthEnabled>true</plainAuthEnabled>
         </auth>
+        <authorizedAddresses>127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16</authorizedAddresses>
         <verifyIdentity>false</verifyIdentity>
         <maxmessagesize>0</maxmessagesize>
         <addressBracketsEnforcement>true</addressBracketsEnforcement>

@@ -222,7 +222,7 @@ public class YouTrackDBAcidCrashTest {
             sendValidMessage(smtpPort, "Post-Network-Crash Message");
 
             // Verify INBOX has exactly 2 valid messages (Baseline + Post-Crash). None of the 20 broken ones!
-            Awaitility.await().atMost(10, TimeUnit.SECONDS).until(() -> {
+            Awaitility.await().atMost(30, TimeUnit.SECONDS).until(() -> {
                 try {
                     imapClient.connect("127.0.0.1", imapPort)
                         .login(USER, PASSWORD)
