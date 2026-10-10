@@ -156,8 +156,8 @@ public class YouTrackDBBlobPathTest {
             Path blobs = base.resolve("var").resolve("blobs");
             List<Path> files = regularFiles(blobs);
             assertThat(files).hasSize(1);
-            assertThat(files.get(0)).startsWith(blobs.resolve(".hashed"));
-            assertThat(files.get(0).getFileName().toString())
+            assertThat(files.getFirst()).startsWith(blobs.resolve(".hashed"));
+            assertThat(files.getFirst().getFileName().toString())
                 .isEqualTo(YouTrackDBBlobStoreDAO.fileNamesToKeep(Set.of(SLASH_ID)).stream()
                     .filter(name -> !name.equals(SLASH_ID)).findFirst().orElseThrow());
             assertThat(blobs.resolve("default").resolve("var")).doesNotExist();

@@ -17,7 +17,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.google.common.collect.ImmutableSet;
 import com.jetbrains.youtrackdb.api.DatabaseType;
 import com.jetbrains.youtrackdb.api.YouTrackDB;
 import com.jetbrains.youtrackdb.api.YourTracks;
@@ -128,7 +127,7 @@ class YouTrackDBAnnotationMapperTest {
     void getAnnotationsByKeysShouldReturnStoredAnnotationWithFilter() {
         annotationMapper.insertAnnotation(mailboxId, PRIVATE_ANNOTATION);
         annotationMapper.insertAnnotation(mailboxId, PRIVATE_CHILD_ANNOTATION);
-        assertThat(annotationMapper.getAnnotationsByKeys(mailboxId, ImmutableSet.of(PRIVATE_KEY)))
+        assertThat(annotationMapper.getAnnotationsByKeys(mailboxId, java.util.Set.of(PRIVATE_KEY)))
             .containsOnly(PRIVATE_ANNOTATION);
     }
 
@@ -137,7 +136,7 @@ class YouTrackDBAnnotationMapperTest {
         annotationMapper.insertAnnotation(mailboxId, PRIVATE_ANNOTATION);
         annotationMapper.insertAnnotation(mailboxId, PRIVATE_CHILD_ANNOTATION);
         annotationMapper.insertAnnotation(mailboxId, PRIVATE_GRANDCHILD_ANNOTATION);
-        assertThat(annotationMapper.getAnnotationsByKeysWithAllDepth(mailboxId, ImmutableSet.of(PRIVATE_KEY)))
+        assertThat(annotationMapper.getAnnotationsByKeysWithAllDepth(mailboxId, java.util.Set.of(PRIVATE_KEY)))
             .containsOnly(PRIVATE_ANNOTATION, PRIVATE_CHILD_ANNOTATION, PRIVATE_GRANDCHILD_ANNOTATION);
     }
 
@@ -146,7 +145,7 @@ class YouTrackDBAnnotationMapperTest {
         annotationMapper.insertAnnotation(mailboxId, PRIVATE_ANNOTATION);
         annotationMapper.insertAnnotation(mailboxId, PRIVATE_CHILD_ANNOTATION);
         annotationMapper.insertAnnotation(mailboxId, PRIVATE_GRANDCHILD_ANNOTATION);
-        assertThat(annotationMapper.getAnnotationsByKeysWithOneDepth(mailboxId, ImmutableSet.of(PRIVATE_KEY)))
+        assertThat(annotationMapper.getAnnotationsByKeysWithOneDepth(mailboxId, java.util.Set.of(PRIVATE_KEY)))
             .containsOnly(PRIVATE_ANNOTATION, PRIVATE_CHILD_ANNOTATION);
     }
 
@@ -194,7 +193,7 @@ class YouTrackDBAnnotationMapperTest {
         assertThat(completed).isTrue();
         assertThat(errorCount.get()).isZero();
         assertThat(annotationMapper.getAllAnnotations(mailboxId)).hasSize(1);
-        assertThat(annotationMapper.getAllAnnotations(mailboxId).get(0).getValue().get())
+        assertThat(annotationMapper.getAllAnnotations(mailboxId).getFirst().getValue().get())
             .startsWith("val-");
     }
 }

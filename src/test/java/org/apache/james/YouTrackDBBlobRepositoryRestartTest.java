@@ -131,11 +131,11 @@ public class YouTrackDBBlobRepositoryRestartTest {
     @Test
     @DisplayName("Mails of every size tier, an overwritten mail and two repositories survive a restart; removeAll stays removed")
     void mailsSurviveARestart(@TempDir Path workingDir) throws Exception {
-        // The bodies land in the three storage tiers of the blob store: inline raw, inline zstd, file.
-        Map<String, String> bodies = new HashMap<>();
-        bodies.put("tiny", "a few bytes");
-        bodies.put("medium", Strings.repeat("medium body line\r\n", 1_000));
-        bodies.put("huge", Strings.repeat("a line of a big mail, with some entropy 0123456789 abcdefghij\r\n", 3_000));
+        Map<String, String> bodies = Map.of(
+            "tiny", "a few bytes",
+            "medium", Strings.repeat("medium body line\r\n", 1_000),
+            "huge", Strings.repeat("a line of a big mail, with some entropy 0123456789 abcdefghij\r\n", 3_000)
+        );
 
         Map<MailKey, byte[]> expectedError = new HashMap<>();
         Map<MailKey, byte[]> expectedDenied = new HashMap<>();

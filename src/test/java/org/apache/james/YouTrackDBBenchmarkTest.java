@@ -163,8 +163,8 @@ public class YouTrackDBBenchmarkTest implements JamesServerConcreteContract {
         long p50 = sortedLatencies.isEmpty() ? 0 : sortedLatencies.get((int) (sortedLatencies.size() * 0.50));
         long p95 = sortedLatencies.isEmpty() ? 0 : sortedLatencies.get((int) (sortedLatencies.size() * 0.95));
         long p99 = sortedLatencies.isEmpty() ? 0 : sortedLatencies.get((int) (sortedLatencies.size() * 0.99));
-        long minLatency = sortedLatencies.isEmpty() ? 0 : sortedLatencies.get(0);
-        long maxLatency = sortedLatencies.isEmpty() ? 0 : sortedLatencies.get(sortedLatencies.size() - 1);
+        long minLatency = sortedLatencies.isEmpty() ? 0 : sortedLatencies.getFirst();
+        long maxLatency = sortedLatencies.isEmpty() ? 0 : sortedLatencies.getLast();
         double avgLatency = sortedLatencies.stream().mapToLong(Long::longValue).average().orElse(0.0);
 
         System.out.println("==========================================================");
