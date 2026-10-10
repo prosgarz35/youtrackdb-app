@@ -278,11 +278,6 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
         }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
-    private boolean belongsToSameUser(Mailbox mailbox, Mailbox otherMailbox) {
-        return Objects.equals(mailbox.getNamespace(), otherMailbox.getNamespace())
-            && Objects.equals(mailbox.getUser(), otherMailbox.getUser());
-    }
-
     @Override
     public Mono<ACLDiff> updateACL(Mailbox mailbox, MailboxACL.ACLCommand mailboxACLCommand) {
         return Mono.fromCallable(() -> YouTrackDBTransactions.retryOnConflict(() -> {

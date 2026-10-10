@@ -30,10 +30,6 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
         this.g = Objects.requireNonNull(g, "g must not be null");
     }
 
-    private String getMailboxIdString(MailboxId mailboxId) {
-        return mailboxId.serialize();
-    }
-
     @Override
     public List<MailboxAnnotation> getAllAnnotations(MailboxId mailboxId) {
         List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
@@ -110,7 +106,7 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
     @Override
     public void insertAnnotation(MailboxId mailboxId, MailboxAnnotation mailboxAnnotation) {
         Preconditions.checkArgument(!mailboxAnnotation.isNil());
-        String mId = getMailboxIdString(mailboxId);
+        String mId = mailboxId.serialize();
         String key = mailboxAnnotation.getKey().asString();
         String val = mailboxAnnotation.getValue().orElse("");
 
@@ -143,7 +139,7 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
 
     @Override
     public void deleteAnnotation(MailboxId mailboxId, MailboxAnnotationKey key) {
-        String mId = getMailboxIdString(mailboxId);
+        String mId = mailboxId.serialize();
         String keyStr = key.asString();
 
         try {
@@ -160,7 +156,7 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
 
     @Override
     public boolean exist(MailboxId mailboxId, MailboxAnnotation mailboxAnnotation) {
-        String mId = getMailboxIdString(mailboxId);
+        String mId = mailboxId.serialize();
         String keyStr = mailboxAnnotation.getKey().asString();
         List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
             "SELECT 1 FROM " + CLASS + " WHERE mailboxId = :mbx AND key = :key LIMIT 1",
@@ -170,7 +166,7 @@ public class YouTrackDBAnnotationMapper implements AnnotationMapper {
 
     @Override
     public int countAnnotations(MailboxId mailboxId) {
-        String mId = getMailboxIdString(mailboxId);
+        String mId = mailboxId.serialize();
         List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
             "SELECT count(*) AS cnt FROM " + CLASS + " WHERE mailboxId = :mbx",
             "mbx", mId);

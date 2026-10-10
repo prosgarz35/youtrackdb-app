@@ -503,17 +503,6 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
         }
     }
 
-    private void delete(MailboxId mailboxId, MailboxMessage message) throws MailboxException {
-        try {
-            YouTrackDBTransactions.executeStrictTx(g, tx ->
-                tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :mbx AND uid = :uid",
-                    "mbx", mailboxId.serialize(),
-                    "uid", message.getUid().asLong()));
-        } catch (Exception e) {
-            throw new MailboxException("Failed to delete message " + message.getUid(), e);
-        }
-    }
-
     @Override
     protected void begin() {
     }
