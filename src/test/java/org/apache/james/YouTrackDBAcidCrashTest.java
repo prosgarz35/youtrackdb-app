@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.james.modules.protocols.ImapGuiceProbe;
 import org.apache.james.modules.protocols.SmtpGuiceProbe;
 import org.apache.james.utils.DataProbeImpl;
+import org.apache.james.utils.SMTPMessageSender;
 import org.apache.james.utils.TestIMAPClient;
 import org.apache.james.youtrackdb.YouTrackDBJamesConfiguration;
 import org.apache.james.youtrackdb.YouTrackDBJamesServerMain;
@@ -172,11 +173,15 @@ public class YouTrackDBAcidCrashTest {
                 .addDomain(DOMAIN)
                 .addUser(USER, PASSWORD);
 
-            int smtpPort = server.getProbe(SmtpGuiceProbe.class).getSmtpPort().getValue();
+            org.apache.james.util.Port smtpPort = server.getProbe(SmtpGuiceProbe.class).getSmtpPort();
+            int smtpPortValue = smtpPort.getValue();
             int imapPort = server.getProbe(ImapGuiceProbe.class).getImapPort();
 
             // Send 1 valid message to baseline
-            sendValidMessage(smtpPort, "Baseline Message");
+            SMTPMessageSender smtpSender = new SMTPMessageSender(DOMAIN);
+            smtpSender.connect("127.0.0.1", smtpPort)
+                .authenticate(USER, PASSWORD)
+                .sendMessageWithHeaders(USER, USER, "Subject: Baseline Message\r\n\r\nValid payload body");
 
             // Await baseline message in IMAP
             TestIMAPClient imapClient = new TestIMAPClient();
@@ -195,7 +200,7 @@ public class YouTrackDBAcidCrashTest {
 
             // SIMULATE NETWORK ABRUPT DISCONNECTS: 20 broken clients
             for (int i = 0; i < 20; i++) {
-                try (Socket socket = new Socket("127.0.0.1", smtpPort)) {
+                try (Socket socket = new Socket("127.0.0.1", smtpPortValue)) {
                     socket.setSoLinger(true, 0); // RST packet on close instead of FIN (hard crash)
                     BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
                     PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.US_ASCII), true);
@@ -219,7 +224,9 @@ public class YouTrackDBAcidCrashTest {
             }
 
             // Send another valid message to verify SMTP server is still operational
-            sendValidMessage(smtpPort, "Post-Network-Crash Message");
+            smtpSender.connect("127.0.0.1", smtpPort)
+                .authenticate(USER, PASSWORD)
+                .sendMessageWithHeaders(USER, USER, "Subject: Post-Network-Crash Message\r\n\r\nValid payload body");
 
             // Verify INBOX has exactly 2 valid messages (Baseline + Post-Crash). None of the 20 broken ones!
             Awaitility.await().atMost(30, TimeUnit.SECONDS).until(() -> {
