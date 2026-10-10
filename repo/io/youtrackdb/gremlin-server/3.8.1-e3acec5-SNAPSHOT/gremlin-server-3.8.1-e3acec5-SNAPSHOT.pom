@@ -1,0 +1,345 @@
+<!--
+Licensed to the Apache Software Foundation (ASF) under one or more
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to You under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance with
+the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.youtrackdb</groupId>
+        <artifactId>tinkerpop</artifactId>
+        <version>3.8.1-e3acec5-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <artifactId>gremlin-server</artifactId>
+    <name>Apache TinkerPop :: Gremlin Server</name>
+    <properties>
+        <!--
+        provides a way to convert maven.exec.skip value to skipImageBuild for use in skipping image building for testing
+        under incompatible platforms
+        -->
+        <maven.exec.skip>false</maven.exec.skip> <!-- default -->
+        <skipImageBuild>${maven.exec.skip}</skipImageBuild>
+        <docker.platforms>linux/amd64,linux/arm64</docker.platforms>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>io.youtrackdb</groupId>
+            <artifactId>tinkergraph-gremlin</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.youtrackdb</groupId>
+            <artifactId>gremlin-util</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.youtrackdb</groupId>
+            <artifactId>gremlin-groovy</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>commons-collections</groupId>
+            <artifactId>commons-collections</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.github.hakky54</groupId>
+            <artifactId>ayza-for-netty</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- METRICS -->
+        <dependency>
+            <groupId>io.dropwizard.metrics5</groupId>
+            <artifactId>metrics-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.dropwizard.metrics5</groupId>
+            <artifactId>metrics-jmx</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.dropwizard.metrics5</groupId>
+            <artifactId>metrics-graphite</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- TESTING -->
+        <dependency>
+            <groupId>io.youtrackdb</groupId>
+            <artifactId>gremlin-test</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.youtrackdb</groupId>
+            <artifactId>gremlin-driver</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.carrotsearch</groupId>
+            <artifactId>junit-benchmarks</artifactId>
+            <version>0.7.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.inject</groupId>
+            <artifactId>guice</artifactId>
+            <version>${guice.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.hakky54</groupId>
+            <artifactId>logcaptor</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Optional depenency needed for Netty's SelfSignedCertificate generation on JDKs which doesn't provide sun.security.x509 package -->
+        <!-- https://github.com/netty/netty/blob/netty-4.1.125.Final/pom.xml#L963 -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk15on</artifactId>
+            <version>${bouncycastle.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <directory>${basedir}/target</directory>
+        <finalName>${project.artifactId}-${project.version}</finalName>
+        <testSourceDirectory>${basedir}/src/test/java</testSourceDirectory>
+        <resources>
+            <resource>
+                <directory>${basedir}/src/main/resources
+                </directory>
+            </resource>
+        </resources>
+        <testResources>
+            <testResource>
+                <directory>${basedir}/src/test/resources
+                </directory>
+            </testResource>
+        </testResources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <attach>true</attach>
+                    <descriptors>
+                        <descriptor>src/assembly/standalone.xml</descriptor>
+                        <descriptor>src/assembly/distribution.xml</descriptor>
+                    </descriptors>
+                    <finalName>apache-tinkerpop-${project.artifactId}-${project.version}</finalName>
+                    <outputDirectory>target</outputDirectory>
+                    <workDirectory>target/assembly/work</workDirectory>
+                    <tarLongFileMode>warn</tarLongFileMode>
+                    <archive>
+                        <manifest>
+                            <mainClass>org.apache.tinkerpop.gremlin.server.GremlinServer</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+            </plugin>
+            <!--
+            gremlin server image will be generated on each build as language variants will need the latest to do
+            their work.
+            -->
+            <plugin>
+                <artifactId>exec-maven-plugin</artifactId>
+                <groupId>org.codehaus.mojo</groupId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>build-image</id>
+                        <phase>install</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${skipImageBuild}</skip>
+                            <executable>docker</executable>
+                            <arguments>
+                                <argument>build</argument>
+                                <argument>-f</argument>
+                                <argument>./Dockerfile</argument>
+                                <argument>--build-arg</argument>
+                                <argument>GREMLIN_SERVER_DIR=target/apache-tinkerpop-${project.artifactId}-${project.version}-standalone</argument>
+                                <argument>-t</argument>
+                                <argument>tinkerpop/gremlin-server:${project.version}</argument>
+                                <argument>.</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>remove-dangling-images</id>
+                        <phase>install</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${skipImageBuild}</skip>
+                            <executable>docker</executable>
+                            <arguments>
+                                <argument>image</argument>
+                                <argument>prune</argument>
+                                <argument>--filter</argument>
+                                <argument>label=maintainer=dev@tinkerpop.apache.org</argument>
+                                <argument>-f</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>io.fabric8</groupId>
+                    <artifactId>docker-maven-plugin</artifactId>
+                    <configuration>
+                        <images>
+                            <image>
+                                <name>tinkerpop/gremlin-server:${project.version}</name>
+                                <build>
+                                    <dockerFile>${project.build.directory}/../Dockerfile</dockerFile>
+                                    <args>
+                                        <GREMLIN_SERVER_DIR>target/apache-tinkerpop-${project.artifactId}-${project.version}-standalone</GREMLIN_SERVER_DIR>
+                                    </args>
+                                    <tags>
+                                        <!-- docker.tags.* properties are empty if project.version is a pre-release
+                                            resulting in no additional tags -->
+                                        <tag>${docker.tags.majorVersion.minorVersion}</tag>
+                                        <tag>${docker.tags.latest}</tag>
+                                    </tags>
+                                    <buildx>
+                                        <platforms>
+                                            <platform>${docker.platforms}</platform>
+                                        </platforms>
+                                    </buildx>
+                                </build>
+                            </image>
+                        </images>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <profiles>
+
+        <profile>
+            <id>use-epoll</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+                <property>
+                    <name>useEpoll</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <gremlin.server.epoll>true</gremlin.server.epoll>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>docker-images</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+                <property>
+                    <name>dockerImages</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <!--
+                    Deploying docker images will happen out of the normal jvm artifact deployment flow, so disable that
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-deploy-plugin</artifactId>
+                        <configuration>
+                            <skip>true</skip>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <configuration>
+                            <skipPublishing>true</skipPublishing>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>io.fabric8</groupId>
+                        <artifactId>docker-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>docker:build</id>
+                                <goals>
+                                    <goal>build</goal>
+                                </goals>
+                                <phase>package</phase>
+                            </execution>
+                            <execution>
+                                <id>docker:push</id>
+                                <goals>
+                                    <goal>push</goal>
+                                </goals>
+                                <phase>deploy</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

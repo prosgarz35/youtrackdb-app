@@ -57,14 +57,11 @@ It delivers a complete enterprise-grade mail stack running within a single JVM p
 * **Maven 3.9+**
 
 #### Building from Source
-```bash
-# 1. Build and install YouTrackDB
-git clone https://github.com/JetBrains/youtrackdb.git
-cd youtrackdb
-mvn clean install -DskipTests
+The repository is fully standalone and ships with the bundled SNAPSHOT artifacts in `repo/`. No external repositories or clone steps are required:
 
-# 2. Build James YouTrack Mail Server
-cd /path/to/youtrackdb-app
+```bash
+git clone https://github.com/prosgarz35/youtrackdb-app.git
+cd youtrackdb-app
 mvn clean package -DskipTests
 ```
 

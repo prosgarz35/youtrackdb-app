@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata modelVersion="1.1.0">
+  <groupId>org.apache.james</groupId>
+  <artifactId>james-server-webadmin-jmap</artifactId>
+  <version>3.10.0-SNAPSHOT</version>
+  <versioning>
+    <snapshot>
+      <timestamp>20260915.081625</timestamp>
+      <buildNumber>143</buildNumber>
+    </snapshot>
+    <lastUpdated>20260915081625</lastUpdated>
+    <snapshotVersions>
+      <snapshotVersion>
+        <extension>pom</extension>
+        <value>3.10.0-20260915.081625-143</value>
+        <updated>20260915081625</updated>
+      </snapshotVersion>
+      <snapshotVersion>
+        <extension>jar</extension>
+        <value>3.10.0-20260915.081625-143</value>
+        <updated>20260915081625</updated>
+      </snapshotVersion>
+      <snapshotVersion>
+        <classifier>tests</classifier>
+        <extension>jar</extension>
+        <value>3.10.0-20260915.081625-143</value>
+        <updated>20260915081625</updated>
+      </snapshotVersion>
+    </snapshotVersions>
+  </versioning>
+</metadata>

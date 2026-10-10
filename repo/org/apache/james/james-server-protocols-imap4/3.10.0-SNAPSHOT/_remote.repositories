@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Fri Oct 09 12:45:00 ICT 2026
+james-server-protocols-imap4-3.10.0-SNAPSHOT-tests.jar>=
+james-server-protocols-imap4-3.10.0-SNAPSHOT.jar>=
+james-server-protocols-imap4-3.10.0-SNAPSHOT.pom>=

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>org.apache.james.protocols</groupId>
+  <artifactId>protocols-imap</artifactId>
+  <versioning>
+    <versions>
+      <version>3.10.0-SNAPSHOT</version>
+    </versions>
+    <lastUpdated>20261009060027</lastUpdated>
+  </versioning>
+</metadata>

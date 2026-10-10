@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Sep 29 16:11:22 ICT 2026
+protocols-sasl-3.10.0-SNAPSHOT-tests.jar>=
+protocols-sasl-3.10.0-SNAPSHOT.jar>=
+protocols-sasl-3.10.0-SNAPSHOT.pom>=

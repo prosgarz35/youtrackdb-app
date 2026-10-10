@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Sep 29 13:45:22 ICT 2026
+blob-export-api-3.10.0-SNAPSHOT-tests.jar>=
+blob-export-api-3.10.0-SNAPSHOT.jar>=
+blob-export-api-3.10.0-SNAPSHOT.pom>=

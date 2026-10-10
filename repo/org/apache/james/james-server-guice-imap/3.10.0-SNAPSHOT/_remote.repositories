@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Fri Oct 09 12:48:31 ICT 2026
+james-server-guice-imap-3.10.0-SNAPSHOT-tests.jar>=
+james-server-guice-imap-3.10.0-SNAPSHOT.jar>=
+james-server-guice-imap-3.10.0-SNAPSHOT.pom>=

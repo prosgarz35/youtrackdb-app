@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Sep 29 16:10:12 ICT 2026
+metrics-tests-3.10.0-SNAPSHOT-tests.jar>=
+metrics-tests-3.10.0-SNAPSHOT.jar>=
+metrics-tests-3.10.0-SNAPSHOT.pom>=

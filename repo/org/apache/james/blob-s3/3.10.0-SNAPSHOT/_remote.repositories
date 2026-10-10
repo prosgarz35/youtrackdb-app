@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Sep 29 12:54:35 ICT 2026
+blob-s3-3.10.0-SNAPSHOT-tests.jar>=
+blob-s3-3.10.0-SNAPSHOT.jar>=
+blob-s3-3.10.0-SNAPSHOT.pom>=

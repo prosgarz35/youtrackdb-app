@@ -23,7 +23,7 @@
         <groupId>org.apache.james</groupId>
         <artifactId>james-server</artifactId>
         <version>3.10.0-SNAPSHOT</version>
-        <relativePath/>
+        <relativePath>repo/org/apache/james/james-server/3.10.0-SNAPSHOT/james-server-3.10.0-SNAPSHOT.pom</relativePath>
     </parent>
 
     <artifactId>james-server-youtrackdb-app</artifactId>
@@ -205,6 +205,21 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <repositories>
+        <repository>
+            <releases>
+                <enabled>true</enabled>
+                <updatePolicy>always</updatePolicy>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>always</updatePolicy>
+            </snapshots>
+            <id>local-bundled-repo</id>
+            <url>file://${project.basedir}/repo</url>
+        </repository>
+    </repositories>
 
     <build>
         <plugins>

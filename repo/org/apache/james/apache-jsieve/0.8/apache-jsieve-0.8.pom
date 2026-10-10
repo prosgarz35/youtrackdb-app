@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.apache</groupId>
+        <artifactId>apache</artifactId>
+        <version>21</version>
+        <relativePath />
+    </parent>
+
+    <groupId>org.apache.james</groupId>
+    <artifactId>apache-jsieve</artifactId>
+    <version>0.8</version>
+    <packaging>pom</packaging>
+
+    <name>Apache James :: JSieve</name>
+    <description>Apache James JSieve</description>
+    <url>http://james.apache.org/jsieve/</url>
+    <inceptionYear>2008</inceptionYear>
+
+    <modules>
+        <module>all</module>
+        <module>core</module>
+        <module>util</module>
+    </modules>
+
+    <scm>
+        <connection>scm:git:http://git-wip-us.apache.org/repos/asf/james-jsieve.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/apache/james-jsieve.git</developerConnection>
+        <url>https://git-wip-us.apache.org/repos/asf/james-jsieve.git</url>
+      <tag>apache-jsieve-0.8</tag>
+  </scm>
+    
+    <issueManagement>
+        <system>JIRA</system>
+        <url>https://issues.apache.org/jira/browse/JSIEVE</url>
+    </issueManagement>
+
+    <distributionManagement>
+        <site>
+            <id>${james.www.id}</id>
+            <url>${james.jsieve.www}</url>
+        </site>
+    </distributionManagement>
+
+    <properties>
+        <james-skin.version>1.8</james-skin.version>
+
+        <sourceReleaseAssemblyDescriptor>project</sourceReleaseAssemblyDescriptor>
+        <!-- General location for site stage -->
+        <james.www>scpexe://people.apache.org/www/james.apache.org/</james.www>
+        <!-- Project specific location, allowing specific override -->
+        <james.jsieve.www>${james.www}/jsieve/</james.jsieve.www>
+        <!-- Overridding this value allows single set of loopback settings to be maintained -->
+        <james.www.id>jsieve-website</james.www.id>
+
+        <target.jdk>1.8</target.jdk>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <junit.version>4.13.2</junit.version>
+        <jmock.version>1.2.0</jmock.version>
+        <logback.version>1.4.4</logback.version>
+        <mail.version>1.6.2</mail.version>
+        <activation.version>1.1.1</activation.version>
+        <mockito-core.version>3.0.0</mockito-core.version>
+        <assertj.version>3.23.1</assertj.version>
+        <guava.version>31.1-jre</guava.version>
+        <mime4j.version>0.8.7</mime4j.version>
+        <slf4j.version>2.0.3</slf4j.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.apache.james</groupId>
+                <artifactId>apache-mime4j-core</artifactId>
+                <version>${mime4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.james</groupId>
+                <artifactId>apache-jsieve</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.james</groupId>
+                <artifactId>apache-jsieve-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.james</groupId>
+                <artifactId>apache-jsieve-mailet</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.james</groupId>
+                <artifactId>apache-jsieve-util</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>${guava.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>junit</groupId>
+                <artifactId>junit</artifactId>
+                <version>${junit.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>jmock</groupId>
+                <artifactId>jmock</artifactId>
+                <version>${jmock.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-classic</artifactId>
+                <version>${logback.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.sun.mail</groupId>
+                <artifactId>javax.mail</artifactId>
+                <version>${mail.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>javax.activation</groupId>
+                        <artifactId>activation</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>javax.activation</groupId>
+                <artifactId>activation</artifactId>
+                <version>${activation.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>javax.inject</groupId>
+                <artifactId>javax.inject</artifactId>
+                <version>1</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>${mockito-core.version}</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.felix</groupId>
+                <artifactId>maven-bundle-plugin</artifactId>
+                <version>4.2.1</version>
+                <extensions>true</extensions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.rat</groupId>
+                <artifactId>apache-rat-plugin</artifactId>
+                <version>0.13</version>
+                <configuration>
+                    <excludes>
+                        <exclude>**/*help.txt</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.1</version>
+                <configuration>
+                    <optimize>true</optimize>
+                    <source>${target.jdk}</source>
+                    <target>${target.jdk}</target>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

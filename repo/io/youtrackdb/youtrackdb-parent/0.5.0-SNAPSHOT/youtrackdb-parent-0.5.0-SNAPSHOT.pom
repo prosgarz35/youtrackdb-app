@@ -1,0 +1,1135 @@
+<?xml version="1.0"?>
+
+<!-- Licensed under the Apache License, Version 2.0 (the "License");
+    You may not use this file except in compliance with the License.
+    You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+    Unless required by applicable law or agreed to in writing, software distributed under the
+    License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+    -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.youtrackdb</groupId>
+  <artifactId>youtrackdb-parent</artifactId>
+  <version>0.5.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>YouTrackDB</name>
+  <description>YouTrackDB NoSQL document graph DB</description>
+  <url>https://github.com/JetBrains/youtrackdb</url>
+  <organization>
+    <name>JetBrains</name>
+    <url>https://www.jetbrains.com</url>
+  </organization>
+  <licenses>
+    <license>
+      <name>Apache 2</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>jetbrains</id>
+      <name>JetBrains Team</name>
+      <url>https://github.com/JetBrains/youtrackdb</url>
+    </developer>
+  </developers>
+
+  <modules>
+    <module>test-commons</module>
+    <module>gremlin-annotations</module>
+    <module>core</module>
+    <module>server</module>
+    <module>tests</module>
+    <module>driver</module>
+    <module>examples</module>
+    <module>console</module>
+    <module>embedded</module>
+    <module>docker-tests</module>
+    <module>jmh-ldbc</module>
+  </modules>
+
+  <scm>
+    <connection>scm:git:git@github.com:youtrackdb/youtrackdb.git</connection>
+    <developerConnection>scm:git:git@github.com:youtrackdb/youtrackdb.git</developerConnection>
+    <url>scm:git:git@github.com:youtrackdb/youtrackdb.git</url>
+    <tag>HEAD</tag>
+  </scm>
+  <issueManagement>
+    <system>YouTrack</system>
+    <url>https://youtrack.jetbrains.com/issues/YTDB</url>
+  </issueManagement>
+
+  <repositories>
+    <repository>
+      <name>Central Portal Snapshots</name>
+      <id>central-portal-snapshots</id>
+      <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+      <releases>
+        <enabled>false</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </repository>
+  </repositories>
+
+  <properties>
+    <revision>0.5.0</revision>
+    <sha1/>
+    <changelist>-SNAPSHOT</changelist>
+
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.build.resourceEncoding>UTF-8</project.build.resourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+    <maven.compiler.release>21</maven.compiler.release>
+    <maven.build.timestamp.format>yyyy-MM-dd HH:mm:ssZ</maven.build.timestamp.format>
+    <!--This property is updated automatically and is needed to make build reproducible-->
+    <project.build.outputTimestamp>2023-01-01T00:00:00Z</project.build.outputTimestamp>
+    <!--suppress UnresolvedMavenProperty -->
+    <implementation.build>${scmBranch}@r${buildNumber}</implementation.build>
+    <!-- | shared build/report plugins version -->
+    <surefire.version>3.5.6</surefire.version>
+    <it.storage.callFsync>true</it.storage.callFsync>
+    <license.location>license.txt</license.location>
+    <!--Override with the given url on external modules-->
+    <!--<license.location>https://github.com/orientechnologies/orientdb/raw/develop/ODB-ASL-LICENSE.txt</license.location>-->
+    <heapSize>4096m</heapSize>
+    <!-- Default empty argLine; modules override this with JVM flags.
+         The coverage profile references ${argLine} in surefire config,
+         so a fallback is needed for modules that don't define it. -->
+    <argLine/>
+    <javaassist.version>3.30.2-GA</javaassist.version>
+    <project.rootdir>${project.basedir}/</project.rootdir>
+    <slf4j.version>2.0.20</slf4j.version>
+    <log4j.version>2.26.1</log4j.version>
+    <jackson.verson>2.22.3</jackson.verson>
+    <toolchain.jdk.version>[21,)</toolchain.jdk.version>
+    <gremlin.version>3.8.1-e3acec5-SNAPSHOT</gremlin.version>
+    <hamcrest.version>3.0</hamcrest.version>
+    <cucumber.version>7.34.8</cucumber.version>
+    <docker.platforms>linux/amd64,linux/arm64/v8</docker.platforms>
+    <guice.version>7.0.0</guice.version>
+    <antlr.version>4.13.2</antlr.version>
+    <errorprone.version>2.50.0</errorprone.version>
+    <errorprone.extra.args/>
+    <nullaway.version>0.14.1</nullaway.version>
+    <jspecify.version>1.0.0</jspecify.version>
+    <!--
+      ReferenceEquality is OFF: YouTrackDB intentionally compares by identity in
+      many hot paths - sentinel objects (e.g. GlobalConfiguration.nullValue),
+      session identity, cache linked-list nodes, and RID/statement pointer-compare
+      fast paths. error_prone 2.50.0 broadened the check to flag ~200 such
+      intentional comparisons across 50 core files that 2.47.0 did not; none were
+      value-equality bugs, so the check is disabled rather than its findings fixed.
+    -->
+    <errorprone.args>-Xplugin:ErrorProne -XepExcludedPaths:.*/target/generated-sources/.*|.*/internal/core/sql/parser/.*|.*/src/test/.*|.*/generated-test-sources/.* -XepOpt:NullAway:OnlyNullMarked=true -Xep:NullAway:ERROR -Xep:BooleanLiteral:ERROR -Xep:MissingSummary:ERROR -Xep:StringCaseLocaleUsage:ERROR -Xep:PatternMatchingInstanceof:ERROR -Xep:UnusedVariable:ERROR -Xep:UnnecessaryParentheses:ERROR -Xep:MixedMutabilityReturnType:ERROR -Xep:SystemOut:ERROR -Xep:CheckedExceptionNotThrown:ERROR -Xep:RemoveUnusedImports:ERROR -Xep:MissingOverride:ERROR -Xep:ImmutableEnumChecker:ERROR -Xep:EffectivelyPrivate:ERROR -Xep:StatementSwitchToExpressionSwitch:ERROR -Xep:OperatorPrecedence:ERROR -Xep:InvalidParam:ERROR -Xep:EmptyBlockTag:ERROR -Xep:ReferenceEquality:OFF -Xep:EqualsGetClass:ERROR -Xep:StringSplitter:ERROR -Xep:TypeParameterUnusedInFormals:ERROR -Xep:NonApiType:OFF</errorprone.args>
+    <spotless.version>3.10.2</spotless.version>
+  </properties>
+
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.junit</groupId>
+        <artifactId>junit-bom</artifactId>
+        <version>5.14.4</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.commons</groupId>
+        <artifactId>commons-collections4</artifactId>
+        <version>4.5.0</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.code.findbugs</groupId>
+        <artifactId>jsr305</artifactId>
+        <version>3.0.2</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.guava</groupId>
+        <artifactId>guava</artifactId>
+        <version>33.6.0-jre</version>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>${slf4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-jdk14</artifactId>
+        <version>${slf4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>jcl-over-slf4j</artifactId>
+        <version>${slf4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-nop</artifactId>
+        <version>${slf4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>it.unimi.dsi</groupId>
+        <artifactId>fastutil</artifactId>
+        <version>8.5.19</version>
+      </dependency>
+      <dependency>
+        <groupId>org.roaringbitmap</groupId>
+        <artifactId>RoaringBitmap</artifactId>
+        <version>1.6.14</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-core</artifactId>
+        <version>${jackson.verson}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>${jackson.verson}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-parameter-names</artifactId>
+        <version>${jackson.verson}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.youtrackdb</groupId>
+        <artifactId>gremlin-core</artifactId>
+        <version>${gremlin.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.youtrackdb</groupId>
+        <artifactId>gremlin-groovy</artifactId>
+        <version>${gremlin.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.youtrackdb</groupId>
+        <artifactId>tinkergraph-gremlin</artifactId>
+        <version>${gremlin.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.youtrackdb</groupId>
+        <artifactId>gremlin-test</artifactId>
+        <version>${gremlin.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.youtrackdb</groupId>
+        <artifactId>gremlin-driver</artifactId>
+        <version>${gremlin.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.youtrackdb</groupId>
+        <artifactId>gremlin-server</artifactId>
+        <version>${gremlin.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.youtrackdb</groupId>
+        <artifactId>gremlin-util</artifactId>
+        <version>${gremlin.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.youtrackdb</groupId>
+        <artifactId>gremlin-console</artifactId>
+        <version>${gremlin.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.palantir.javapoet</groupId>
+        <artifactId>javapoet</artifactId>
+        <version>0.14.0</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.testing.compile</groupId>
+        <artifactId>compile-testing</artifactId>
+        <version>0.23.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>log4j-bom</artifactId>
+        <version>${log4j.version}</version>
+        <scope>import</scope>
+        <type>pom</type>
+      </dependency>
+      <dependency>
+        <groupId>org.hamcrest</groupId>
+        <artifactId>hamcrest</artifactId>
+        <version>${hamcrest.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.hamcrest</groupId>
+        <artifactId>hamcrest-core</artifactId>
+        <version>${hamcrest.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-java</artifactId>
+        <version>${cucumber.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-core</artifactId>
+        <version>${cucumber.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-junit</artifactId>
+        <version>${cucumber.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.github.jnr</groupId>
+        <artifactId>jnr-posix</artifactId>
+        <version>3.1.22</version>
+      </dependency>
+      <dependency>
+        <groupId>com.googlecode.concurrentlinkedhashmap</groupId>
+        <artifactId>concurrentlinkedhashmap-lru</artifactId>
+        <version>1.4.2</version>
+        <exclusions>
+          <exclusion>
+            <groupId>com.google.code.findbugs</groupId>
+            <artifactId>jsr305</artifactId>
+          </exclusion>
+        </exclusions>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers</artifactId>
+        <version>2.0.5</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>junit</groupId>
+        <artifactId>junit</artifactId>
+        <version>4.13.2</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.github.classgraph</groupId>
+        <artifactId>classgraph</artifactId>
+        <version>4.8.184</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.inject</groupId>
+        <artifactId>guice</artifactId>
+        <version>${guice.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.commons</groupId>
+        <artifactId>commons-lang3</artifactId>
+        <version>3.20.0</version>
+      </dependency>
+      <dependency>
+        <groupId>commons-io</groupId>
+        <artifactId>commons-io</artifactId>
+        <version>2.22.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.antlr</groupId>
+        <artifactId>antlr4-runtime</artifactId>
+        <version>${antlr.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.youtrackdb</groupId>
+        <artifactId>gremlin-language</artifactId>
+        <version>${gremlin.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jspecify</groupId>
+        <artifactId>jspecify</artifactId>
+        <version>${jspecify.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-failsafe-plugin</artifactId>
+          <version>${surefire.version}</version>
+          <configuration>
+            <systemPropertyVariables>
+              <youtrackdb.storage.callFsync>${it.storage.callFsync}</youtrackdb.storage.callFsync>
+            </systemPropertyVariables>
+            <useModulePath>false</useModulePath>
+          </configuration>
+          <executions>
+            <execution>
+              <goals>
+                <goal>integration-test</goal>
+                <goal>verify</goal>
+              </goals>
+            </execution>
+          </executions>
+        </plugin>
+        <plugin>
+          <artifactId>maven-clean-plugin</artifactId>
+          <version>3.5.0</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-resources-plugin</artifactId>
+          <version>3.5.0</version>
+          <configuration>
+            <nonFilteredFileExtensions>kryo</nonFilteredFileExtensions>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-assembly-plugin</artifactId>
+          <version>3.8.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>buildnumber-maven-plugin</artifactId>
+          <version>3.3.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>versions-maven-plugin</artifactId>
+          <version>2.21.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>${surefire.version}</version>
+          <configuration>
+            <systemPropertyVariables>
+              <youtrackdb.security.userPasswordSaltIterations>1
+              </youtrackdb.security.userPasswordSaltIterations>
+            </systemPropertyVariables>
+            <useModulePath>false</useModulePath>
+            <redirectTestOutputToFile>true</redirectTestOutputToFile>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.jacoco</groupId>
+          <artifactId>jacoco-maven-plugin</artifactId>
+          <version>0.8.14</version>
+        </plugin>
+        <plugin>
+          <artifactId>maven-install-plugin</artifactId>
+          <version>3.1.4</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-deploy-plugin</artifactId>
+          <version>3.1.4</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.15.0</version>
+          <configuration>
+            <source>${maven.compiler.source}</source>
+            <target>${maven.compiler.target}</target>
+            <showDeprecation>false</showDeprecation>
+            <showWarnings>true</showWarnings>
+            <compilerArgs>
+              <arg>-XDcompilePolicy=simple</arg>
+              <arg>--should-stop=ifError=FLOW</arg>
+              <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
+              <arg>${errorprone.args} ${errorprone.extra.args}</arg>
+            </compilerArgs>
+            <annotationProcessorPaths>
+              <path>
+                <groupId>com.google.errorprone</groupId>
+                <artifactId>error_prone_core</artifactId>
+                <version>${errorprone.version}</version>
+              </path>
+              <path>
+                <groupId>com.uber.nullaway</groupId>
+                <artifactId>nullaway</artifactId>
+                <version>${nullaway.version}</version>
+              </path>
+            </annotationProcessorPaths>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-site-plugin</artifactId>
+          <version>4.0.0-M16</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-jar-plugin</artifactId>
+          <version>3.5.1</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-gpg-plugin</artifactId>
+          <version>3.2.8</version>
+          <configuration>
+            <gpgArguments>
+              <arg>--pinentry-mode</arg>
+              <arg>loopback</arg>
+            </gpgArguments>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <version>3.12.0</version>
+          <configuration>
+            <doclint>none</doclint>
+            <maxmemory>2G</maxmemory>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-pmd-plugin</artifactId>
+          <version>3.28.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-release-plugin</artifactId>
+          <version>3.3.1</version>
+          <configuration>
+            <allowTimestampedSnapshots>true</allowTimestampedSnapshots>
+            <pushChanges>false</pushChanges>
+            <tagNameFormat>@{project.version}</tagNameFormat>
+            <scmCommentPrefix>YouTrackDB</scmCommentPrefix>
+            <localCheckout>true</localCheckout>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>animal-sniffer-maven-plugin</artifactId>
+          <version>1.28</version>
+          <configuration>
+            <!--
+            Keep aligned with the maven-compiler-plugins source/target, ATM this is 1.6,
+            so we use the java16 signature.
+            -->
+            <signature>
+              <groupId>org.codehaus.mojo.signature</groupId>
+              <artifactId>java16</artifactId>
+              <version>1.1</version>
+            </signature>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>com.mycila</groupId>
+          <artifactId>license-maven-plugin</artifactId>
+          <version>4.6</version>
+          <inherited>true</inherited>
+          <configuration>
+            <header>${license.location}</header>
+            <aggregate>true</aggregate>
+            <failIfMissing>true</failIfMissing>
+            <encoding>UTF-8</encoding>
+            <useDefaultExcludes>true</useDefaultExcludes>
+            <strictCheck>true</strictCheck>
+            <excludes>
+              <exclude>**/assembly/**</exclude>
+              <exclude>**/config/**</exclude>
+              <exclude>**/resources/**</exclude>
+              <exclude>emptyfile*</exclude>
+              <exclude>*.txt</exclude>
+              <exclude>*.properties</exclude>
+            </excludes>
+          </configuration>
+          <executions>
+          </executions>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>license-maven-plugin</artifactId>
+          <version>2.7.1</version>
+
+          <configuration>
+            <licenseMerges>
+              <licenseMerge>ASL 2.0|Apache License 2.0|Apache License, Version 2.0|Apache 2|ASL,
+                version
+                2|The Apache
+                Software License|Version 2.0,Apache License, Version 2.0| The Apache Software
+                License,
+                Version 2.0
+              </licenseMerge>
+              <licenseMerge>BSD|BSD License|New BSD License</licenseMerge>
+              <licenseMerge>LGPL 2.1|GNU Lesser General Public License (LGPL), Version 2.1|GNU
+                Lesser
+                General Public
+                License, Version 2.1
+              </licenseMerge>
+              <licenseMerge>CDDL 1.0|COMMON DEVELOPMENT AND DISTRIBUTION LICENSE (CDDL) Version
+                1.0|Common
+                Development
+                and Distribution License (CDDL) v1.0
+              </licenseMerge>
+              <licenseMerge>LGPL 3|GNU LESSER GENERAL PUBLIC LICENSE|GNU Lesser Public License
+              </licenseMerge>
+            </licenseMerges>
+          </configuration>
+          <executions>
+            <execution>
+              <id>download-licenses</id>
+              <goals>
+                <goal>download-licenses</goal>
+              </goals>
+            </execution>
+          </executions>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-shade-plugin</artifactId>
+          <version>3.6.2</version>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>flatten-maven-plugin</artifactId>
+          <version>1.8.0</version>
+          <configuration>
+            <updatePomFile>true</updatePomFile>
+            <flattenMode>resolveCiFriendliesOnly</flattenMode>
+          </configuration>
+          <executions>
+            <execution>
+              <id>flatten</id>
+              <phase>process-resources</phase>
+              <goals>
+                <goal>flatten</goal>
+              </goals>
+            </execution>
+            <execution>
+              <id>flatten.clean</id>
+              <phase>clean</phase>
+              <goals>
+                <goal>clean</goal>
+              </goals>
+            </execution>
+          </executions>
+        </plugin>
+        <plugin>
+          <groupId>io.fabric8</groupId>
+          <artifactId>docker-maven-plugin</artifactId>
+          <version>0.49.0</version>
+        </plugin>
+        <plugin>
+          <groupId>com.diffplug.spotless</groupId>
+          <artifactId>spotless-maven-plugin</artifactId>
+          <version>${spotless.version}</version>
+          <configuration>
+            <ratchetFrom>spotless-baseline</ratchetFrom>
+            <java>
+              <includes>
+                <include>src/main/java/**/*.java</include>
+                <include>src/test/java/**/*.java</include>
+              </includes>
+              <excludes>
+                <exclude>**/internal/core/sql/parser/**</exclude>
+                <exclude>**/src/main/generated/**</exclude>
+                <exclude>**/generated-sources/**</exclude>
+                <exclude>**/generated-test-sources/**</exclude>
+              </excludes>
+              <eclipse>
+                <file>${maven.multiModuleProjectDirectory}/project-config/eclipse-formatter.xml</file>
+              </eclipse>
+              <importOrder>
+                <order>\#,</order>
+              </importOrder>
+              <removeUnusedImports/>
+              <formatAnnotations/>
+              <toggleOffOn/>
+            </java>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
+    <plugins>
+      <plugin>
+        <groupId>org.sonatype.central</groupId>
+        <artifactId>central-publishing-maven-plugin</artifactId>
+        <version>0.11.0</version>
+        <extensions>true</extensions>
+        <configuration>
+          <publishingServerId>central</publishingServerId>
+          <autoPublish>true</autoPublish>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-toolchains-plugin</artifactId>
+        <version>3.2.0</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>select-jdk-toolchain</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>buildnumber-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>build-number</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>create</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+            <manifest>
+              <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+              <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
+            </manifest>
+            <manifestEntries>
+              <Implementation-Build>${buildNumber}</Implementation-Build>
+              <Implementation-Url>${project.organization.url}</Implementation-Url>
+              <X-Compile-Source-JDK>${maven.compiler.source}</X-Compile-Source-JDK>
+              <X-Compile-Target-JDK>${maven.compiler.target}</X-Compile-Target-JDK>
+              <Add-Opens>jdk.unsupported/sun.misc=ALL-UNNAMED
+                java.base/sun.security.x509=ALL-UNNAMED
+              </Add-Opens>
+            </manifestEntries>
+            <addMavenDescriptor>false</addMavenDescriptor>
+          </archive>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-site-plugin</artifactId>
+        <configuration>
+          <moduleExcludes>
+            <distribution/>
+          </moduleExcludes>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>3.4.0</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>jar-no-fork</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.6.3</version>
+        <executions>
+          <execution>
+            <id>enforce-maven</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <requireMavenVersion>
+                  <version>3.5.4</version>
+                </requireMavenVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>flatten-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>spotless-check</id>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <phase>process-sources</phase>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>docker-run</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>buildnumber-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>build-number</id>
+                <phase>none</phase>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>java17</id>
+      <activation>
+        <jdk>[17,23)</jdk>
+      </activation>
+      <properties>
+        <graalvm.version>22.0.0.2</graalvm.version>
+      </properties>
+      <dependencies>
+        <dependency>
+          <groupId>org.graalvm.js</groupId>
+          <artifactId>js</artifactId>
+          <version>${graalvm.version}</version>
+          <scope>runtime</scope>
+        </dependency>
+      </dependencies>
+    </profile>
+
+    <profile>
+      <id>java23+</id>
+      <activation>
+        <jdk>[23,)</jdk>
+      </activation>
+      <properties>
+        <graalvm.version>25.0.0</graalvm.version>
+      </properties>
+      <dependencies>
+        <dependency>
+          <groupId>org.graalvm.js</groupId>
+          <artifactId>js</artifactId>
+          <version>${graalvm.version}</version>
+          <type>pom</type>
+          <scope>runtime</scope>
+        </dependency>
+      </dependencies>
+    </profile>
+
+    <profile>
+      <id>release-sign-artifacts</id>
+      <activation>
+        <property>
+          <name>performRelease</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <configuration>
+              <gpgArguments>
+                <arg>--pinentry-mode</arg>
+                <arg>loopback</arg>
+              </gpgArguments>
+            </configuration>
+
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>ci-integration-tests</id>
+      <properties>
+        <youtrackdb.test.env>ci</youtrackdb.test.env>
+      </properties>
+      <build>
+        <pluginManagement>
+          <plugins>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-failsafe-plugin</artifactId>
+              <version>${surefire.version}</version>
+              <configuration>
+                <systemPropertyVariables>
+                  <buildDirectory>${project.build.directory}</buildDirectory>
+                  <youtrackdb.security.userPasswordSaltIterations>1
+                  </youtrackdb.security.userPasswordSaltIterations>
+                  <youtrackdb.test.env>ci</youtrackdb.test.env>
+                  <youtrackdb.test.deadlock.timeout.minutes>60
+                  </youtrackdb.test.deadlock.timeout.minutes>
+                  <!-- Reduce disk cache from the default 4096 MB to 2048 MB for
+                       integration tests. The fork JVM uses -Xms4096m -Xmx4096m
+                       (4 GB committed heap) plus up to diskCache.bufferSize MB of
+                       native memory for page cache. With 4096 MB, the fork alone
+                       needs ~8 GB RSS; combined with Maven's JVM (~2-3 GB RSS),
+                       total memory exceeds the 16 GB available on CPX42 runners,
+                       triggering the OOM killer (exit code 137) late in the
+                       integration test run. 2048 MB is sufficient for all current
+                       integration tests (heaviest: BTreeTestIT with 1M keys uses
+                       ~400 MB of pages). This override takes precedence over the
+                       argLine -D flag because systemPropertyVariables are applied
+                       via System.setProperty() after JVM start. -->
+                  <youtrackdb.storage.diskCache.bufferSize>2048
+                  </youtrackdb.storage.diskCache.bufferSize>
+                </systemPropertyVariables>
+              </configuration>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-surefire-plugin</artifactId>
+              <version>${surefire.version}</version>
+              <configuration>
+                <systemPropertyVariables>
+                  <buildDirectory>${project.build.directory}</buildDirectory>
+                  <youtrackdb.test.env>ci</youtrackdb.test.env>
+                </systemPropertyVariables>
+              </configuration>
+            </plugin>
+          </plugins>
+        </pluginManagement>
+      </build>
+    </profile>
+
+    <profile>
+      <id>sonatype-oss-release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+                <configuration>
+                  <archive>
+                    <manifest>
+                      <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                      <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
+                    </manifest>
+                    <manifestEntries>
+                      <Implementation-Build>${implementation.build}</Implementation-Build>
+                      <Implementation-Build-Date>${maven.build.timestamp}
+                      </Implementation-Build-Date>
+                      <X-Compile-Source-JDK>${maven.compiler.source}</X-Compile-Source-JDK>
+                      <X-Compile-Target-JDK>${maven.compiler.target}</X-Compile-Target-JDK>
+                    </manifestEntries>
+                  </archive>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+                <configuration>
+                  <quiet>true</quiet>
+                  <maxmemory>2G</maxmemory>
+
+                  <archive>
+                    <manifest>
+                      <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                      <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
+                    </manifest>
+                    <manifestEntries>
+                      <Implementation-Build>${implementation.build}</Implementation-Build>
+                      <Implementation-Build-Date>${maven.build.timestamp}
+                      </Implementation-Build-Date>
+                      <X-Compile-Source-JDK>${maven.compiler.source}</X-Compile-Source-JDK>
+                      <X-Compile-Target-JDK>${maven.compiler.target}</X-Compile-Target-JDK>
+                    </manifestEntries>
+                  </archive>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+
+
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <configuration>
+              <gpgArguments>
+                <arg>--pinentry-mode</arg>
+                <arg>loopback</arg>
+              </gpgArguments>
+            </configuration>
+
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>docker-images</id>
+      <build>
+        <plugins>
+          <!--
+          Deploying docker images will happen out of the normal jvm artifact deployment flow, so disable that
+          -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-deploy-plugin</artifactId>
+            <configuration>
+              <skip>true</skip>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <configuration>
+              <skipPublishing>true</skipPublishing>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>coverage</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>jacoco-prepare-agent</id>
+                <goals><goal>prepare-agent</goal></goals>
+                <configuration>
+                  <!-- Write to a dedicated property so that only surefire
+                       picks up the agent. VMLens (which reads argLine
+                       directly) will not be instrumented by JaCoCo. -->
+                  <propertyName>jacocoArgLine</propertyName>
+                </configuration>
+              </execution>
+              <execution>
+                <id>jacoco-report</id>
+                <!-- Use prepare-package (not test) so the report runs AFTER all
+                     surefire executions. The core module binds multiple surefire
+                     executions to the test phase: default-test, sequential-tests, and
+                     (on an ordinary build, no -Dtest=) the three per-wrapper Gremlin
+                     TinkerPop compliance executions. Binding report to test would run
+                     it between them, missing coverage from whichever executions run
+                     later in that phase. -->
+                <phase>prepare-package</phase>
+                <goals><goal>report</goal></goals>
+                <configuration>
+                  <outputDirectory>${maven.multiModuleProjectDirectory}/.coverage/reports/${project.artifactId}</outputDirectory>
+                  <formats>
+                    <format>XML</format>
+                  </formats>
+                  <excludes>
+                    <exclude>**/com/jetbrains/youtrackdb/internal/core/sql/parser/*.class</exclude>
+                    <exclude>**/com/jetbrains/youtrackdb/internal/core/gql/parser/gen/*.class</exclude>
+                    <exclude>**/com/jetbrains/youtrackdb/api/gremlin/*.class</exclude>
+                  </excludes>
+                </configuration>
+              </execution>
+              <execution>
+                <id>jacoco-prepare-agent-integration</id>
+                <goals><goal>prepare-agent-integration</goal></goals>
+              </execution>
+              <execution>
+                <id>jacoco-report-integration</id>
+                <phase>post-integration-test</phase>
+                <goals><goal>report-integration</goal></goals>
+                <configuration>
+                  <outputDirectory>${maven.multiModuleProjectDirectory}/.coverage/reports/${project.artifactId}-it</outputDirectory>
+                  <formats>
+                    <format>XML</format>
+                  </formats>
+                  <excludes>
+                    <exclude>**/com/jetbrains/youtrackdb/internal/core/sql/parser/*.class</exclude>
+                    <exclude>**/com/jetbrains/youtrackdb/internal/core/gql/parser/gen/*.class</exclude>
+                    <exclude>**/com/jetbrains/youtrackdb/api/gremlin/*.class</exclude>
+                  </excludes>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- Inject JaCoCo agent into surefire via late-binding reference.
+               @{jacocoArgLine} is resolved by surefire at runtime; undefined
+               properties are treated as empty, so non-coverage builds are
+               unaffected. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <argLine>@{jacocoArgLine} ${argLine}</argLine>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+  </profiles>
+</project>

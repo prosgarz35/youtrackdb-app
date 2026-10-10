@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Sep 29 12:53:49 ICT 2026
+apache-mailet-icalendar-3.10.0-SNAPSHOT-tests.jar>=
+apache-mailet-icalendar-3.10.0-SNAPSHOT.jar>=
+apache-mailet-icalendar-3.10.0-SNAPSHOT.pom>=

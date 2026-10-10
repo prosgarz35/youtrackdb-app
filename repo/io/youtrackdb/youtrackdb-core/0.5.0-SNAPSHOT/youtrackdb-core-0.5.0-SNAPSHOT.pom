@@ -1,0 +1,832 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- Licensed under the  Apache License, Version 2.0 (the "License");
+    You may not use this file except in compliance with the License.
+    You may obtain a copy of the License  at http://www.apache.org/licenses/LICENSE-2.0.
+    Unless required by applicable law or agreed to in writing, software distributed under the
+    License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
+    OF ANY KIND, either express or implied. See the License for the specific
+    language governing permissions and limitations under the License. -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.youtrackdb</groupId>
+    <artifactId>youtrackdb-parent</artifactId>
+    <version>0.5.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>youtrackdb-core</artifactId>
+  <name>YouTrackDB Core</name>
+
+  <properties>
+    <jna.version>5.18.1</jna.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.clean.plugin.version>3.5.0</maven.clean.plugin.version>
+    <generated.antlr.dir>${project.build.directory}/generated-sources/antlr</generated.antlr.dir>
+    <gql.antlr.package>com.jetbrains.youtrackdb.internal.core.gql.parser.gen</gql.antlr.package>
+    <gql.antlr.output.dir>
+      ${generated.antlr.dir}/com/jetbrains/youtrackdb/internal/core/gql/parser/gen
+    </gql.antlr.output.dir>
+    <!--This property is updated automatically and is needed to make build reproducible-->
+    <project.build.outputTimestamp>2023-01-01T00:00:00Z</project.build.outputTimestamp>
+    <argLine>-ea
+      -Xms${heapSize}
+      -Xmx${heapSize}
+      -Dyoutrackdb.storage.diskCache.bufferSize=4096
+      -Dindex.flushAfterCreate=false
+      -Dyoutrackdb.storage.makeFullCheckpointAfterCreate=false
+      -Dstorage.makeFullCheckpointAfterOpen=false
+      -Dstorage.makeFullCheckpointAfterCollectionCreate=false
+      -Dstorage.wal.syncOnPageFlush=false
+      -Dstorage.configuration.syncOnUpdate=false
+      -Ddb.makeFullCheckpointOnIndexChange=false
+      -Ddb.makeFullCheckpointOnSchemaChange=false
+      -Dyoutrackdb.security.userPasswordSaltIterations=10
+      -Dyoutrackdb.memory.directMemory.trackMode=true
+      -Djava.util.logging.manager=com.jetbrains.youtrackdb.internal.common.log.ShutdownLogManager
+      -Dyoutrackdb.storage.diskCache.checksumMode=StoreAndThrow
+      -Dyoutrackdb.security.warningDefaultUsers=false
+      <!-- new security feature -->
+      -Dyoutrackdb.security.createDefaultUsers=false
+      --add-opens jdk.unsupported/sun.misc=ALL-UNNAMED
+      --add-opens java.base/sun.security.x509=ALL-UNNAMED
+      -Dyoutrackdb.memory.directMemory.preallocate=false
+      -Dyoutrackdb.file.log.deletion=false
+      -XX:+IgnoreUnrecognizedVMOptions
+      --add-exports=java.base/sun.nio.ch=ALL-UNNAMED
+      --add-exports=java.base/sun.security.x509=ALL-UNNAMED
+      --add-exports=java.base/sun.security.action=ALL-UNNAMED
+      --add-opens=java.base/java.io=ALL-UNNAMED
+      --add-opens=java.base/java.nio=ALL-UNNAMED
+      --add-opens=java.base/sun.nio.cs=ALL-UNNAMED
+      --add-opens=java.base/java.lang=ALL-UNNAMED
+      --add-opens=java.base/java.lang.invoke=ALL-UNNAMED
+      --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+      --add-opens=java.base/java.util=ALL-UNNAMED
+      --add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+      --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+      --add-opens=java.base/java.net=ALL-UNNAMED
+    </argLine>
+    <guice.version>6.0.0</guice.version>
+  </properties>
+
+  <profiles>
+    <profile>
+      <id>docker-run</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>buildnumber-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>build-number</id>
+                <phase>none</phase>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!-- Run the Records GC stress test via exec:exec (no surefire).
+         Single command:
+           ./mvnw -pl core -am verify -P stress-test -DskipTests
+         Override duration (30 min, 10s windows):
+           ./mvnw -pl core -am verify -P stress-test -DskipTests -DstressArgs="30 10" -->
+    <profile>
+      <id>stress-test</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-dependency-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>build-test-classpath</id>
+                <phase>test-compile</phase>
+                <goals>
+                  <goal>build-classpath</goal>
+                </goals>
+                <configuration>
+                  <outputProperty>stress.classpath</outputProperty>
+                  <includeScope>test</includeScope>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.6.4</version>
+            <executions>
+              <execution>
+                <id>run-stress-test</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+              </execution>
+            </executions>
+            <configuration>
+              <executable>/bin/sh</executable>
+              <arguments>
+                <argument>-c</argument>
+                <argument>exec java -Xms4g -Xmx4g --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=jdk.unsupported/sun.misc=ALL-UNNAMED -classpath "${project.build.testOutputDirectory}:${project.build.outputDirectory}:${stress.classpath}" com.jetbrains.youtrackdb.internal.core.storage.collection.v2.RecordsGcStressTest ${stressArgs}</argument>
+              </arguments>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!-- Run StorageComponent integration tests with a small disk cache (4 MB)
+         to exercise optimistic read fallback under heavy eviction pressure.
+         Command: ./mvnw -pl core -am clean verify -P small-cache-it -->
+    <profile>
+      <id>small-cache-it</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <skipTests>true</skipTests>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration>
+              <systemPropertyVariables>
+                <youtrackdb.storage.diskCache.bufferSize>4
+                </youtrackdb.storage.diskCache.bufferSize>
+                <youtrackdb.test.env>ci</youtrackdb.test.env>
+                <!-- Reduce BTree dataset sizes for fast eviction testing -->
+                <youtrackdb.test.btree.keysCount>10000
+                </youtrackdb.test.btree.keysCount>
+                <youtrackdb.test.btree.maxPower>14
+                </youtrackdb.test.btree.maxPower>
+              </systemPropertyVariables>
+              <includes>
+                <include>**/index/sbtree/singlevalue/v3/BTreeTestIT.java</include>
+                <include>**/index/edgebtree/btree/BTreeTestIT.java</include>
+                <include>**/collection/v2/LocalPaginatedCollectionV2TestIT.java</include>
+                <!-- FreeSpaceMapTestIT: included for completeness; its small page
+                     count does not trigger eviction, so it tests correctness only. -->
+                <include>**/collection/v2/FreeSpaceMapTestIT.java</include>
+              </includes>
+            </configuration>
+            <executions>
+              <!-- The parent POM declares an inherited maven-failsafe-plugin execution.
+                   This profile declares its own execution, named small-cache-integration-test.
+                   The inherited execution is disabled here, so exactly one execution runs.
+                   Without that disabling, both executions would carry the same configuration.
+                   The maven-failsafe-plugin would then run only the first execution.
+                   A future configuration difference would make both executions run.
+                   Both executions write the same report file names.
+                   One report would then overwrite the other. -->
+              <execution>
+                <id>default</id>
+                <phase>none</phase>
+              </execution>
+              <execution>
+                <id>small-cache-integration-test</id>
+                <goals>
+                  <goal>integration-test</goal>
+                  <goal>verify</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!--
+      Compliance executions: one per TinkerPop suite-wrapper class (YTDBProcessTest,
+      YTDBStructureTest, YTDBGraphFeatureTest). Each wrapper carries
+      @Category(SequentialTest.class), but running it under any execution that configures a
+      <groups>/<excludedGroups> filter (like sequential-tests above) silently executes ZERO
+      tests: GroupMatcherCategoryFilter resolves @Category per leaf Description, not per class,
+      and neither the wrapped upstream TinkerPop test classes (loaded from the gremlin-test JAR)
+      nor the Cucumber-synthesized scenario Descriptions carry the category annotation on their
+      own Description. Every leaf gets pruned, the suite reports success, and nothing actually
+      ran. The fix is to give each wrapper its own execution with NO group filter configured at
+      all (neither <groups> nor <excludedGroups>): with no filter, surefire never builds a
+      runtime category filter, so no leaf is pruned. Do NOT "helpfully" re-add a <groups> or
+      <excludedGroups> filter to these executions later; it will silently bring back the
+      zero-tests bug. Each wrapper gets its own execution (rather than one execution listing all
+      three) so that <failIfNoTests>true</failIfNoTests> is scoped per wrapper: if any single
+      suite ever regresses to zero tests again, its own execution fails the build instead of
+      being masked by the other two still reporting tests. It also gives each suite its own
+      fork, which is the configuration that was performance-measured.
+
+      These three executions live in their own profile, activated on the ABSENCE of the `test`
+      user property, rather than as bare executions on the maven-surefire-plugin declaration
+      below. Reason: surefire discards EVERY execution's configured includes/excludes the moment
+      -Dtest= is supplied on the command line (AbstractSurefireMojo#isSpecificTestSpecified() in
+      the surefire sources); each execution then tries to run whatever -Dtest= names instead of
+      its own includes. Left as bare executions that would mean: (a) an ordinary
+      `-Dtest=SomeTest` core build runs SomeTest in four forks instead of one, once per
+      compliance execution plus whichever execution it would normally belong to; and (b) a
+      `-Dtest=SomeUnrelatedTest` build that matches nothing in this module hard-fails here
+      anyway, via failIfNoSpecifiedTests (default true): once -Dtest= is set,
+      AbstractSurefireMojo#getEffectiveFailIfNoTests() consults only that flag, never
+      failIfNoTests, so the <failIfNoTests>true</failIfNoTests> below is not what triggers it.
+      Some -Dtest= builds are real instances of
+      this pattern. Deactivating the whole profile
+      whenever -Dtest is supplied removes these three executions from the reactor entirely for
+      such runs, restoring the pre-existing -Dtest= behavior, while an ordinary build (no
+      -Dtest) still activates the profile and runs all three suites with their failIfNoTests
+      guard intact.
+    -->
+    <profile>
+      <id>gremlin-compliance-suites</id>
+      <activation>
+        <property>
+          <name>!test</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>gremlin-process-compliance-tests</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>test</goal>
+                </goals>
+                <configuration>
+                  <includes>
+                    <include>**/YTDBProcessTest.java</include>
+                  </includes>
+                  <failIfNoTests>true</failIfNoTests>
+                </configuration>
+              </execution>
+              <execution>
+                <id>gremlin-standard-order-process-compliance-tests</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>test</goal>
+                </goals>
+                <configuration>
+                  <includes>
+                    <include>**/YTDBStandardOrderSemanticsProcessTest.java</include>
+                  </includes>
+                  <failIfNoTests>true</failIfNoTests>
+                </configuration>
+              </execution>
+              <execution>
+                <id>gremlin-structure-compliance-tests</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>test</goal>
+                </goals>
+                <configuration>
+                  <includes>
+                    <include>**/YTDBStructureTest.java</include>
+                  </includes>
+                  <failIfNoTests>true</failIfNoTests>
+                </configuration>
+              </execution>
+              <execution>
+                <id>gremlin-feature-compliance-tests</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>test</goal>
+                </goals>
+                <configuration>
+                  <includes>
+                    <include>**/YTDBGraphFeatureTest.java</include>
+                  </includes>
+                  <systemPropertyVariables>
+                    <youtrackdb.test.gremlin.orderSemantics>default</youtrackdb.test.gremlin.orderSemantics>
+                  </systemPropertyVariables>
+                  <failIfNoTests>true</failIfNoTests>
+                </configuration>
+              </execution>
+              <execution>
+                <id>gremlin-standard-order-feature-compliance-tests</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>test</goal>
+                </goals>
+                <configuration>
+                  <includes>
+                    <include>**/YTDBStandardOrderSemanticsFeatureTest.java</include>
+                  </includes>
+                  <systemPropertyVariables>
+                    <youtrackdb.test.gremlin.orderSemantics>standard</youtrackdb.test.gremlin.orderSemantics>
+                  </systemPropertyVariables>
+                  <failIfNoTests>true</failIfNoTests>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
+
+  <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+      </resource>
+    </resources>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>buildnumber-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>build-number</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>create</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>javacc-maven-plugin</artifactId>
+        <version>3.2.0</version>
+        <executions>
+          <execution>
+            <id>jjtree-javacc</id>
+            <goals>
+              <goal>jjtree-javacc</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <sourceDirectory>${basedir}/src/main/grammar</sourceDirectory>
+          <interimDirectory>${basedir}/src/main/java</interimDirectory>
+          <outputDirectory>${basedir}/src/main/java</outputDirectory>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.antlr</groupId>
+        <artifactId>antlr4-maven-plugin</artifactId>
+        <version>${antlr.version}</version>
+        <executions>
+          <execution>
+            <id>generate-antlr</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>antlr4</goal>
+            </goals>
+            <configuration>
+              <sourceDirectory>${basedir}/src/main/grammar/antlr</sourceDirectory>
+              <outputDirectory>${gql.antlr.output.dir}</outputDirectory>
+              <visitor>true</visitor>
+              <listener>true</listener>
+              <treatWarningsAsErrors>true</treatWarningsAsErrors>
+              <arguments>
+                <argument>-package</argument>
+                <argument>${gql.antlr.package}</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+       <plugin>
+        <artifactId>maven-clean-plugin</artifactId>
+        <version>${maven.clean.plugin.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${surefire.version}</version>
+        <dependencies>
+          <dependency>
+            <groupId>org.apache.maven.surefire</groupId>
+            <artifactId>surefire-junit47</artifactId>
+            <version>${surefire.version}</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <systemPropertyVariables>
+            <buildDirectory>${project.build.directory}</buildDirectory>
+            <build.dir>${project.build.directory}</build.dir>
+          </systemPropertyVariables>
+          <properties>
+            <property>
+              <name>listener</name>
+              <value>com.jetbrains.youtrackdb.internal.JUnitTestListener</value>
+            </property>
+          </properties>
+        </configuration>
+        <executions>
+          <!--
+            Parallel execution: runs all project tests EXCEPT @Category(SequentialTest).
+            Excludes gremlin-test from classpath to prevent TinkerPop dependency tests
+            from being discovered (they require suite runners to set up the graph provider).
+          -->
+          <execution>
+            <id>default-test</id>
+            <phase>test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <parallel>classes</parallel>
+              <perCoreThreadCount>false</perCoreThreadCount>
+              <threadCountClasses>4</threadCountClasses>
+              <excludedGroups>com.jetbrains.youtrackdb.internal.SequentialTest</excludedGroups>
+              <excludes>
+                <exclude>**/gremlintest/**</exclude>
+              </excludes>
+              <classpathDependencyExcludes>
+                <classpathDependencyExclude>io.youtrackdb:gremlin-test</classpathDependencyExclude>
+              </classpathDependencyExcludes>
+            </configuration>
+          </execution>
+          <!--
+            Sequential execution: runs only @Category(SequentialTest) tests.
+            This includes tests that mutate GlobalConfiguration, use shared static
+            instances, manipulate engine singletons, or run heavyweight TinkerPop
+            suite runners with shared datasets.
+          -->
+          <execution>
+            <id>sequential-tests</id>
+            <phase>test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <!-- Both executions share the reports directory. A class with method-level
+                   SequentialTest methods runs in both. Without a suffix the later report
+                   replaces the earlier one and CI loses results. -->
+              <reportNameSuffix>sequential</reportNameSuffix>
+              <groups>com.jetbrains.youtrackdb.internal.SequentialTest</groups>
+              <excludes>
+                <!-- The three TinkerPop compliance wrapper classes (YTDBProcessTest,
+                     YTDBStructureTest, YTDBGraphFeatureTest) live under gremlintest/**, and so
+                     do the roughly nine YTDB-authored scenario/suite classes they invoke via
+                     reflection (packages gremlintest.scenarios / gremlintest.suites). The other
+                     ~3,700-3,800 classes those wrappers exercise are upstream TinkerPop
+                     compliance classes loaded from the gremlin-test JAR dependency; they are
+                     never file-scanned from this project's own test-classes directory, so this
+                     file-glob exclude cannot see them and they were never at risk of the bug
+                     below. It's specifically the ~9 YTDB scenario/suite classes that ARE at
+                     risk: each one is independently file-scanned here too (they are ordinary
+                     compiled classes under gremlintest/**) AND carries the SequentialTest
+                     category on its own Description (via extending YTDBAbstractGremlinTest,
+                     which is annotated with it), so GroupMatcherCategoryFilter would match them
+                     a second time under this execution's <groups> filter, on top of the single
+                     run they already get via the gremlin-*-compliance-tests executions (see the
+                     gremlin-compliance-suites profile below). -->
+                <exclude>**/gremlintest/**</exclude>
+                <!-- Configuring ANY custom <excludes> here replaces surefire's default
+                     excludes outright, silently disabling its built-in exclusion of
+                     nested/inner classes (**/*$*.java). Restore that default explicitly so
+                     inner classes are not picked up as top-level test classes. -->
+                <exclude>**/*$*</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <dependencies>
+          <dependency>
+            <groupId>org.apache.maven.surefire</groupId>
+            <artifactId>surefire-junit47</artifactId>
+            <version>${surefire.version}</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <systemPropertyVariables>
+            <buildDirectory>${project.build.directory}</buildDirectory>
+          </systemPropertyVariables>
+          <properties>
+            <property>
+              <name>listener</name>
+              <value>com.jetbrains.youtrackdb.internal.JUnitTestListener</value>
+            </property>
+          </properties>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+          </archive>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.1</version>
+        <executions>
+          <execution>
+            <id>add-generated-sources</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>${generated.antlr.dir}</source>
+              </sources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>add-antlr-test-sources</id>
+            <phase>generate-test-sources</phase>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>${generated.antlr.dir}</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <encoding>${project.build.sourceEncoding}</encoding>
+          <useIncrementalCompilation>true</useIncrementalCompilation>
+          <annotationProcessorPathsUseDepMgmt>true</annotationProcessorPathsUseDepMgmt>
+          <annotationProcessors>
+            <annotationProcessor>
+              com.jetbrains.youtrackdb.internal.annotations.gremlin.dsl.GremlinDslProcessor
+            </annotationProcessor>
+          </annotationProcessors>
+          <compilerArgs>
+            <arg>-parameters</arg>
+            <arg>-Agremlin.dsl.sourceDir=${project.basedir}/src/main/java</arg>
+            <arg>-XDcompilePolicy=simple</arg>
+            <arg>--should-stop=ifError=FLOW</arg>
+            <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
+            <arg>${errorprone.args}</arg>
+          </compilerArgs>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>com.google.errorprone</groupId>
+              <artifactId>error_prone_core</artifactId>
+              <version>${errorprone.version}</version>
+            </path>
+            <path>
+              <groupId>com.uber.nullaway</groupId>
+              <artifactId>nullaway</artifactId>
+              <version>${nullaway.version}</version>
+            </path>
+            <path>
+              <groupId>io.youtrackdb</groupId>
+              <artifactId>youtrackdb-gremlin-annotations</artifactId>
+              <version>${project.version}</version>
+            </path>
+            <path>
+              <groupId>org.openjdk.jmh</groupId>
+              <artifactId>jmh-generator-annprocess</artifactId>
+              <version>1.37</version>
+            </path>
+            <path>
+              <groupId>org.slf4j</groupId>
+              <artifactId>slf4j-nop</artifactId>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+        <executions>
+          <execution>
+            <id>test-compile</id>
+            <phase>test-compile</phase>
+            <goals>
+              <goal>testCompile</goal>
+            </goals>
+            <configuration>
+              <annotationProcessors>
+                <annotationProcessor>
+                  org.openjdk.jmh.generators.BenchmarkProcessor
+                </annotationProcessor>
+              </annotationProcessors>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>com.vmlens</groupId>
+        <artifactId>vmlens-maven-plugin</artifactId>
+        <version>1.2.28</version>
+        <executions>
+          <execution>
+            <id>test</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <includes>
+            <include>**/*MTTest.java</include>
+          </includes>
+          <!-- When -Dtest=SomeTest is passed for a non-MT test,
+               don't fail because it doesn't match *MTTest.java -->
+          <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
+          <failIfNoTests>false</failIfNoTests>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.palantir.javapoet</groupId>
+      <artifactId>javapoet</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.youtrackdb</groupId>
+      <artifactId>youtrackdb-gremlin-annotations</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>commons-io</groupId>
+      <artifactId>commons-io</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>it.unimi.dsi</groupId>
+      <artifactId>fastutil</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.roaringbitmap</groupId>
+      <artifactId>RoaringBitmap</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.google.code.findbugs</groupId>
+      <artifactId>jsr305</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-collections4</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.github.jnr</groupId>
+      <artifactId>jnr-posix</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>net.java.dev.jna</groupId>
+      <artifactId>jna</artifactId>
+      <version>${jna.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.googlecode.concurrentlinkedhashmap</groupId>
+      <artifactId>concurrentlinkedhashmap-lru</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.lz4</groupId>
+      <artifactId>lz4-java</artifactId>
+      <version>1.8.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>javax.servlet</groupId>
+      <artifactId>javax.servlet-api</artifactId>
+      <version>3.1.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>javax.activation</groupId>
+      <artifactId>javax.activation-api</artifactId>
+      <version>1.2.0</version>
+    </dependency>
+    <dependency>
+      <groupId>io.youtrackdb</groupId>
+      <artifactId>gremlin-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.youtrackdb</groupId>
+      <artifactId>gremlin-util</artifactId>
+      <version>${gremlin.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.youtrackdb</groupId>
+      <artifactId>gremlin-groovy</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.youtrackdb</groupId>
+      <artifactId>gremlin-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.antlr</groupId>
+      <artifactId>antlr4-runtime</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.youtrackdb</groupId>
+      <artifactId>tinkergraph-gremlin</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- json parser -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+
+    <!-- test -->
+    <dependency>
+      <groupId>io.youtrackdb</groupId>
+      <artifactId>youtrackdb-test-commons</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.openjdk.jmh</groupId>
+      <artifactId>jmh-core</artifactId>
+      <version>1.37</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.openjdk.jmh</groupId>
+      <artifactId>jmh-generator-annprocess</artifactId>
+      <version>1.37</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- Some core tests use JUnit Jupiter APIs directly. Keep those APIs explicit rather than
+         relying on an indirect dependency. The surefire provider remains pinned to JUnit 4
+         by the explicit plugin dependency declared on maven-surefire-plugin above. -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.vintage</groupId>
+      <artifactId>junit-vintage-engine</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+
+    <dependency>
+      <groupId>org.graalvm.sdk</groupId>
+      <artifactId>graal-sdk</artifactId>
+      <version>${graalvm.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.graalvm.truffle</groupId>
+      <artifactId>truffle-api</artifactId>
+      <version>${graalvm.version}</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.graalvm.js</groupId>
+      <artifactId>js-scriptengine</artifactId>
+      <version>${graalvm.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.inject</groupId>
+      <artifactId>guice</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.vmlens</groupId>
+      <artifactId>api</artifactId>
+      <version>1.2.28</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+</project>

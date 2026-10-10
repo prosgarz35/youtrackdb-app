@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Sep 29 16:11:01 ICT 2026
+james-server-data-api-3.10.0-SNAPSHOT-tests.jar>=
+james-server-data-api-3.10.0-SNAPSHOT.jar>=
+james-server-data-api-3.10.0-SNAPSHOT.pom>=

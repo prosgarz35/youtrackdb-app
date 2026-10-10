@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata modelVersion="1.1.0">
+  <groupId>io.youtrackdb</groupId>
+  <artifactId>gremlin-shaded</artifactId>
+  <versioning>
+    <lastUpdated>20260907150149</lastUpdated>
+    <snapshot>
+      <timestamp>20260907.150149</timestamp>
+      <buildNumber>1</buildNumber>
+    </snapshot>
+    <snapshotVersions>
+      <snapshotVersion>
+        <extension>jar</extension>
+        <value>3.8.1-e3acec5-20260907.150149-1</value>
+        <updated>20260907150149</updated>
+      </snapshotVersion>
+      <snapshotVersion>
+        <extension>pom</extension>
+        <value>3.8.1-e3acec5-20260907.150149-1</value>
+        <updated>20260907150149</updated>
+      </snapshotVersion>
+    </snapshotVersions>
+  </versioning>
+  <version>3.8.1-e3acec5-SNAPSHOT</version>
+</metadata>

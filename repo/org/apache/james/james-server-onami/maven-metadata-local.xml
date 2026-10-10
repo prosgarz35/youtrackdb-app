@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>org.apache.james</groupId>
+  <artifactId>james-server-onami</artifactId>
+  <versioning>
+    <versions>
+      <version>3.10.0-SNAPSHOT</version>
+    </versions>
+    <lastUpdated>20260929064346</lastUpdated>
+  </versioning>
+</metadata>

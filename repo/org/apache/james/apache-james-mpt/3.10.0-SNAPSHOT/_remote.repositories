@@ -1,0 +1,4 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Sep 29 13:46:20 ICT 2026
+apache-james-mpt-3.10.0-SNAPSHOT-tests.jar>=
+apache-james-mpt-3.10.0-SNAPSHOT.pom>=

@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Oct 06 13:58:43 ICT 2026
+queue-activemq-guice-3.10.0-SNAPSHOT-tests.jar>=
+queue-activemq-guice-3.10.0-SNAPSHOT.jar>=
+queue-activemq-guice-3.10.0-SNAPSHOT.pom>=

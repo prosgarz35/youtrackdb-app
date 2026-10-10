@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Sep 29 16:09:26 ICT 2026
+event-sourcing-pojo-3.10.0-SNAPSHOT-tests.jar>=
+event-sourcing-pojo-3.10.0-SNAPSHOT.jar>=
+event-sourcing-pojo-3.10.0-SNAPSHOT.pom>=
