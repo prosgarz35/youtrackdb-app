@@ -196,6 +196,7 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndFlags IF NOT EXISTS ON JamesMailboxMessage (mailboxId, flags) NOTUNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndModSeq IF NOT EXISTS ON JamesMailboxMessage (mailboxId, modSeq) NOTUNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndIsSeen IF NOT EXISTS ON JamesMailboxMessage (mailboxId, isSeen) NOTUNIQUE");
+                    g.command("CREATE INDEX JamesMailboxMessage.mailboxSeenUid IF NOT EXISTS ON JamesMailboxMessage (mailboxId, isSeen, uid) NOTUNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.messageId IF NOT EXISTS NOTUNIQUE");
 
                     // Classes for Quotas
