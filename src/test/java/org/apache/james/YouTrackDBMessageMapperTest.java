@@ -234,6 +234,14 @@ public class YouTrackDBMessageMapperTest {
         MessageMetaData copiedMeta = messageMapper.copy(trash, msg1);
         assertThat(copiedMeta.getUid()).isEqualTo(MessageUid.of(1L));
         assertThat(messageMapper.countMessagesInMailbox(trash)).isEqualTo(1L);
+
+        // Verify copied message has identical content and size
+        Iterator<MailboxMessage> trashMessages = messageMapper.findInMailbox(trash, MessageRange.all(), FetchType.FULL, 1);
+        assertThat(trashMessages.hasNext()).isTrue();
+        MailboxMessage trashMsg = trashMessages.next();
+        assertThat(trashMsg.getFullContent().readAllBytes()).isEqualTo("Mail 1".getBytes(StandardCharsets.UTF_8));
+        assertThat(trashMsg.getFullContentOctets()).isEqualTo("Mail 1".getBytes(StandardCharsets.UTF_8).length);
+        assertThat(trashMsg.getMessageId()).isEqualTo(msg1.getMessageId());
     }
 
     @Test
