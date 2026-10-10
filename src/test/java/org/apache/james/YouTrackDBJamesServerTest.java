@@ -19,8 +19,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import com.google.common.base.Strings;
-
 class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
 
     @RegisterExtension
@@ -70,7 +68,7 @@ class YouTrackDBJamesServerTest implements JamesServerConcreteContract {
         int imapPort = jamesServer.getProbe(ImapGuiceProbe.class).getImapPort();
         smtpMessageSender.connect(JAMES_SERVER_HOST, jamesServer.getProbe(SmtpGuiceProbe.class).getSmtpPort())
             .authenticate(USER, PASSWORD)
-            .sendMessageWithHeaders(USER, USER, "header: toto\r\n\r\n" + Strings.repeat("0123456789\n", 1024));
+            .sendMessageWithHeaders(USER, USER, "header: toto\r\n\r\n" + "0123456789\n".repeat(1024));
 
         AWAIT.until(() -> testIMAPClient.connect(JAMES_SERVER_HOST, imapPort)
             .login(USER, PASSWORD)

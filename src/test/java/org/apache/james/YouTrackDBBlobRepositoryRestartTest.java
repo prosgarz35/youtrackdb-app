@@ -33,7 +33,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.google.common.base.Strings;
 import com.jetbrains.youtrackdb.api.DatabaseType;
 import com.jetbrains.youtrackdb.api.YouTrackDB;
 import com.jetbrains.youtrackdb.api.YourTracks;
@@ -133,8 +132,8 @@ public class YouTrackDBBlobRepositoryRestartTest {
     void mailsSurviveARestart(@TempDir Path workingDir) throws Exception {
         Map<String, String> bodies = Map.of(
             "tiny", "a few bytes",
-            "medium", Strings.repeat("medium body line\r\n", 1_000),
-            "huge", Strings.repeat("a line of a big mail, with some entropy 0123456789 abcdefghij\r\n", 3_000)
+            "medium", "medium body line\r\n".repeat(1_000),
+            "huge", "a line of a big mail, with some entropy 0123456789 abcdefghij\r\n".repeat(3_000)
         );
 
         Map<MailKey, byte[]> expectedError = new HashMap<>();

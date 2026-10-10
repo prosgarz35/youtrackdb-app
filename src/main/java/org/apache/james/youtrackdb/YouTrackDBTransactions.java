@@ -76,13 +76,16 @@ public final class YouTrackDBTransactions {
 
     /** True if {@code type} appears anywhere in the cause chain of {@code t}. */
     public static boolean hasCause(Throwable t, Class<? extends Throwable> type) {
-        if (t == null) {
+        if (t == null || type == null) {
             return false;
         }
-        for (Throwable current : com.google.common.base.Throwables.getCausalChain(t)) {
+        Throwable current = t;
+        java.util.Set<Throwable> seen = new java.util.HashSet<>();
+        while (current != null && seen.add(current)) {
             if (type.isInstance(current)) {
                 return true;
             }
+            current = current.getCause();
         }
         return false;
     }

@@ -44,7 +44,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.google.common.collect.ImmutableList;
 import com.jetbrains.youtrackdb.api.DatabaseType;
 import com.jetbrains.youtrackdb.api.YouTrackDB;
 import com.jetbrains.youtrackdb.api.YourTracks;
@@ -201,7 +200,7 @@ public class YouTrackDBMessageMapperTest {
 
         assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(2L);
 
-        Map<MessageUid, MessageMetaData> deleted = messageMapper.deleteMessages(mailbox, ImmutableList.of(m1.getUid()));
+        Map<MessageUid, MessageMetaData> deleted = messageMapper.deleteMessages(mailbox, List.of(m1.getUid()));
         assertThat(deleted).containsKey(m1.getUid());
         assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(1L);
 
@@ -223,8 +222,10 @@ public class YouTrackDBMessageMapperTest {
         messageMapper.add(mailbox, msg2);
         messageMapper.add(mailbox, msg3);
 
-        List<MailboxMessage> rangeMessages = ImmutableList.copyOf(
-            messageMapper.findInMailbox(mailbox, MessageRange.range(MessageUid.of(2L), MessageUid.of(3L)), FetchType.METADATA, 10));
+        List<MailboxMessage> rangeMessages = java.util.stream.StreamSupport.stream(
+            java.util.Spliterators.spliteratorUnknownSize(
+                messageMapper.findInMailbox(mailbox, MessageRange.range(MessageUid.of(2L), MessageUid.of(3L)), FetchType.METADATA, 10), 0), false)
+            .toList();
         assertThat(rangeMessages).hasSize(2)
             .extracting(MailboxMessage::getUid)
             .containsExactly(MessageUid.of(2L), MessageUid.of(3L));
@@ -256,16 +257,20 @@ public class YouTrackDBMessageMapperTest {
             messageMapper.add(benchmarkMailbox, msg);
         }
 
-        List<MailboxMessage> fullList = ImmutableList.copyOf(
-            messageMapper.findInMailbox(benchmarkMailbox, MessageRange.all(), FetchType.FULL, messageCount));
+        List<MailboxMessage> fullList = java.util.stream.StreamSupport.stream(
+            java.util.Spliterators.spliteratorUnknownSize(
+                messageMapper.findInMailbox(benchmarkMailbox, MessageRange.all(), FetchType.FULL, messageCount), 0), false)
+            .toList();
 
-        List<MailboxMessage> metaList = ImmutableList.copyOf(
-            messageMapper.findInMailbox(benchmarkMailbox, MessageRange.all(), FetchType.METADATA, messageCount));
+        List<MailboxMessage> metaList = java.util.stream.StreamSupport.stream(
+            java.util.Spliterators.spliteratorUnknownSize(
+                messageMapper.findInMailbox(benchmarkMailbox, MessageRange.all(), FetchType.METADATA, messageCount), 0), false)
+            .toList();
 
         assertThat(fullList).hasSize(messageCount);
         assertThat(metaList).hasSize(messageCount);
-        assertThat(metaList.get(0).getFullContentOctets()).isEqualTo(payload20k.length);
-        assertThat(fullList.get(0).getFullContent().readAllBytes()).hasSize(payload20k.length);
+        assertThat(metaList.getFirst().getFullContentOctets()).isEqualTo(payload20k.length);
+        assertThat(fullList.getFirst().getFullContent().readAllBytes()).hasSize(payload20k.length);
     }
 
     @Test
@@ -467,7 +472,7 @@ public class YouTrackDBMessageMapperTest {
         messageMapper.add(otherMailbox, msgInImportant);
 
         // Delete only from mailbox (Inbox), keep otherMailbox (Important)
-        msgIdMapper.delete(sharedMsgId, ImmutableList.of(mailbox.getMailboxId()));
+        msgIdMapper.delete(sharedMsgId, List.of(mailbox.getMailboxId()));
 
         assertThat(messageMapper.countMessagesInMailbox(mailbox)).isEqualTo(0L);
         assertThat(messageMapper.countMessagesInMailbox(otherMailbox)).isEqualTo(1L);
@@ -491,7 +496,7 @@ public class YouTrackDBMessageMapperTest {
         Flags seenFlag = new Flags(Flag.SEEN);
         com.google.common.collect.Multimap<MailboxId, UpdatedFlags> updated = msgIdMapper.setFlags(
             sharedMsgId,
-            ImmutableList.of(mailbox.getMailboxId(), otherMailbox.getMailboxId()),
+            List.of(mailbox.getMailboxId(), otherMailbox.getMailboxId()),
             seenFlag,
             org.apache.james.mailbox.MessageManager.FlagsUpdateMode.ADD
         ).block();

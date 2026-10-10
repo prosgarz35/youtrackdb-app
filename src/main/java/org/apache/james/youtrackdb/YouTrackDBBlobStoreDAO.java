@@ -26,8 +26,6 @@ import org.apache.james.blob.api.ObjectNotFoundException;
 import org.apache.james.blob.api.ObjectStoreIOException;
 import org.apache.james.filesystem.api.FileSystem;
 import org.reactivestreams.Publisher;
-
-import com.google.common.base.Preconditions;
 import com.jetbrains.youtrackdb.api.exception.RecordDuplicatedException;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
@@ -401,7 +399,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
 
     @Override
     public Publisher<Void> save(BucketName bucketName, BlobId blobId, Blob blob) {
-        Preconditions.checkNotNull(blob);
+        Objects.requireNonNull(blob, "blob must not be null");
         return Mono.<Void>fromRunnable(() -> {
             String key = buildKey(bucketName, blobId);
             java.util.concurrent.locks.Lock lock = stripedLocks.get(key);
