@@ -21,6 +21,11 @@ jobs:
           java-version: '21'
           cache: 'maven'
 
+      - name: Seed local Maven repository from bundled repo
+        run: |
+          mkdir -p ~/.m2/repository
+          cp -r repo/* ~/.m2/repository/
+
       - name: Build and Package with Maven
         run: mvn clean package -Dcheckstyle.skip=true -Dsurefire.excludedGroups=benchmark
 
