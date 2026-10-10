@@ -39,8 +39,8 @@ under the License.
         <jmxName>imapserver-ssl</jmxName>
         <bind>0.0.0.0:0</bind>
         <connectionBacklog>200</connectionBacklog>
-        <!-- Port 993: forced SSL -->
-        <tls socketTLS="true" startTLS="false">
+        <!-- Secondary IMAP port: STARTTLS tested by JamesServerConcreteContract -->
+        <tls socketTLS="false" startTLS="true">
             <privateKey>classpath://private.key</privateKey>
             <certificates>classpath://certs.self-signed.csr</certificates>
             <secret>123456</secret>

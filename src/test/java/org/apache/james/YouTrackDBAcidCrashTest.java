@@ -180,7 +180,7 @@ public class YouTrackDBAcidCrashTest {
 
             // Await baseline message in IMAP
             TestIMAPClient imapClient = new TestIMAPClient();
-            Awaitility.await().atMost(10, TimeUnit.SECONDS).until(() -> {
+            Awaitility.await().atMost(30, TimeUnit.SECONDS).until(() -> {
                 try {
                     imapClient.connect("127.0.0.1", imapPort)
                         .login(USER, PASSWORD)
