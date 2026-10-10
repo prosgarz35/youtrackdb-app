@@ -171,31 +171,16 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
         private void recoverItemsFromDatabase() {
             try {
-                List<YouTrackDBMailQueueItem> recovered = g.computeInTx(tx -> {
-                    List<YouTrackDBMailQueueItem> items = new ArrayList<>();
-                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
-                        "SELECT enqueueId, serializedMail, nextDelivery FROM " + CLASS_NAME +
-                        " WHERE queueName = :qname ORDER BY nextDelivery ASC",
-                        "qname", name.asString());
-                    for (Map<String, Object> row : rows) {
-                        try {
-                            String enqueueId = Objects.toString(row.get(PROP_ENQUEUE_ID), null);
-                            if (enqueueId == null) {
-                                enqueueId = UUID.randomUUID().toString();
-                            }
-                            byte[] data = (byte[]) row.get(PROP_SERIALIZED_MAIL);
-                            long nextDeliveryMillis = row.get(PROP_NEXT_DELIVERY) instanceof Number n ? n.longValue() : 0L;
-                            if (data != null && data.length > 0) {
-                                Mail mail = deserializeMail(data);
-                                ZonedDateTime delivery = Instant.ofEpochMilli(nextDeliveryMillis).atZone(ZoneId.of("UTC"));
-                                items.add(new YouTrackDBMailQueueItem(enqueueId, mail, this, clock, delivery));
-                            }
-                        } catch (Exception e) {
-                            LOGGER.error("Failed to recover mail item for queue {}", name.asString(), e);
-                        }
-                    }
-                    return items;
-                });
+                List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                    "SELECT enqueueId, serializedMail, nextDelivery FROM " + CLASS_NAME +
+                    " WHERE queueName = :qname ORDER BY nextDelivery ASC",
+                    "qname", name.asString());
+
+                List<YouTrackDBMailQueueItem> recovered = rows.stream()
+                    .map(this::toMailQueueItem)
+                    .flatMap(Optional::stream)
+                    .toList();
+
                 for (YouTrackDBMailQueueItem item : recovered) {
                     mailItems.put(item);
                 }
@@ -206,6 +191,25 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 LOGGER.error("Fatal: failed to query persistent queue items from YouTrackDB for queue {}", name.asString(), e);
                 throw new IllegalStateException("Failed to recover persistent mail queue items for queue " + name.asString(), e);
             }
+        }
+
+        private Optional<YouTrackDBMailQueueItem> toMailQueueItem(Map<String, Object> row) {
+            try {
+                String enqueueId = Objects.toString(row.get(PROP_ENQUEUE_ID), null);
+                if (enqueueId == null) {
+                    enqueueId = UUID.randomUUID().toString();
+                }
+                byte[] data = (byte[]) row.get(PROP_SERIALIZED_MAIL);
+                long nextDeliveryMillis = row.get(PROP_NEXT_DELIVERY) instanceof Number n ? n.longValue() : 0L;
+                if (data != null && data.length > 0) {
+                    Mail mail = deserializeMail(data);
+                    ZonedDateTime delivery = Instant.ofEpochMilli(nextDeliveryMillis).atZone(ZoneId.of("UTC"));
+                    return Optional.of(new YouTrackDBMailQueueItem(enqueueId, mail, this, clock, delivery));
+                }
+            } catch (Exception e) {
+                LOGGER.error("Failed to recover mail item for queue {}", name.asString(), e);
+            }
+            return Optional.empty();
         }
 
         public void reference() {

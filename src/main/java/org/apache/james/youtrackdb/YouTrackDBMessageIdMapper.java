@@ -80,13 +80,14 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
                     selectClause + " WHERE messageId IN :mids",
                     "mids", serializedIds);
 
-                ImmutableList.Builder<MailboxMessage> builder = ImmutableList.builder();
-                for (Map<String, Object> row : rows) {
-                    String mbxIdStr = Objects.toString(row.get("mailboxId"), null);
-                    MailboxId mbxId = YouTrackDBMailboxId.of(mbxIdStr);
-                    builder.add(YouTrackDBMessageMapper.readMessage(row, mbxId, fetchType));
-                }
-                return Flux.fromIterable(builder.build());
+                List<MailboxMessage> messages = rows.stream()
+                    .map(row -> {
+                        String mbxIdStr = Objects.toString(row.get("mailboxId"), null);
+                        MailboxId mbxId = YouTrackDBMailboxId.of(mbxIdStr);
+                        return YouTrackDBMessageMapper.readMessage(row, mbxId, fetchType);
+                    })
+                    .toList();
+                return Flux.fromIterable(messages);
             } catch (Exception e) {
                 return Flux.error(new RuntimeException("Error finding messages by messageIds", e));
             }
@@ -106,9 +107,9 @@ public class YouTrackDBMessageIdMapper implements MessageIdMapper {
                     "SELECT mailboxId FROM JamesMailboxMessage WHERE messageId = :mid",
                     "mid", messageId.serialize());
                 List<MailboxId> mailboxIds = rows.stream()
-                    .map(r -> YouTrackDBMailboxId.of(Objects.toString(r.get("mailboxId"), null)))
+                    .<MailboxId>map(r -> YouTrackDBMailboxId.of(Objects.toString(r.get("mailboxId"), null)))
                     .distinct()
-                    .collect(ImmutableList.toImmutableList());
+                    .toList();
                 return Flux.fromIterable(mailboxIds);
             } catch (Exception e) {
                 return Flux.error(e);

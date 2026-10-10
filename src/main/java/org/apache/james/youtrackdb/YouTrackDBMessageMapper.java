@@ -5,7 +5,6 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -119,10 +118,9 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             }
 
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, query, params.toArray());
-            List<MailboxMessage> messages = new ArrayList<>(rows.size());
-            for (Map<String, Object> row : rows) {
-                messages.add(readMessage(row, mailbox.getMailboxId(), type));
-            }
+            List<MailboxMessage> messages = rows.stream()
+                .map(row -> readMessage(row, mailbox.getMailboxId(), type))
+                .toList();
             return messages.iterator();
         } catch (Exception e) {
             throw new MailboxException("Failed to find messages in mailbox " + mailbox.getMailboxId().serialize(), e);
@@ -162,14 +160,11 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                     break;
             }
 
-            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, query, params.toArray());
-            List<MessageUid> result = new ArrayList<>(rows.size());
-            for (Map<String, Object> row : rows) {
-                if (row.get(PROP_UID) instanceof Number n) {
-                    result.add(MessageUid.of(n.longValue()));
-                }
-            }
-            return result;
+            return YouTrackDBTransactions.queryRows(g, query, params.toArray()).stream()
+                .map(row -> row.get(PROP_UID))
+                .filter(Number.class::isInstance)
+                .map(n -> MessageUid.of(((Number) n).longValue()))
+                .toList();
         } catch (Exception e) {
             throw new MailboxException("Failed to retrieve messages marked for deletion in mailbox " + mailbox.getMailboxId().serialize(), e);
         }
@@ -225,11 +220,9 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                 "mbx", mailboxId,
                 "uids", uidLongs);
 
-            Map<MessageUid, MessageMetaData> result = new HashMap<>(rows.size());
-            for (Map<String, Object> row : rows) {
-                MailboxMessage msg = readMessage(row, mailbox.getMailboxId(), FetchType.METADATA);
-                result.put(msg.getUid(), msg.metaData());
-            }
+            Map<MessageUid, MessageMetaData> result = rows.stream()
+                .map(row -> readMessage(row, mailbox.getMailboxId(), FetchType.METADATA))
+                .collect(java.util.stream.Collectors.toMap(MailboxMessage::getUid, MailboxMessage::metaData));
 
             YouTrackDBTransactions.executeStrictTx(g, tx ->
                 tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :mbx AND uid IN :uids",
