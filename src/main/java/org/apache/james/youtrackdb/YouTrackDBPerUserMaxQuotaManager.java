@@ -20,7 +20,6 @@ import org.apache.james.mailbox.model.QuotaRoot;
 import org.apache.james.mailbox.quota.MaxQuotaManager;
 import org.reactivestreams.Publisher;
 
-import com.google.common.collect.ImmutableMap;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
 import reactor.core.publisher.Mono;
@@ -257,7 +256,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
                 Pair.of(Quota.Scope.Domain, quotaRoot.getDomain().flatMap(this::getDomainMaxMessage)),
                 Pair.of(Quota.Scope.Global, getGlobalMaxMessage()))
             .filter(pair -> pair.getValue().isPresent())
-            .collect(ImmutableMap.toImmutableMap(Pair::getKey, value -> value.getValue().get()));
+            .collect(java.util.stream.Collectors.toMap(Pair::getKey, value -> value.getValue().get()));
     }
 
     @Override
@@ -267,7 +266,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
                 Pair.of(Quota.Scope.Domain, quotaRoot.getDomain().flatMap(this::getDomainMaxStorage)),
                 Pair.of(Quota.Scope.Global, getGlobalMaxStorage()))
             .filter(pair -> pair.getValue().isPresent())
-            .collect(ImmutableMap.toImmutableMap(Pair::getKey, value -> value.getValue().get()));
+            .collect(java.util.stream.Collectors.toMap(Pair::getKey, value -> value.getValue().get()));
     }
 
     @Override
