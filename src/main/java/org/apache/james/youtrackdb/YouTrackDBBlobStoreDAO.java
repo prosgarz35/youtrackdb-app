@@ -16,6 +16,7 @@ import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import jakarta.inject.Inject;
@@ -566,18 +567,15 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
 
     @Override
     public Publisher<BucketName> listBuckets() {
-        return Mono.fromCallable(() -> {
-            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
-                "SELECT DISTINCT(bucket) AS bucket FROM JamesBlob");
-            Set<BucketName> buckets = new HashSet<>(rows.size());
-            for (Map<String, Object> row : rows) {
-                Object b = row.get("bucket");
-                if (b != null) {
-                    buckets.add(BucketName.of(b.toString()));
-                }
-            }
-            return buckets;
-        }).flatMapMany(Flux::fromIterable)
+        return Mono.fromCallable(() -> YouTrackDBTransactions.queryRows(g,
+                "SELECT DISTINCT(bucket) AS bucket FROM JamesBlob")
+            .stream()
+            .map(row -> row.get("bucket"))
+            .filter(Objects::nonNull)
+            .map(Object::toString)
+            .map(BucketName::of)
+            .collect(java.util.stream.Collectors.toSet()))
+        .flatMapMany(Flux::fromIterable)
         .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
@@ -591,15 +589,14 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
      * wildcard characters to escape. A null or empty prefix lists the whole bucket.
      */
     public Publisher<BlobId> listBlobs(BucketName bucketName, String prefix) {
-        return Mono.fromCallable(() -> g.computeInTx(tx -> {
-                Set<BlobId> blobIds = new HashSet<>();
-                for (Object item : prefixQuery(tx, "blobId", bucketName, prefix)) {
-                    if (item instanceof Map<?, ?> m && m.get(PROP_BLOB_ID) != null) {
-                        blobIds.add(blobIdFactory.of(m.get(PROP_BLOB_ID).toString()));
-                    }
-                }
-                return blobIds;
-            }))
+        return Mono.fromCallable(() -> g.computeInTx(tx -> prefixQuery(tx, "blobId", bucketName, prefix)
+                .stream()
+                .filter(Map.class::isInstance)
+                .map(item -> ((Map<?, ?>) item).get(PROP_BLOB_ID))
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .map(blobIdFactory::of)
+                .collect(java.util.stream.Collectors.toSet())))
             .flatMapMany(Flux::fromIterable)
             .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
