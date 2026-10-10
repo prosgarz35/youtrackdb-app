@@ -13,7 +13,6 @@ import com.jetbrains.youtrackdb.api.YouTrackDB;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public class YouTrackDBHealthCheck implements HealthCheck {
     public static final ComponentName COMPONENT_NAME = new ComponentName("YouTrackDB");

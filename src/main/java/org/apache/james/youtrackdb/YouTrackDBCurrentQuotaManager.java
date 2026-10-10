@@ -16,7 +16,6 @@ import org.apache.james.mailbox.quota.CurrentQuotaManager;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public class YouTrackDBCurrentQuotaManager implements CurrentQuotaManager {
 

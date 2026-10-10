@@ -113,20 +113,20 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
         }
 
         private List<BlobId> findMimePartsForMailKey(MailKey key) {
-            List<BlobId> parts = new ArrayList<>();
             try {
                 var metadata = Mono.from(blobStoreDAO.readBytes(defaultBucketName, toMetadataBlobId(key))).block();
                 if (metadata != null && metadata.payload() != null) {
-                    for (String partId : YouTrackDBMetadataUtils.extractReferencedPartIds(metadata.payload())) {
-                        parts.add(new PlainBlobId(partId));
-                    }
+                    return YouTrackDBMetadataUtils.extractReferencedPartIds(metadata.payload())
+                        .stream()
+                        .<BlobId>map(PlainBlobId::new)
+                        .toList();
                 }
             } catch (ObjectNotFoundException e) {
                 // First time this key is stored or already removed: nothing to clean up.
             } catch (Exception e) {
                 LOGGER.warn("Cannot read the previous parts of mail {}: they will stay in the blob store", key.asString(), e);
             }
-            return parts;
+            return List.of();
         }
 
         private void cleanOldMimeParts(List<BlobId> oldParts) {

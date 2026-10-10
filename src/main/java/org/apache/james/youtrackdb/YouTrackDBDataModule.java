@@ -10,7 +10,6 @@ import org.apache.james.mailrepository.api.Protocol;
 import org.apache.james.mailrepository.memory.MailRepositoryStoreConfiguration;
 import org.apache.james.mailrepository.memory.MemoryMailRepository;
 import org.apache.james.mailrepository.memory.MemoryMailRepositoryFactory;
-import org.apache.james.mailrepository.memory.MemoryMailRepositoryUrlStore;
 import org.apache.james.modules.data.SieveFileRepositoryModule;
 import org.apache.james.rrt.api.AliasReverseResolver;
 import org.apache.james.rrt.api.CanSendFrom;

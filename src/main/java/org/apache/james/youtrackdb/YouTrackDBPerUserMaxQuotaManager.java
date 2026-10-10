@@ -24,7 +24,6 @@ import com.google.common.collect.ImmutableMap;
 import com.jetbrains.youtrackdb.api.gremlin.YTDBGraphTraversalSource;
 
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
 
