@@ -176,8 +176,22 @@ public class YouTrackDBAdminRoutes implements Routes {
                                             || !YouTrackDBTransactions.queryRows(traversalSource,
                                                 "SELECT 1 FROM JamesBlob WHERE blobId = :id LIMIT 1", "id", fileName).isEmpty();
                                         if (!existsInDb) {
-                                            java.nio.file.Files.deleteIfExists(path);
-                                            deleted[0]++;
+                                            if (java.nio.file.Files.deleteIfExists(path)) {
+                                                deleted[0]++;
+                                                // Prune empty parent directories up to var/blobs
+                                                java.io.File parent = path.toFile().getParentFile();
+                                                while (parent != null && !parent.equals(blobsSourceDir) && parent.getAbsolutePath().startsWith(blobsSourceDir.getAbsolutePath())) {
+                                                    String[] list = parent.list();
+                                                    if (list != null && list.length == 0) {
+                                                        if (!parent.delete()) {
+                                                            break;
+                                                        }
+                                                        parent = parent.getParentFile();
+                                                    } else {
+                                                        break;
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 } catch (Exception ignored) {
