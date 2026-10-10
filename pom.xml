@@ -50,10 +50,6 @@
     <dependencies>
         <dependency>
             <groupId>${james.groupId}</groupId>
-            <artifactId>apache-james-mailbox-quota-search-scanning</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>${james.groupId}</groupId>
             <artifactId>blob-export-guice</artifactId>
         </dependency>
         <dependency>
@@ -255,10 +251,8 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <id>test-jar</id>
-                        <goals>
-                            <goal>test-jar</goal>
-                        </goals>
+                        <id>build-test-jars</id>
+                        <phase>none</phase>
                     </execution>
                 </executions>
             </plugin>
