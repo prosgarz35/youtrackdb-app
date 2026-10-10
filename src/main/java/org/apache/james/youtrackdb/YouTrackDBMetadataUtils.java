@@ -1,7 +1,6 @@
 package org.apache.james.youtrackdb;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -18,16 +17,14 @@ public final class YouTrackDBMetadataUtils {
     }
 
     public static List<String> extractReferencedPartIds(byte[] payload) throws IOException {
-        List<String> parts = new ArrayList<>();
         if (payload == null || payload.length == 0) {
-            return parts;
+            return List.of();
         }
         JsonNode json = JSON.readTree(payload);
-        for (String field : List.of("headerBlobId", "bodyBlobId")) {
-            if (json.path(field).isTextual()) {
-                parts.add(json.get(field).asText());
-            }
-        }
-        return parts;
+        return List.of("headerBlobId", "bodyBlobId").stream()
+            .map(json::path)
+            .filter(JsonNode::isTextual)
+            .map(JsonNode::asText)
+            .toList();
     }
 }

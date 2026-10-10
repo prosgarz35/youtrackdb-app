@@ -1,8 +1,6 @@
 package org.apache.james.youtrackdb;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 import org.apache.james.core.Username;
@@ -45,17 +43,14 @@ public class YouTrackDBSubscriptionMapper implements SubscriptionMapper {
     @Override
     public List<Subscription> findSubscriptionsForUser(Username user) throws SubscriptionException {
         try {
-            List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+            return YouTrackDBTransactions.queryRows(g,
                 "SELECT mailbox FROM JamesSubscription WHERE user = :user",
-                "user", user.asString());
-            List<Subscription> result = new ArrayList<>(rows.size());
-            for (Map<String, Object> row : rows) {
-                Object mailbox = row.get(PROP_MAILBOX);
-                if (mailbox != null) {
-                    result.add(new Subscription(user, mailbox.toString()));
-                }
-            }
-            return result;
+                "user", user.asString())
+                .stream()
+                .map(row -> row.get(PROP_MAILBOX))
+                .filter(Objects::nonNull)
+                .map(mailbox -> new Subscription(user, mailbox.toString()))
+                .toList();
         } catch (Exception e) {
             throw new SubscriptionException(e);
         }

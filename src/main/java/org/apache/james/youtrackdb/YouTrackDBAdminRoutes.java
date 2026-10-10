@@ -2,7 +2,6 @@ package org.apache.james.youtrackdb;
 
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -114,12 +113,13 @@ public class YouTrackDBAdminRoutes implements Routes {
                 }
             }
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("status", dbOpen ? "HEALTHY" : "UNHEALTHY");
-            result.put("databaseOpen", dbOpen);
-            result.put("totalBlobs", counts[0]);
-            result.put("totalUsers", counts[1]);
-            result.put("totalDomains", counts[2]);
+            Map<String, Object> result = Map.of(
+                "status", dbOpen ? "HEALTHY" : "UNHEALTHY",
+                "databaseOpen", dbOpen,
+                "totalBlobs", counts[0],
+                "totalUsers", counts[1],
+                "totalDomains", counts[2]
+            );
 
             response.status(dbOpen ? HttpStatus.OK_200 : HttpStatus.SERVICE_UNAVAILABLE_503);
             return result;
@@ -137,13 +137,13 @@ public class YouTrackDBAdminRoutes implements Routes {
     private Object cleanupOrphanMimeParts(Request request, Response response) {
         try {
             YouTrackDBMimePartsGc.Result gcResult = mimePartsGc.collect();
-            Map<String, Object> result = new HashMap<>();
-            result.put("status", "COMPLETED");
-            result.put("referencedParts", gcResult.referencedParts());
-            result.put("deletedOrphanParts", gcResult.deletedParts());
-            result.put("pendingOrphanParts", gcResult.pendingParts());
             response.status(HttpStatus.OK_200);
-            return result;
+            return Map.of(
+                "status", "COMPLETED",
+                "referencedParts", gcResult.referencedParts(),
+                "deletedOrphanParts", gcResult.deletedParts(),
+                "pendingOrphanParts", gcResult.pendingParts()
+            );
         } catch (Exception e) {
             LOGGER.error("Failed to run MIME parts cleanup", e);
             throw ErrorResponder.builder()
@@ -190,11 +190,11 @@ public class YouTrackDBAdminRoutes implements Routes {
                 }
             }
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("status", "COMPLETED");
-            result.put("deletedOrphanBlobs", deleted[0]);
             response.status(HttpStatus.OK_200);
-            return result;
+            return Map.of(
+                "status", "COMPLETED",
+                "deletedOrphanBlobs", deleted[0]
+            );
         } catch (Exception e) {
             LOGGER.error("Failed to run orphan blobs cleanup", e);
             throw ErrorResponder.builder()

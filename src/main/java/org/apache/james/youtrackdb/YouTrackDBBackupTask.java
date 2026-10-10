@@ -18,21 +18,8 @@ public class YouTrackDBBackupTask implements Task {
     private static final Logger LOGGER = LoggerFactory.getLogger(YouTrackDBBackupTask.class);
     public static final TaskType TASK_TYPE = TaskType.of("youtrackdb-backup");
 
-    public static class AdditionalInformation implements TaskExecutionDetails.AdditionalInformation {
-        private final Instant timestamp;
-        private final String backupDir;
-        private final long sizeBytes;
-
-        public AdditionalInformation(Instant timestamp, String backupDir, long sizeBytes) {
-            this.timestamp = timestamp;
-            this.backupDir = backupDir;
-            this.sizeBytes = sizeBytes;
-        }
-
-        @Override
-        public Instant timestamp() {
-            return timestamp;
-        }
+    public record AdditionalInformation(Instant timestamp, String backupDir, long sizeBytes)
+        implements TaskExecutionDetails.AdditionalInformation {
 
         public String getBackupDir() {
             return backupDir;
