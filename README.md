@@ -26,8 +26,8 @@ It delivers a complete enterprise-grade mail stack running within a single JVM p
    - Built-in crash resilience against sudden power loss through a dedicated Write-Ahead Log (WAL) and synchronous transaction commits.
    - Every message is safely persisted to journal disk pages before issuing the `250 OK` acknowledgment to the client.
 
-4. **Two-Tier Storage & Transparent Compression**
-   - Transparent message body compression using Zstandard (Zstd) paired with three-tier content-addressed blob sharding.
+4. **Three-Tier Storage & Transparent Compression**
+   - Inline raw storage for small blobs (≤4 KB), inline Zstandard compression (4 KB–64 KB), and off-heap filesystem storage for large blobs (>64 KB) with 3-tier directory sharding.
    - Minimal SSD/NVMe wear via batched group page flushing and resident memory page caching.
 
 5. **Strict IMAP4rev1 & RFC 9051 IMAP4rev2 Compliance**
@@ -114,4 +114,9 @@ curl -X POST "http://localhost:8000/youtrackdb/backup?backupDir=var/backups"
 #### Orphan Blobs Garbage Collection
 ```bash
 curl -X POST http://localhost:8000/youtrackdb/blobs/gc
+```
+
+#### Orphan MIME Parts Garbage Collection
+```bash
+curl -X POST http://localhost:8000/youtrackdb/mime-parts/gc
 ```
