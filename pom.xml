@@ -218,6 +218,7 @@
     </repositories>
 
     <build>
+        <finalName>${project.artifactId}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -225,7 +226,7 @@
                 <configuration>
                     <reuseForks>false</reuseForks>
                     <forkCount>1</forkCount>
-                    <argLine>-XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g</argLine>
+                    <argLine>-XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g --enable-native-access=ALL-UNNAMED</argLine>
                     <excludedGroups>${surefire.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
@@ -239,7 +240,6 @@
                             <goal>jar</goal>
                         </goals>
                         <configuration>
-                            <finalName>${project.artifactId}</finalName>
                             <archive>
                                 <manifest>
                                     <addClasspath>true</addClasspath>
