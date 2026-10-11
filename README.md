@@ -30,8 +30,8 @@ It delivers a complete enterprise-grade mail stack running within a single JVM p
    - Inline raw storage for small blobs (≤4 KB), inline Zstandard compression (4 KB–64 KB), and off-heap filesystem storage for large blobs (>64 KB) with 3-tier directory sharding.
    - Minimal SSD/NVMe wear via batched group page flushing and resident memory page caching.
 
-5. **Strict IMAP4rev1 & RFC 9051 IMAP4rev2 Compliance**
-   - Out-of-the-box dual-standard support (RFC 3501 and RFC 9051) with dynamic capability negotiation (`ENABLE IMAP4rev2`, `UNAUTHENTICATE`, automatic `ESEARCH`, suppression of deprecated `RECENT`).
+5. **Strict IMAP4rev1 Compliance**
+   - Standards-compliant RFC 3501 implementation with IDLE, UIDPLUS, NAMESPACE, MOVE, COMPRESS=DEFLATE, and SASL authentication.
 
 ---
 
@@ -43,7 +43,7 @@ It delivers a complete enterprise-grade mail stack running within a single JVM p
 * **Network Protocols**:
   * **SMTP / SMTPS**: RFC 5321, RFC 4954 (Auth), RFC 3207 (STARTTLS) on ports 25, 465, 587.
   * **Email Format**: RFC 5322 (Internet Message Format) & MIME RFC 2045–2049.
-  * **IMAP4rev1 & IMAP4rev2**: RFC 3501 and RFC 9051 on ports 143, 993.
+  * **IMAP4rev1**: RFC 3501 on ports 143, 993.
   * **IMAP Quotas & Metadata**: RFC 9208 (QUOTA) and RFC 5464 (METADATA).
   * **ManageSieve**: RFC 5804 on port 4190.
   * **WebAdmin REST API**: Port 8000.

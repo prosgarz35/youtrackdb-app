@@ -2,8 +2,10 @@ package org.apache.james.youtrackdb;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import jakarta.inject.Inject;
 
@@ -161,43 +163,64 @@ public class YouTrackDBAdminRoutes implements Routes {
             if (blobsSourceDir.exists()) {
                 long gracePeriodCutoff = System.currentTimeMillis() - java.time.Duration.ofHours(1).toMillis();
                 try (var stream = java.nio.file.Files.walk(blobsSourceDir.toPath())) {
+                    List<java.nio.file.Path> candidates = new ArrayList<>();
                     stream.filter(java.nio.file.Files::isRegularFile)
                         .forEach(path -> {
                             String fileName = path.getFileName().toString();
                             if (!fileName.contains(".tmp.")) {
                                 try {
                                     long lastModified = java.nio.file.Files.getLastModifiedTime(path).toMillis();
-                                    // Only consider if older than grace period to protect active/in-flight writes
                                     if (lastModified < gracePeriodCutoff) {
-                                        boolean isHashedPath = path.toString().replace('\\', '/').contains("/.hashed/");
-                                        boolean existsInDb = isHashedPath
-                                            // Non-plain blobIds are SHA-256 hashed into file names: keep all hashed blobs
-                                            // whose storageType is FILE_ZSTD
-                                            || !YouTrackDBTransactions.queryRows(traversalSource,
-                                                "SELECT 1 FROM JamesBlob WHERE blobId = :id LIMIT 1", "id", fileName).isEmpty();
-                                        if (!existsInDb) {
-                                            if (java.nio.file.Files.deleteIfExists(path)) {
-                                                deleted[0]++;
-                                                // Prune empty parent directories up to var/blobs
-                                                java.io.File parent = path.toFile().getParentFile();
-                                                while (parent != null && !parent.equals(blobsSourceDir) && parent.getAbsolutePath().startsWith(blobsSourceDir.getAbsolutePath())) {
-                                                    String[] list = parent.list();
-                                                    if (list != null && list.length == 0) {
-                                                        if (!parent.delete()) {
-                                                            break;
-                                                        }
-                                                        parent = parent.getParentFile();
-                                                    } else {
-                                                        break;
-                                                    }
+                                        candidates.add(path);
+                                    }
+                                } catch (Exception ignored) {
+                                }
+                            }
+                        });
+
+                    final int BATCH_SIZE = 500;
+                    for (int i = 0; i < candidates.size(); i += BATCH_SIZE) {
+                        List<java.nio.file.Path> batch = candidates.subList(i, Math.min(i + BATCH_SIZE, candidates.size()));
+                        List<String> plainIds = batch.stream()
+                            .filter(p -> !p.toString().replace('\\', '/').contains("/.hashed/"))
+                            .map(p -> p.getFileName().toString())
+                            .toList();
+
+                        java.util.Set<String> existingIds = plainIds.isEmpty() ? java.util.Set.of() :
+                            YouTrackDBTransactions.queryRows(traversalSource,
+                                "SELECT blobId FROM JamesBlob WHERE blobId IN :ids", "ids", plainIds)
+                            .stream()
+                            .map(r -> Objects.toString(r.get("blobId"), null))
+                            .filter(Objects::nonNull)
+                            .collect(java.util.stream.Collectors.toSet());
+
+                        for (java.nio.file.Path path : batch) {
+                            boolean isHashedPath = path.toString().replace('\\', '/').contains("/.hashed/");
+                            String fileName = path.getFileName().toString();
+                            boolean existsInDb = isHashedPath || existingIds.contains(fileName);
+
+                            if (!existsInDb) {
+                                try {
+                                    if (java.nio.file.Files.deleteIfExists(path)) {
+                                        deleted[0]++;
+                                        java.io.File parent = path.toFile().getParentFile();
+                                        while (parent != null && !parent.equals(blobsSourceDir) && parent.getAbsolutePath().startsWith(blobsSourceDir.getAbsolutePath())) {
+                                            String[] list = parent.list();
+                                            if (list != null && list.length == 0) {
+                                                if (!parent.delete()) {
+                                                    break;
                                                 }
+                                                parent = parent.getParentFile();
+                                            } else {
+                                                break;
                                             }
                                         }
                                     }
                                 } catch (Exception ignored) {
                                 }
                             }
-                        });
+                        }
+                    }
                 }
             }
 
