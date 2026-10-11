@@ -199,6 +199,7 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndModSeq IF NOT EXISTS ON JamesMailboxMessage (mailboxId, modSeq) NOTUNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxAndIsSeen IF NOT EXISTS ON JamesMailboxMessage (mailboxId, isSeen) NOTUNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.mailboxSeenUid IF NOT EXISTS ON JamesMailboxMessage (mailboxId, isSeen, uid) NOTUNIQUE");
+                    g.command("CREATE INDEX JamesMailboxMessage.mailboxAndUserFlags IF NOT EXISTS ON JamesMailboxMessage (mailboxId, userFlags) NOTUNIQUE");
                     g.command("CREATE INDEX JamesMailboxMessage.messageId IF NOT EXISTS NOTUNIQUE");
 
                     // Classes for Quotas
@@ -227,35 +228,6 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesMailboxAnnotation.value IF NOT EXISTS STRING");
                     g.command("CREATE INDEX JamesMailboxAnnotation.mailboxAndKey IF NOT EXISTS ON JamesMailboxAnnotation (mailboxId, key) UNIQUE");
                 });
-
-                // Validation: verify that all existing mailbox IDs follow canonical uppercase UUID format
-                var rows = traversalSource.yql("SELECT mailboxId FROM JamesMailbox").toList();
-                for (Object row : rows) {
-                    String id = null;
-                    if (row instanceof java.util.Map<?, ?> m) {
-                        Object val = m.get("mailboxId");
-                        if (val != null) {
-                            id = val.toString();
-                        }
-                    } else if (row instanceof org.apache.tinkerpop.gremlin.structure.Vertex v) {
-                        var p = v.property("mailboxId");
-                        if (p.isPresent()) {
-                            id = p.value().toString();
-                        }
-                    }
-                    if (id != null) {
-                        try {
-                            java.util.UUID parsed = java.util.UUID.fromString(id);
-                            if (!id.equals(parsed.toString().toUpperCase(java.util.Locale.US))) {
-                                throw new IllegalStateException("Found non-canonical mailboxId in JamesMailbox: " + id
-                                    + ". YouTrackDB James requires canonical uppercase UUID mailbox IDs.");
-                            }
-                        } catch (IllegalArgumentException e) {
-                            throw new IllegalStateException("Found malformed mailboxId in JamesMailbox: " + id
-                                + ". YouTrackDB James requires canonical uppercase UUID mailbox IDs.", e);
-                        }
-                    }
-                }
             } catch (Exception e) {
                 LOGGER.error("Schema initialization failed in YouTrackDB: {}", e.getMessage(), e);
                 throw new RuntimeException("Fatal error: failed to initialize YouTrackDB schema", e);

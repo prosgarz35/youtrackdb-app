@@ -99,6 +99,7 @@ public class YouTrackDBMessageMapperTest {
             tx.command("CREATE INDEX JamesMailboxMessage.mailboxId IF NOT EXISTS NOTUNIQUE");
             tx.command("CREATE INDEX JamesMailboxMessage.mailboxAndIsSeen IF NOT EXISTS ON JamesMailboxMessage (mailboxId, isSeen) NOTUNIQUE");
             tx.command("CREATE INDEX JamesMailboxMessage.mailboxSeenUid IF NOT EXISTS ON JamesMailboxMessage (mailboxId, isSeen, uid) NOTUNIQUE");
+            tx.command("CREATE INDEX JamesMailboxMessage.mailboxAndUserFlags IF NOT EXISTS ON JamesMailboxMessage (mailboxId, userFlags) NOTUNIQUE");
         });
 
         mailboxMapper = new YouTrackDBMailboxMapper(g);
