@@ -233,17 +233,49 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
     public Flux<Mailbox> findMailboxWithPathLike(MailboxQuery.UserBound query) {
         String fixedNamespace = query.getFixedNamespace();
         String fixedUser = query.getFixedUser() != null ? query.getFixedUser().asString() : null;
+        String pathLike = org.apache.james.mailbox.store.MailboxExpressionBackwardCompatibility.getPathLike(query);
+        boolean hasWildcardOnly = org.apache.james.mailbox.model.search.Wildcard.INSTANCE.equals(query.getMailboxNameExpression());
+
         return Mono.fromCallable(() -> {
-            List<Map<String, Object>> rows = (fixedNamespace != null && fixedUser != null)
-                ? YouTrackDBTransactions.queryRows(g, "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns AND user = :user", "ns", fixedNamespace, "user", fixedUser)
-                : (fixedNamespace != null)
-                ? YouTrackDBTransactions.queryRows(g, "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns", "ns", fixedNamespace)
-                : (fixedUser != null)
-                ? YouTrackDBTransactions.queryRows(g, "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE user = :user", "user", fixedUser)
-                : YouTrackDBTransactions.queryRows(g, "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox");
-            return rows.stream().map(this::readMailbox).toList();
+            if (fixedNamespace != null && fixedUser != null) {
+                if (hasWildcardOnly) {
+                    return YouTrackDBTransactions.queryRows(g,
+                        "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns AND user = :user",
+                        "ns", fixedNamespace, "user", fixedUser);
+                }
+                return YouTrackDBTransactions.queryRows(g,
+                    "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name LIKE :likePattern",
+                    "ns", fixedNamespace, "user", fixedUser, "likePattern", pathLike);
+            } else if (fixedNamespace != null) {
+                if (hasWildcardOnly) {
+                    return YouTrackDBTransactions.queryRows(g,
+                        "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns",
+                        "ns", fixedNamespace);
+                }
+                return YouTrackDBTransactions.queryRows(g,
+                    "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns AND name LIKE :likePattern",
+                    "ns", fixedNamespace, "likePattern", pathLike);
+            } else if (fixedUser != null) {
+                if (hasWildcardOnly) {
+                    return YouTrackDBTransactions.queryRows(g,
+                        "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE user = :user",
+                        "user", fixedUser);
+                }
+                return YouTrackDBTransactions.queryRows(g,
+                    "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE user = :user AND name LIKE :likePattern",
+                    "user", fixedUser, "likePattern", pathLike);
+            } else {
+                if (hasWildcardOnly) {
+                    return YouTrackDBTransactions.queryRows(g,
+                        "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox");
+                }
+                return YouTrackDBTransactions.queryRows(g,
+                    "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE name LIKE :likePattern",
+                    "likePattern", pathLike);
+            }
         }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler())
-          .flatMapIterable(list -> list)
+          .flatMapIterable(rows -> rows)
+          .map(this::readMailbox)
           .filter(query::matches);
     }
 
@@ -321,12 +353,10 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
     @Override
     public Flux<Mailbox> list() {
         return Mono.fromCallable(() -> YouTrackDBTransactions.queryRows(g,
-                "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox")
-                .stream()
-                .map(this::readMailbox)
-                .toList())
+                "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox"))
             .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler())
-            .flatMapIterable(list -> list);
+            .flatMapIterable(rows -> rows)
+            .map(this::readMailbox);
     }
 
     @Override
