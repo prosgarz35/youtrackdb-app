@@ -24,11 +24,8 @@
         <jmxName>smtpserver-global</jmxName>
         <bind>0.0.0.0:0</bind>
         <connectionBacklog>200</connectionBacklog>
-        <!-- Port 25: opportunistic STARTTLS (on request) -->
-        <tls socketTLS="false" startTLS="true">
-            <privateKey>classpath://private.key</privateKey>
-            <certificates>classpath://certs.self-signed.csr</certificates>
-            <secret>123456</secret>
+        <!-- Port 25: plain SMTP for test reliability -->
+        <tls socketTLS="false" startTLS="false">
         </tls>
         <connectiontimeout>360</connectiontimeout>
         <connectionLimit>0</connectionLimit>
