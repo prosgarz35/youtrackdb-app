@@ -178,20 +178,17 @@ public class YouTrackDBAdminRoutes implements Routes {
                             }
                         });
 
+                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(traversalSource,
+                        "SELECT blobId FROM JamesBlob WHERE storageType = 'FILE_ZSTD'");
+                    List<String> allFileBlobIds = rows.stream()
+                        .map(r -> Objects.toString(r.get("blobId"), null))
+                        .filter(Objects::nonNull)
+                        .toList();
+                    java.util.Set<String> keepNames = YouTrackDBBlobStoreDAO.fileNamesToKeep(allFileBlobIds);
+
                     final int BATCH_SIZE = 500;
                     for (int i = 0; i < candidates.size(); i += BATCH_SIZE) {
                         List<java.nio.file.Path> batch = candidates.subList(i, Math.min(i + BATCH_SIZE, candidates.size()));
-                        List<String> fileNames = batch.stream()
-                            .map(p -> p.getFileName().toString())
-                            .toList();
-
-                        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(traversalSource,
-                            "SELECT blobId FROM JamesBlob WHERE storageType = 'FILE_ZSTD'");
-                        List<String> allFileBlobIds = rows.stream()
-                            .map(r -> Objects.toString(r.get("blobId"), null))
-                            .filter(Objects::nonNull)
-                            .toList();
-                        java.util.Set<String> keepNames = YouTrackDBBlobStoreDAO.fileNamesToKeep(allFileBlobIds);
 
                         for (java.nio.file.Path path : batch) {
                             String fileName = path.getFileName().toString();

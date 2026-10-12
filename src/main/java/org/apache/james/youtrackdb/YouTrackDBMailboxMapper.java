@@ -128,6 +128,10 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
         Objects.requireNonNull(mailbox.getMailboxId(), "A mailbox we want to rename should have a defined mailboxId");
 
         return Mono.fromCallable(() -> {
+            String mId = mailbox.getMailboxId().serialize();
+            mailboxByIdCache.invalidate(mId);
+            mailboxByPathCache.invalidateAll();
+
             try {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     String usernameStr = mailbox.getUser() != null ? mailbox.getUser().asString() : "";
@@ -136,14 +140,14 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                         "ns", mailbox.getNamespace(),
                         "user", usernameStr,
                         "name", mailbox.getName(),
-                        "id", mailbox.getMailboxId().serialize());
+                        "id", mId);
                     if (!existing.isEmpty()) {
                         throw new MailboxExistsException(mailbox.generateAssociatedPath().getName());
                     }
 
                     List<Map<String, Object>> target = YouTrackDBTransactions.queryRowsInTx(tx,
                         "SELECT 1 FROM JamesMailbox WHERE mailboxId = :id LIMIT 1",
-                        "id", mailbox.getMailboxId().serialize());
+                        "id", mId);
                     if (target.isEmpty()) {
                         throw new MailboxNotFoundException(mailbox.getMailboxId());
                     }
@@ -152,7 +156,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                         "ns", mailbox.getNamespace(),
                         "user", usernameStr,
                         "name", mailbox.getName(),
-                        "id", mailbox.getMailboxId().serialize());
+                        "id", mId);
                 });
             } catch (Exception e) {
                 if (e instanceof MailboxExistsException || YouTrackDBTransactions.hasCause(e, RecordDuplicatedException.class)) {
@@ -162,7 +166,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             }
 
             // Invalidate both caches to avoid phantom paths on concurrent renames
-            mailboxByIdCache.invalidate(mailbox.getMailboxId().serialize());
+            mailboxByIdCache.invalidate(mId);
             mailboxByPathCache.invalidateAll();
             putInCache(mailbox);
 
