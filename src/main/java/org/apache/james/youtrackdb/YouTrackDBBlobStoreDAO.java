@@ -416,6 +416,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                         }
 
                         boolean overwrite = isOverwritable(blobId);
+                        boolean createdNewFile = false;
                         if (overwrite || !file.exists()) {
                             File tempFile = new File(parent, file.getName() + ".tmp." + Thread.currentThread().threadId());
                             try {
@@ -432,6 +433,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                                 }
                                 try {
                                     Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                    createdNewFile = true;
                                 } catch (Exception e) {
                                     if (overwrite) {
                                         Files.deleteIfExists(tempFile.toPath());
@@ -439,6 +441,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                                     }
                                     if (!file.exists()) {
                                         Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                        createdNewFile = true;
                                     } else {
                                         Files.deleteIfExists(tempFile.toPath());
                                     }
@@ -455,7 +458,19 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                             }
                         }
 
-                        insertBlobRecord(bucketName, blobId, STORAGE_FILE_ZSTD, new byte[0]);
+                        try {
+                            insertBlobRecord(bucketName, blobId, STORAGE_FILE_ZSTD, new byte[0]);
+                        } catch (Exception insertEx) {
+                            if (createdNewFile) {
+                                try {
+                                    if (Files.deleteIfExists(file.toPath())) {
+                                        pruneEmptyParentDirectories(file, pruneStopDir(bucketName, blobId));
+                                    }
+                                } catch (Exception ignored) {
+                                }
+                            }
+                            throw insertEx;
+                        }
                     }
                 }
             } catch (Exception e) {

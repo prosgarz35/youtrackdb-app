@@ -539,4 +539,25 @@ public class YouTrackDBMessageMapperTest {
         assertThat(messageMapper.countUnseenMessagesInMailbox(mailbox)).isEqualTo(1L);
         assertThat(messageMapper.findFirstUnseenMessageUid(mailbox)).isEqualTo(msg3.getUid());
     }
+
+    @Test
+    void copyMessageShouldSucceedAndPreserveContentAcrossMailboxes() throws Exception {
+        Mailbox destinationMailbox = mailboxMapper.create(
+            MailboxPath.forUser(Username.of("user@domain.com"), "Archive"),
+            UidValidity.of(200)
+        ).block();
+
+        SimpleMailboxMessage originalMsg = createMessage(mailbox, YouTrackDBMessageId.generate(), "Important Content", new Flags(Flag.FLAGGED));
+        MessageMetaData savedMeta = messageMapper.add(mailbox, originalMsg);
+
+        MessageMetaData copyMeta = messageMapper.copy(destinationMailbox, originalMsg);
+
+        assertThat(copyMeta.getUid()).isEqualTo(MessageUid.of(1));
+        assertThat(copyMeta.getFlags().contains(Flag.FLAGGED)).isTrue();
+
+        Iterator<MailboxMessage> copiedIt = messageMapper.findInMailbox(destinationMailbox, MessageRange.one(copyMeta.getUid()), FetchType.FULL, 1);
+        assertThat(copiedIt.hasNext()).isTrue();
+        MailboxMessage copiedMsg = copiedIt.next();
+        assertThat(new String(copiedMsg.getFullContent().readAllBytes(), StandardCharsets.UTF_8)).isEqualTo("Important Content");
+    }
 }
