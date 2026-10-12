@@ -53,9 +53,6 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     private static final String STORAGE_INLINE_ZSTD = "INLINE_ZSTD";
     private static final String STORAGE_FILE_ZSTD = "FILE_ZSTD";
 
-    // Legacy fallback compatibility
-    private static final String LEGACY_STORAGE_INLINE = "INLINE";
-    private static final String LEGACY_STORAGE_FILE = "FILE";
 
     private static final int TIER1_RAW_THRESHOLD = 4 * 1024;    // 4 KB: raw in DB (no compress, no dedup)
     private static final int TIER2_DB_THRESHOLD = 64 * 1024;   // 64 KB: Zstd in DB (page size limit)
@@ -203,8 +200,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     /**
      * Resolves the filesystem location for a blob.
      * A plain id uses 3-level directory sharding: var/blobs/{bucket}/{p1}/{p2}/{p3}/{blobId}
-     * (blob "abcdef123456" -> var/blobs/{bucket}/ab/cd/ef/abcdef123456), and the flat legacy location
-     * var/blobs/{bucket}/{blobId} is still read.
+     * (blob "abcdef123456" -> var/blobs/{bucket}/ab/cd/ef/abcdef123456).
      * An id that cannot be a path segment (it contains "/", "\\" or ".."; the blob id factory of a mail
      * repository builds ids like "var/mail/error/mailMetadata/{name}") is stored under
      * var/blobs/.hashed/{bucket}/{sha256(id)}, so it can never leave the blobs directory.
@@ -221,17 +217,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
             String p2 = id.substring(2, 4);
             String p3 = id.substring(4, 6);
             File sharded = new File(new File(new File(bucketDir, p1), p2), p3);
-            File shardedFile = new File(sharded, id);
-            if (shardedFile.exists()) {
-                return shardedFile;
-            }
-            // Check legacy flat location if file exists there
-            File flatFile = new File(bucketDir, id);
-            if (flatFile.exists()) {
-                return flatFile;
-            }
-            // Return sharded destination for new writes
-            return shardedFile;
+            return new File(sharded, id);
         }
 
         return new File(bucketDir, id);
@@ -301,7 +287,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
             }
 
             String storageType = meta.storageType();
-            if (STORAGE_FILE_ZSTD.equals(storageType) || LEGACY_STORAGE_FILE.equals(storageType)) {
+            if (STORAGE_FILE_ZSTD.equals(storageType)) {
                 File file = getFileForBlob(bucketName, blobId);
                 if (!file.exists()) {
                     throw new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath());
@@ -309,10 +295,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 InputStream in = null;
                 try {
                     in = new FileInputStream(file);
-                    if (STORAGE_FILE_ZSTD.equals(storageType)) {
-                        return InputStreamBlob.of(new com.github.luben.zstd.ZstdInputStream(in));
-                    }
-                    return InputStreamBlob.of(in);
+                    return InputStreamBlob.of(new com.github.luben.zstd.ZstdInputStream(in));
                 } catch (IOException e) {
                     if (in != null) {
                         try {
@@ -331,7 +314,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                 } catch (Exception e) {
                     throw new ObjectStoreIOException("Error decompressing inline blob: " + key, e);
                 }
-            } else if (STORAGE_INLINE_RAW.equals(storageType) || LEGACY_STORAGE_INLINE.equals(storageType)) {
+            } else if (STORAGE_INLINE_RAW.equals(storageType)) {
                 byte[] bytes = meta.payload();
                 if (bytes == null) {
                     bytes = new byte[0];
@@ -356,7 +339,7 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
             }
 
             String storageType = meta.storageType();
-            if (STORAGE_INLINE_RAW.equals(storageType) || LEGACY_STORAGE_INLINE.equals(storageType)) {
+            if (STORAGE_INLINE_RAW.equals(storageType)) {
                 byte[] bytes = meta.payload();
                 return BytesBlob.of(bytes != null ? bytes : new byte[0]);
             } else if (STORAGE_INLINE_ZSTD.equals(storageType)) {
@@ -374,18 +357,14 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
                         throw new ObjectStoreIOException("Error decompressing inline blob: " + key, ioe);
                     }
                 }
-            } else if (STORAGE_FILE_ZSTD.equals(storageType) || LEGACY_STORAGE_FILE.equals(storageType)) {
+            } else if (STORAGE_FILE_ZSTD.equals(storageType)) {
                 File file = getFileForBlob(bucketName, blobId);
                 if (!file.exists()) {
                     throw new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath());
                 }
-                try (InputStream in = new FileInputStream(file)) {
-                    if (STORAGE_FILE_ZSTD.equals(storageType)) {
-                        try (var zis = new com.github.luben.zstd.ZstdInputStream(in)) {
-                            return BytesBlob.of(zis.readAllBytes());
-                        }
-                    }
-                    return BytesBlob.of(in.readAllBytes());
+                try (InputStream in = new FileInputStream(file);
+                     var zis = new com.github.luben.zstd.ZstdInputStream(in)) {
+                    return BytesBlob.of(zis.readAllBytes());
                 } catch (IOException e) {
                     throw new ObjectStoreIOException("Error reading blob file: " + file.getAbsolutePath(), e);
                 }
