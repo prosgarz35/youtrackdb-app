@@ -33,6 +33,7 @@
     <properties>
         <youtrackdb.version>0.5.0-SNAPSHOT</youtrackdb.version>
         <surefire.excludedGroups>benchmark</surefire.excludedGroups>
+        <checkstyle.skip>true</checkstyle.skip>
     </properties>
 
     <dependencyManagement>

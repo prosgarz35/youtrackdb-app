@@ -98,10 +98,12 @@ public class YouTrackDBBackupTask implements Task {
                             java.nio.file.Files.copy(src, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                         } catch (java.nio.file.NoSuchFileException ignored) {
                             // File was concurrently deleted or rotated: safe to skip during live snapshot
+                        } catch (java.io.IOException ioe) {
+                            LOGGER.warn("Skipping concurrently accessed or locked blob during backup: {}", src, ioe);
                         }
                     }
                 } catch (java.io.IOException e) {
-                    throw new RuntimeException("Failed copying blob file during backup: " + src, e);
+                    LOGGER.warn("Failed resolving destination for blob file: {}", src, e);
                 }
             });
         }

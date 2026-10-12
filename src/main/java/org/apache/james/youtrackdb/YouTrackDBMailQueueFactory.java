@@ -170,7 +170,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             try {
                 List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                     "SELECT enqueueId, serializedMail, nextDelivery FROM " + CLASS_NAME +
-                    " WHERE queueName = :qname ORDER BY nextDelivery ASC",
+                    " WHERE queueName = :qname ORDER BY nextDelivery ASC, enqueueId ASC",
                     "qname", name.asString());
 
                 List<YouTrackDBMailQueueItem> recovered = rows.stream()

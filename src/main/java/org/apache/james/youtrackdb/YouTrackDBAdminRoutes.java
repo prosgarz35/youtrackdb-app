@@ -181,23 +181,21 @@ public class YouTrackDBAdminRoutes implements Routes {
                     final int BATCH_SIZE = 500;
                     for (int i = 0; i < candidates.size(); i += BATCH_SIZE) {
                         List<java.nio.file.Path> batch = candidates.subList(i, Math.min(i + BATCH_SIZE, candidates.size()));
-                        List<String> plainIds = batch.stream()
-                            .filter(p -> !p.toString().replace('\\', '/').contains("/.hashed/"))
+                        List<String> fileNames = batch.stream()
                             .map(p -> p.getFileName().toString())
                             .toList();
 
-                        java.util.Set<String> existingIds = plainIds.isEmpty() ? java.util.Set.of() :
-                            YouTrackDBTransactions.queryRows(traversalSource,
-                                "SELECT blobId FROM JamesBlob WHERE blobId IN :ids", "ids", plainIds)
-                            .stream()
+                        List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(traversalSource,
+                            "SELECT blobId FROM JamesBlob WHERE storageType = 'FILE_ZSTD'");
+                        List<String> allFileBlobIds = rows.stream()
                             .map(r -> Objects.toString(r.get("blobId"), null))
                             .filter(Objects::nonNull)
-                            .collect(java.util.stream.Collectors.toSet());
+                            .toList();
+                        java.util.Set<String> keepNames = YouTrackDBBlobStoreDAO.fileNamesToKeep(allFileBlobIds);
 
                         for (java.nio.file.Path path : batch) {
-                            boolean isHashedPath = path.toString().replace('\\', '/').contains("/.hashed/");
                             String fileName = path.getFileName().toString();
-                            boolean existsInDb = isHashedPath || existingIds.contains(fileName);
+                            boolean existsInDb = keepNames.contains(fileName);
 
                             if (!existsInDb) {
                                 try {

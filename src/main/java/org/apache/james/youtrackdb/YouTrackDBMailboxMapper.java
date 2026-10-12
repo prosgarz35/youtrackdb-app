@@ -161,7 +161,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 throw e;
             }
 
-            // Invalidate old path and refresh cache
+            // Invalidate both caches to avoid phantom paths on concurrent renames
             mailboxByIdCache.invalidate(mailbox.getMailboxId().serialize());
             mailboxByPathCache.invalidateAll();
             putInCache(mailbox);
