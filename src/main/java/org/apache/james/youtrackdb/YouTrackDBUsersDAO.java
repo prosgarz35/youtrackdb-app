@@ -170,7 +170,8 @@ public class YouTrackDBUsersDAO implements UsersDAO, Configurable {
         try {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g, "SELECT count(*) AS total FROM JamesUser");
             if (!rows.isEmpty() && rows.getFirst().get("total") instanceof Number total) {
-                return Math.toIntExact(total.longValue());
+                long val = total.longValue();
+                return val > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) val;
             }
             return 0;
         } catch (Exception e) {

@@ -48,7 +48,6 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
     private static final String PROP_UID_VALIDITY = "uidValidity";
     private static final String PROP_ACL = "acl";
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final YTDBGraphTraversalSource g;
 
     private final Cache<MailboxPath, Mailbox> mailboxByPathCache = Caffeine.newBuilder()
@@ -130,8 +129,6 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
 
         return Mono.fromCallable(() -> {
             String mId = mailbox.getMailboxId().serialize();
-            mailboxByIdCache.invalidate(mId);
-            mailboxByPathCache.invalidateAll();
 
             try {
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
@@ -395,7 +392,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 .collect(java.util.stream.Collectors.toMap(
                     e -> e.getKey().serialize(),
                     e -> e.getValue().serialize()));
-            return OBJECT_MAPPER.writeValueAsString(map);
+            return YouTrackDBMetadataUtils.OBJECT_MAPPER.writeValueAsString(map);
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize ACL", e);
         }
@@ -406,7 +403,7 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
             return MailboxACL.EMPTY;
         }
         try {
-            Map<String, String> map = OBJECT_MAPPER.readValue(json, new TypeReference<Map<String, String>>() {});
+            Map<String, String> map = YouTrackDBMetadataUtils.OBJECT_MAPPER.readValue(json, new TypeReference<Map<String, String>>() {});
             Map<MailboxACL.EntryKey, MailboxACL.Rfc4314Rights> entries = new java.util.HashMap<>();
             for (Map.Entry<String, String> entry : map.entrySet()) {
                 entries.put(MailboxACL.EntryKey.deserialize(entry.getKey()), MailboxACL.Rfc4314Rights.fromSerializedRfc4314Rights(entry.getValue()));

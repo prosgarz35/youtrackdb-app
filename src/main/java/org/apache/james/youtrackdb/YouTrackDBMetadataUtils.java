@@ -11,7 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public final class YouTrackDBMetadataUtils {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private YouTrackDBMetadataUtils() {
     }
@@ -20,7 +20,7 @@ public final class YouTrackDBMetadataUtils {
         if (payload == null || payload.length == 0) {
             return List.of();
         }
-        JsonNode json = JSON.readTree(payload);
+        JsonNode json = OBJECT_MAPPER.readTree(payload);
         return java.util.stream.Stream.of("headerBlobId", "bodyBlobId")
             .map(json::path)
             .filter(JsonNode::isTextual)

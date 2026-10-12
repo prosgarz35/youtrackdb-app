@@ -197,9 +197,20 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
 
         @Override
         public void removeAll(Consumer<MailKey> progressCallback) throws MessagingException {
-            List<MailKey> keys = new ArrayList<>();
-            list().forEachRemaining(keys::add);
-            for (MailKey key : keys) {
+            Iterator<MailKey> it = list();
+            final int BATCH_SIZE = 500;
+            List<MailKey> batch = new ArrayList<>(BATCH_SIZE);
+            while (it.hasNext()) {
+                batch.add(it.next());
+                if (batch.size() >= BATCH_SIZE) {
+                    for (MailKey key : batch) {
+                        remove(key);
+                        progressCallback.accept(key);
+                    }
+                    batch.clear();
+                }
+            }
+            for (MailKey key : batch) {
                 remove(key);
                 progressCallback.accept(key);
             }

@@ -225,4 +225,19 @@ class YouTrackDBBlobMailRepositoryContractTest implements MailRepositoryContract
         assertThat(blobsAfterOverwrite).isEqualTo(blobsAfterFirstStore);
         assertThat(testee.size()).isEqualTo(1L);
     }
+
+    @Test
+    void removeAllWithCallbackShouldProcessAllItemsInBatches() throws Exception {
+        MailRepository testee = retrieveRepository();
+        for (int i = 0; i < 15; i++) {
+            testee.store(createMail(new MailKey("batch-mail-" + i)));
+        }
+        assertThat(testee.size()).isEqualTo(15L);
+
+        List<MailKey> callbackKeys = new ArrayList<>();
+        testee.removeAll(callbackKeys::add);
+
+        assertThat(callbackKeys).hasSize(15);
+        assertThat(testee.size()).isEqualTo(0L);
+    }
 }
