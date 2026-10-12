@@ -54,6 +54,7 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     private static final String PROP_USER_FLAGS = "userFlags";
     private static final String PROP_IS_SEEN = "isSeen";
     private static final String PROP_CONTENT = "content";
+    private static final int MAX_MESSAGE_SIZE = 100 * 1024 * 1024; // 100 MB safety guard against heap exhaustion
 
     private static final String METADATA_COLS = String.join(", ",
         PROP_MAILBOX_ID, PROP_MESSAGE_ID, PROP_THREAD_ID, PROP_UID, PROP_MODSEQ,
@@ -389,10 +390,16 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
     @Override
     protected MessageMetaData save(Mailbox mailbox, MailboxMessage message) throws MailboxException {
         try {
+            long size = message.getFullContentOctets();
+            if (size > MAX_MESSAGE_SIZE) {
+                throw new MailboxException("Message size " + size + " exceeds maximum allowed limit of " + MAX_MESSAGE_SIZE + " bytes");
+            }
             byte[] fullBytes;
             try (InputStream is = message.getFullContent()) {
-                long size = message.getFullContentOctets();
                 fullBytes = (size > 0 && size <= Integer.MAX_VALUE) ? is.readNBytes((int) size) : is.readAllBytes();
+            }
+            if (fullBytes.length > MAX_MESSAGE_SIZE) {
+                throw new MailboxException("Message size " + fullBytes.length + " exceeds maximum allowed limit of " + MAX_MESSAGE_SIZE + " bytes");
             }
 
             Set<String> systemFlags = extractSystemFlags(message.createFlags());

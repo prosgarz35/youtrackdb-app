@@ -560,4 +560,23 @@ public class YouTrackDBMessageMapperTest {
         MailboxMessage copiedMsg = copiedIt.next();
         assertThat(new String(copiedMsg.getFullContent().readAllBytes(), StandardCharsets.UTF_8)).isEqualTo("Important Content");
     }
+
+    @Test
+    void shouldRejectOversizedMessage() {
+        SimpleMailboxMessage msg = SimpleMailboxMessage.builder()
+            .mailboxId(mailbox.getMailboxId())
+            .messageId(YouTrackDBMessageId.generate())
+            .threadId(ThreadId.fromBaseMessageId(YouTrackDBMessageId.generate()))
+            .uid(MessageUid.of(1))
+            .modseq(ModSeq.of(1))
+            .internalDate(new Date())
+            .size(105L * 1024 * 1024)
+            .bodyStartOctet(0)
+            .content(new ByteContent(new byte[0]))
+            .flags(new Flags())
+            .build();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> messageMapper.add(mailbox, msg))
+            .hasRootCauseMessage("Message size 110100480 exceeds maximum allowed limit of 104857600 bytes");
+    }
 }

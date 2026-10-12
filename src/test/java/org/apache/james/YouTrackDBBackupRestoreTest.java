@@ -18,6 +18,7 @@ import org.apache.james.utils.SMTPMessageSender;
 import org.apache.james.utils.TestIMAPClient;
 import org.apache.james.utils.WebAdminGuiceProbe;
 import org.apache.james.webadmin.WebAdminUtils;
+import org.apache.james.youtrackdb.YouTrackDBBackupTask;
 import org.apache.james.youtrackdb.YouTrackDBJamesConfiguration;
 import org.apache.james.youtrackdb.YouTrackDBJamesServerMain;
 import org.awaitility.Awaitility;
@@ -251,6 +252,20 @@ public class YouTrackDBBackupRestoreTest {
         } finally {
             restoredServer.stop();
         }
+    }
+
+    @Test
+    void backupTaskShouldReturnPartialOnInvalidBackupDir(@TempDir Path tempDir) {
+        File invalidDir = tempDir.resolve("non_existent_sub/forbidden_file").toFile();
+        try {
+            invalidDir.createNewFile();
+        } catch (IOException ignored) {
+        }
+        // Passing an existing regular file as a directory causes mkdirs to fail
+        File targetDirAsFile = invalidDir;
+        YouTrackDBBackupTask task = new YouTrackDBBackupTask(null, targetDirAsFile, tempDir.toFile());
+        org.apache.james.task.Task.Result result = task.run();
+        assertThat(result).isEqualTo(org.apache.james.task.Task.Result.PARTIAL);
     }
 
     private static void copyDirectoryRecursively(Path source, Path target) throws IOException {

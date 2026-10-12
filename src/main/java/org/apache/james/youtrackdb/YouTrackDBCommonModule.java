@@ -70,6 +70,10 @@ public class YouTrackDBCommonModule extends AbstractModule {
                 LOGGER.info("youtrackdb.properties not found, using default high-performance settings with path {}", DEFAULT_PATH);
             }
 
+            if (DB_USER.equals(dbUser) && DB_PASS.equals(dbPass)) {
+                LOGGER.warn("Using default credentials (admin/admin) for embedded YouTrackDB. For production, set youtrackdb.user and youtrackdb.password in conf/youtrackdb.properties");
+            }
+
             File dir = new File(path).isAbsolute() ? new File(path) : new File(fileSystem.getBasedir(), path);
             if (!dir.exists()) {
                 dir.mkdirs();

@@ -82,8 +82,7 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
         @Override
         public long size() throws MessagingException {
             if (blobStoreDAO instanceof YouTrackDBBlobStoreDAO ytdbDao) {
-                Long count = ytdbDao.countBlobs(defaultBucketName, metadataPrefix()).block();
-                return count != null ? count : 0L;
+                return ytdbDao.countBlobsSync(defaultBucketName, metadataPrefix());
             }
             return delegate.size();
         }
@@ -114,7 +113,12 @@ public class YouTrackDBBlobMailRepositoryFactory implements MailRepositoryFactor
 
         private List<BlobId> findMimePartsForMailKey(MailKey key) {
             try {
-                var metadata = Mono.from(blobStoreDAO.readBytes(defaultBucketName, toMetadataBlobId(key))).block();
+                BlobStoreDAO.BytesBlob metadata;
+                if (blobStoreDAO instanceof YouTrackDBBlobStoreDAO ytdbDao) {
+                    metadata = ytdbDao.readBytesSync(defaultBucketName, toMetadataBlobId(key));
+                } else {
+                    metadata = Mono.from(blobStoreDAO.readBytes(defaultBucketName, toMetadataBlobId(key))).block();
+                }
                 if (metadata != null && metadata.payload() != null) {
                     return YouTrackDBMetadataUtils.extractReferencedPartIds(metadata.payload())
                         .stream()

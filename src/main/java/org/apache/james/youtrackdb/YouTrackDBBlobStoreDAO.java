@@ -328,52 +328,53 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
         .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
+    public BytesBlob readBytesSync(BucketName bucketName, BlobId blobId) throws ObjectStoreIOException, ObjectNotFoundException {
+        String key = buildKey(bucketName, blobId);
+        BlobMeta meta = loadMeta(key);
+
+        if (meta == null) {
+            throw new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString());
+        }
+
+        String storageType = meta.storageType();
+        if (STORAGE_INLINE_RAW.equals(storageType)) {
+            byte[] bytes = meta.payload();
+            return BytesBlob.of(bytes != null ? bytes : new byte[0]);
+        } else if (STORAGE_INLINE_ZSTD.equals(storageType)) {
+            byte[] compressed = meta.payload();
+            if (compressed == null || compressed.length == 0) {
+                return BytesBlob.of(new byte[0]);
+            }
+            try {
+                byte[] decompressed = com.github.luben.zstd.Zstd.decompress(compressed);
+                return BytesBlob.of(decompressed);
+            } catch (Exception e) {
+                try (var is = new com.github.luben.zstd.ZstdInputStream(new ByteArrayInputStream(compressed))) {
+                    return BytesBlob.of(is.readAllBytes());
+                } catch (IOException ioe) {
+                    throw new ObjectStoreIOException("Error decompressing inline blob: " + key, ioe);
+                }
+            }
+        } else if (STORAGE_FILE_ZSTD.equals(storageType)) {
+            File file = getFileForBlob(bucketName, blobId);
+            if (!file.exists()) {
+                throw new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath());
+            }
+            try (InputStream in = new FileInputStream(file);
+                 var zis = new com.github.luben.zstd.ZstdInputStream(in)) {
+                return BytesBlob.of(zis.readAllBytes());
+            } catch (IOException e) {
+                throw new ObjectStoreIOException("Error reading blob file: " + file.getAbsolutePath(), e);
+            }
+        } else {
+            throw new ObjectStoreIOException("Unknown storage type: " + storageType + " for blob " + key);
+        }
+    }
+
     @Override
     public Publisher<BytesBlob> readBytes(BucketName bucketName, BlobId blobId) {
-        return Mono.fromCallable(() -> {
-            String key = buildKey(bucketName, blobId);
-            BlobMeta meta = loadMeta(key);
-
-            if (meta == null) {
-                return null;
-            }
-
-            String storageType = meta.storageType();
-            if (STORAGE_INLINE_RAW.equals(storageType)) {
-                byte[] bytes = meta.payload();
-                return BytesBlob.of(bytes != null ? bytes : new byte[0]);
-            } else if (STORAGE_INLINE_ZSTD.equals(storageType)) {
-                byte[] compressed = meta.payload();
-                if (compressed == null || compressed.length == 0) {
-                    return BytesBlob.of(new byte[0]);
-                }
-                try {
-                    byte[] decompressed = com.github.luben.zstd.Zstd.decompress(compressed);
-                    return BytesBlob.of(decompressed);
-                } catch (Exception e) {
-                    try (var is = new com.github.luben.zstd.ZstdInputStream(new ByteArrayInputStream(compressed))) {
-                        return BytesBlob.of(is.readAllBytes());
-                    } catch (IOException ioe) {
-                        throw new ObjectStoreIOException("Error decompressing inline blob: " + key, ioe);
-                    }
-                }
-            } else if (STORAGE_FILE_ZSTD.equals(storageType)) {
-                File file = getFileForBlob(bucketName, blobId);
-                if (!file.exists()) {
-                    throw new ObjectNotFoundException("Blob file missing on disk: " + file.getAbsolutePath());
-                }
-                try (InputStream in = new FileInputStream(file);
-                     var zis = new com.github.luben.zstd.ZstdInputStream(in)) {
-                    return BytesBlob.of(zis.readAllBytes());
-                } catch (IOException e) {
-                    throw new ObjectStoreIOException("Error reading blob file: " + file.getAbsolutePath(), e);
-                }
-            } else {
-                throw new ObjectStoreIOException("Unknown storage type: " + storageType + " for blob " + key);
-            }
-        })
-        .switchIfEmpty(Mono.error(() -> new ObjectNotFoundException("Blob not found: " + blobId.asString() + " in bucket: " + bucketName.asString())))
-        .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
+        return Mono.fromCallable(() -> readBytesSync(bucketName, blobId))
+            .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
     @Override
@@ -597,14 +598,18 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
             .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
+    public long countBlobsSync(BucketName bucketName, String prefix) {
+        return g.computeInTx(tx -> {
+            var results = prefixQuery(tx, "count(*) AS cnt", bucketName, prefix);
+            if (!results.isEmpty() && results.getFirst() instanceof Map<?, ?> m && m.get("cnt") instanceof Number n) {
+                return n.longValue();
+            }
+            return 0L;
+        });
+    }
+
     public Mono<Long> countBlobs(BucketName bucketName, String prefix) {
-        return Mono.fromCallable(() -> g.computeInTx(tx -> {
-                var results = prefixQuery(tx, "count(*) AS cnt", bucketName, prefix);
-                if (!results.isEmpty() && results.getFirst() instanceof Map<?, ?> m && m.get("cnt") instanceof Number n) {
-                    return n.longValue();
-                }
-                return 0L;
-            }))
+        return Mono.fromCallable(() -> countBlobsSync(bucketName, prefix))
             .subscribeOn(YouTrackDBTransactions.virtualThreadScheduler());
     }
 
