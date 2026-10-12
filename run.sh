@@ -1,6 +1,5 @@
 #!/usr/bin/env sh
 CONF_DIR="${CONF_DIR:-conf}"
-[ ! -d "$CONF_DIR" ] && CONF_DIR="sample-configuration"
 
 JAR_FILE="target/james-server-youtrackdb-app.jar"
 [ ! -f "$JAR_FILE" ] && JAR_FILE="james-server-youtrackdb-app.jar"

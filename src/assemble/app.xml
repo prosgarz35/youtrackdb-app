@@ -40,7 +40,7 @@ limitations under the License.
         </fileSet>
         <!-- include configs -->
         <fileSet>
-            <directory>sample-configuration</directory>
+            <directory>conf</directory>
             <directoryMode>0755</directoryMode>
             <outputDirectory>conf</outputDirectory>
             <!-- set some sane security defaults for config files -->

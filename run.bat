@@ -1,6 +1,5 @@
 @echo off
 set "CONF_DIR=conf"
-if not exist "%CONF_DIR%" set "CONF_DIR=sample-configuration"
 
 set "JAR_FILE=target\james-server-youtrackdb-app.jar"
 if not exist "%JAR_FILE%" set "JAR_FILE=james-server-youtrackdb-app.jar"

@@ -66,7 +66,7 @@ mvn clean package -DskipTests
 ```
 
 #### Launching the Server
-The launcher scripts automatically set the verified production defaults (`-XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g`) and load properties from `conf/jvm.properties` (or `sample-configuration/jvm.properties`).
+The launcher scripts automatically set the verified production defaults (`-XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g`) and load properties from `conf/jvm.properties`.
 
 * **Linux / macOS:**
   ```bash
@@ -82,9 +82,9 @@ To override heap memory or GC options, pass the standard `JAVA_OPTS` variable:
 JAVA_OPTS="-XX:+UseG1GC -Xms3g -Xmx3g" ./run.sh
 ```
 
-Alternatively, launch directly via `java` (pointing to `conf` or `sample-configuration` if `conf` is not yet created):
+Alternatively, launch directly via `java`:
 ```bash
-java -XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g -Dextra.props=sample-configuration/jvm.properties -jar target/james-server-youtrackdb-app.jar
+java -XX:+UseZGC -XX:+ZGenerational -Xms3g -Xmx3g -Dextra.props=conf/jvm.properties -jar target/james-server-youtrackdb-app.jar
 ```
 
 ---

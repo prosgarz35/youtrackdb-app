@@ -22,5 +22,4 @@ Thumbs.db
 
 # YouTrackDB and James runtime data
 var/
-conf/
 backups/
