@@ -181,9 +181,8 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                 "SELECT count(*) AS cnt FROM JamesMailboxMessage WHERE mailboxId = :mbx",
                 "mbx", mailbox.getMailboxId().serialize());
-            if (!rows.isEmpty()) {
-                Object cnt = rows.getFirst().get("cnt");
-                return cnt instanceof Number ? ((Number) cnt).longValue() : 0L;
+            if (!rows.isEmpty() && rows.getFirst().get("cnt") instanceof Number n) {
+                return n.longValue();
             }
             return 0L;
         } catch (Exception e) {

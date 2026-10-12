@@ -43,7 +43,7 @@ public final class YouTrackDBMailboxCounters {
                     }
 
                     Object currentVal = rows.getFirst().get(propertyName);
-                    long current = currentVal instanceof Number ? ((Number) currentVal).longValue() : 0L;
+                    long current = currentVal instanceof Number n ? n.longValue() : 0L;
                     long next = current + 1L;
 
                     tx.command("UPDATE JamesMailbox SET " + propertyName + " = :next WHERE mailboxId = :id",
