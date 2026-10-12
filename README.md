@@ -27,8 +27,8 @@ It delivers a complete enterprise-grade mail stack running within a single JVM p
    - Every message is safely persisted to journal disk pages before issuing the `250 OK` acknowledgment to the client.
 
 4. **Three-Tier Storage & Transparent Compression**
-   - Inline raw storage for small blobs (≤4 KB), inline Zstandard compression (4 KB–64 KB), and off-heap filesystem storage for large blobs (>64 KB) with 3-tier directory sharding.
-   - Minimal SSD/NVMe wear via batched group page flushing and resident memory page caching.
+   - Inline raw storage for small blobs (≤4 KB), inline Zstandard compression (4 KB–64 KB), and off-heap filesystem storage for large blobs (>64 KB) with 3-level hierarchical directory sharding (`var/blobs/{bucket}/ab/cd/ef/{id}`).
+   - Direct Zstandard streaming with bounded heap usage and minimal storage wear via batched group page flushing.
 
 5. **Strict IMAP4rev1 Compliance**
    - Standards-compliant RFC 3501 implementation with IDLE, UIDPLUS, NAMESPACE, MOVE, COMPRESS=DEFLATE, and SASL authentication.
