@@ -45,6 +45,7 @@ public class YouTrackDBMailboxSessionMapperFactory extends MailboxSessionMapperF
 
         this.mailboxMapper = new YouTrackDBMailboxMapper(g);
         this.subscriptionMapper = new YouTrackDBSubscriptionMapper(g);
+        // shortcut: detached AttachmentMapper is in-memory; message attachments are parsed & stored inline inside JamesMailboxMessage.content (RFC 5322/2045)
         this.attachmentMapper = new InMemoryAttachmentMapper();
         this.annotationMapper = new YouTrackDBAnnotationMapper(g);
     }

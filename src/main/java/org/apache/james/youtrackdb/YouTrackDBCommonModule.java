@@ -149,6 +149,7 @@ public class YouTrackDBCommonModule extends AbstractModule {
                     g.command("CREATE PROPERTY JamesBlob.payload IF NOT EXISTS BINARY");
                     g.command("CREATE INDEX JamesBlob.bucketAndBlobId IF NOT EXISTS UNIQUE");
                     g.command("CREATE INDEX JamesBlob.blobId IF NOT EXISTS NOTUNIQUE");
+                    g.command("CREATE INDEX JamesBlob.storageType IF NOT EXISTS NOTUNIQUE");
                     // Composite index on (bucket, blobId) serves prefix and range scans inside a bucket: see YouTrackDBBlobStoreDAO.listBlobs
                     g.command("CREATE INDEX JamesBlob.bucketAndBlobIdRange IF NOT EXISTS ON JamesBlob (bucket, blobId) NOTUNIQUE");
 

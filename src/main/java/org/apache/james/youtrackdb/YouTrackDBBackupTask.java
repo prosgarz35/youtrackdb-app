@@ -102,8 +102,8 @@ public class YouTrackDBBackupTask implements Task {
                             LOGGER.warn("Skipping concurrently accessed or locked blob during backup: {}", src, ioe);
                         }
                     }
-                } catch (java.io.IOException e) {
-                    LOGGER.warn("Failed resolving destination for blob file: {}", src, e);
+                } catch (Exception e) {
+                    LOGGER.warn("Skipping unreadable or rotated blob during backup: {}", src, e);
                 }
             });
         }

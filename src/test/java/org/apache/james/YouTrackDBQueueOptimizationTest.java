@@ -210,4 +210,22 @@ public class YouTrackDBQueueOptimizationTest {
             factory.clean();
         });
     }
+
+    @Test
+    @DisplayName("Delayed items in queue wait without CPU spinning or eager emission")
+    void delayedItemsDoNotEagerlyEmit(@TempDir Path workingDir) throws Exception {
+        byte[] raw = emlBytes();
+        withDb(workingDir, g -> {
+            YouTrackDBMailQueueFactory factory = newFactory(g);
+            ManageableMailQueue queue = factory.createQueue(QUEUE);
+            queue.enQueue(mail("future-msg", parse(raw)), Duration.ofHours(2));
+
+            // Must not emit eagerly within 250ms
+            assertThatThrownBy(() -> Flux.from(queue.deQueue()).next().block(Duration.ofMillis(250)))
+                .isInstanceOf(IllegalStateException.class);
+
+            assertThat(queue.getSize()).isEqualTo(1L);
+            factory.clean();
+        });
+    }
 }

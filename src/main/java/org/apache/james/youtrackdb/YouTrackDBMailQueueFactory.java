@@ -153,13 +153,20 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                         return;
                     }
                     try {
-                        sink.success(mailItems.poll(10, TimeUnit.MILLISECONDS));
+                        // Poll with 100ms timeout on virtual thread: blocks gracefully without burning CPU when items are delayed
+                        YouTrackDBMailQueueItem item = mailItems.poll(100, TimeUnit.MILLISECONDS);
+                        if (item != null) {
+                            sink.success(item);
+                        } else {
+                            sink.success();
+                        }
                     } catch (InterruptedException e) {
                         sink.success();
                     }
                 })
                 .subscribeOn(virtualThreadScheduler)
                 .repeat(() -> !closed)
+                .filter(Objects::nonNull)
                 .subscribeOn(scheduler)
                 .flatMap(item ->
                     Mono.fromRunnable(() -> inProcessingMailItems.add(item)).thenReturn(item), 16)
