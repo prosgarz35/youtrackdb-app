@@ -119,6 +119,9 @@ public final class YouTrackDBTransactions {
      * Executes an action with automatic retry upon encountering retryable conflicts
      * (ConcurrentModificationException or ConcurrentCreateException).
      *
+     * <p>Callers in reactive pipelines should schedule this on {@link #virtualThreadScheduler()} so backoff sleeps
+     * do not block event loop or protocol threads.
+     *
      * @param maxRetries maximum number of attempts
      * @param action the action to execute
      * @return result of the action

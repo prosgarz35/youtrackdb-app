@@ -218,21 +218,27 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
         try {
             String mailboxId = mailbox.getMailboxId().serialize();
             List<Long> uidLongs = uids.stream().map(MessageUid::asLong).toList();
+            final int BATCH_SIZE = 500;
 
             return YouTrackDBTransactions.computeStrictTx(g, tx -> {
-                List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
-                    "SELECT " + METADATA_COLS + " FROM " + CLASS_NAME + " WHERE mailboxId = :mbx AND uid IN :uids",
-                    "mbx", mailboxId,
-                    "uids", uidLongs);
+                Map<MessageUid, MessageMetaData> result = new java.util.HashMap<>();
+                for (int i = 0; i < uidLongs.size(); i += BATCH_SIZE) {
+                    List<Long> batch = uidLongs.subList(i, Math.min(i + BATCH_SIZE, uidLongs.size()));
 
-                Map<MessageUid, MessageMetaData> result = rows.stream()
-                    .map(row -> readMessage(row, mailbox.getMailboxId(), FetchType.METADATA))
-                    .collect(java.util.stream.Collectors.toMap(MailboxMessage::getUid, MailboxMessage::metaData));
+                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRowsInTx(tx,
+                        "SELECT " + METADATA_COLS + " FROM " + CLASS_NAME + " WHERE mailboxId = :mbx AND uid IN :uids",
+                        "mbx", mailboxId,
+                        "uids", batch);
 
-                tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :mbx AND uid IN :uids",
-                    "mbx", mailboxId,
-                    "uids", uidLongs);
+                    for (Map<String, Object> row : rows) {
+                        MailboxMessage msg = readMessage(row, mailbox.getMailboxId(), FetchType.METADATA);
+                        result.put(msg.getUid(), msg.metaData());
+                    }
 
+                    tx.command("DELETE VERTEX JamesMailboxMessage WHERE mailboxId = :mbx AND uid IN :uids",
+                        "mbx", mailboxId,
+                        "uids", batch);
+                }
                 return result;
             });
         } catch (Exception e) {
