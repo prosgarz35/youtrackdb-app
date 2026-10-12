@@ -211,7 +211,7 @@ public class YouTrackDBPerUserMaxQuotaManager implements MaxQuotaManager {
     public Publisher<QuotaDetails> quotaDetailsReactive(QuotaRoot quotaRoot) {
         return Mono.fromCallable(() -> {
             String userKey = quotaRoot.getValue();
-            String domainKey = quotaRoot.getDomain().map(d -> d.asString().toLowerCase(Locale.US)).orElse(null);
+            String domainKey = quotaRoot.getDomain().map(Domain::asString).map(s -> s.toLowerCase(Locale.US)).orElse(null);
 
             List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                 "SELECT scope, quotaKey, maxMessage, maxStorage FROM JamesQuotaLimit WHERE "

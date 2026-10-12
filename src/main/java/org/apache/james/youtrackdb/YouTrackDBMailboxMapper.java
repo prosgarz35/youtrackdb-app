@@ -1,5 +1,6 @@
 package org.apache.james.youtrackdb;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -241,42 +242,31 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
         boolean hasWildcardOnly = org.apache.james.mailbox.model.search.Wildcard.INSTANCE.equals(query.getMailboxNameExpression());
 
         return Mono.fromCallable(() -> {
-            if (fixedNamespace != null && fixedUser != null) {
-                if (hasWildcardOnly) {
-                    return YouTrackDBTransactions.queryRows(g,
-                        "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns AND user = :user",
-                        "ns", fixedNamespace, "user", fixedUser);
-                }
-                return YouTrackDBTransactions.queryRows(g,
-                    "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns AND user = :user AND name LIKE :likePattern",
-                    "ns", fixedNamespace, "user", fixedUser, "likePattern", pathLike);
-            } else if (fixedNamespace != null) {
-                if (hasWildcardOnly) {
-                    return YouTrackDBTransactions.queryRows(g,
-                        "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns",
-                        "ns", fixedNamespace);
-                }
-                return YouTrackDBTransactions.queryRows(g,
-                    "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE namespace = :ns AND name LIKE :likePattern",
-                    "ns", fixedNamespace, "likePattern", pathLike);
-            } else if (fixedUser != null) {
-                if (hasWildcardOnly) {
-                    return YouTrackDBTransactions.queryRows(g,
-                        "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE user = :user",
-                        "user", fixedUser);
-                }
-                return YouTrackDBTransactions.queryRows(g,
-                    "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE user = :user AND name LIKE :likePattern",
-                    "user", fixedUser, "likePattern", pathLike);
-            } else {
-                if (hasWildcardOnly) {
-                    return YouTrackDBTransactions.queryRows(g,
-                        "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox");
-                }
-                return YouTrackDBTransactions.queryRows(g,
-                    "SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox WHERE name LIKE :likePattern",
-                    "likePattern", pathLike);
+            StringBuilder queryStr = new StringBuilder("SELECT mailboxId, namespace, user, name, uidValidity, acl FROM JamesMailbox");
+            List<Object> params = new ArrayList<>();
+            List<String> whereClauses = new ArrayList<>();
+
+            if (fixedNamespace != null) {
+                whereClauses.add("namespace = :ns");
+                params.add("ns");
+                params.add(fixedNamespace);
             }
+            if (fixedUser != null) {
+                whereClauses.add("user = :user");
+                params.add("user");
+                params.add(fixedUser);
+            }
+            if (!hasWildcardOnly) {
+                whereClauses.add("name LIKE :likePattern");
+                params.add("likePattern");
+                params.add(pathLike);
+            }
+
+            if (!whereClauses.isEmpty()) {
+                queryStr.append(" WHERE ").append(String.join(" AND ", whereClauses));
+            }
+
+            return YouTrackDBTransactions.queryRows(g, queryStr.toString(), params.toArray());
         }).subscribeOn(YouTrackDBTransactions.virtualThreadScheduler())
           .flatMapIterable(rows -> rows)
           .map(this::readMailbox)

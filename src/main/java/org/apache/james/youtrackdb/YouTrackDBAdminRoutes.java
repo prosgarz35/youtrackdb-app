@@ -162,59 +162,44 @@ public class YouTrackDBAdminRoutes implements Routes {
             long[] deleted = {0};
             if (blobsSourceDir.exists()) {
                 long gracePeriodCutoff = System.currentTimeMillis() - java.time.Duration.ofHours(1).toMillis();
+                List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(traversalSource,
+                    "SELECT blobId FROM JamesBlob WHERE storageType = 'FILE_ZSTD'");
+                List<String> allFileBlobIds = rows.stream()
+                    .map(r -> Objects.toString(r.get("blobId"), null))
+                    .filter(Objects::nonNull)
+                    .toList();
+                java.util.Set<String> keepNames = YouTrackDBBlobStoreDAO.fileNamesToKeep(allFileBlobIds);
+
                 try (var stream = java.nio.file.Files.walk(blobsSourceDir.toPath())) {
-                    List<java.nio.file.Path> candidates = new ArrayList<>();
-                    stream.filter(java.nio.file.Files::isRegularFile)
-                        .forEach(path -> {
-                            String fileName = path.getFileName().toString();
-                            if (!fileName.contains(".tmp.")) {
-                                try {
-                                    long lastModified = java.nio.file.Files.getLastModifiedTime(path).toMillis();
-                                    if (lastModified < gracePeriodCutoff) {
-                                        candidates.add(path);
-                                    }
-                                } catch (Exception ignored) {
-                                }
-                            }
-                        });
-
-                    List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(traversalSource,
-                        "SELECT blobId FROM JamesBlob WHERE storageType = 'FILE_ZSTD'");
-                    List<String> allFileBlobIds = rows.stream()
-                        .map(r -> Objects.toString(r.get("blobId"), null))
-                        .filter(Objects::nonNull)
-                        .toList();
-                    java.util.Set<String> keepNames = YouTrackDBBlobStoreDAO.fileNamesToKeep(allFileBlobIds);
-
                     final int BATCH_SIZE = 500;
-                    for (int i = 0; i < candidates.size(); i += BATCH_SIZE) {
-                        List<java.nio.file.Path> batch = candidates.subList(i, Math.min(i + BATCH_SIZE, candidates.size()));
+                    List<java.nio.file.Path> batch = new ArrayList<>(BATCH_SIZE);
+                    var iterator = stream.filter(java.nio.file.Files::isRegularFile).iterator();
 
-                        for (java.nio.file.Path path : batch) {
-                            String fileName = path.getFileName().toString();
-                            boolean existsInDb = keepNames.contains(fileName);
-
-                            if (!existsInDb) {
-                                try {
-                                    if (java.nio.file.Files.deleteIfExists(path)) {
-                                        deleted[0]++;
-                                        java.io.File parent = path.toFile().getParentFile();
-                                        while (parent != null && !parent.equals(blobsSourceDir) && parent.getAbsolutePath().startsWith(blobsSourceDir.getAbsolutePath())) {
-                                            String[] list = parent.list();
-                                            if (list != null && list.length == 0) {
-                                                if (!parent.delete()) {
-                                                    break;
-                                                }
-                                                parent = parent.getParentFile();
-                                            } else {
-                                                break;
-                                            }
-                                        }
-                                    }
-                                } catch (Exception ignored) {
-                                }
-                            }
+                    while (iterator.hasNext()) {
+                        java.nio.file.Path path = iterator.next();
+                        String fileName = path.getFileName().toString();
+                        if (fileName.contains(".tmp.")) {
+                            continue;
                         }
+                        try {
+                            long lastModified = java.nio.file.Files.getLastModifiedTime(path).toMillis();
+                            if (lastModified >= gracePeriodCutoff) {
+                                continue;
+                            }
+                        } catch (Exception ignored) {
+                            continue;
+                        }
+
+                        batch.add(path);
+                        if (batch.size() >= BATCH_SIZE) {
+                            deleted[0] += processGcBatch(batch, keepNames, blobsSourceDir);
+                            batch.clear();
+                        }
+                    }
+
+                    if (!batch.isEmpty()) {
+                        deleted[0] += processGcBatch(batch, keepNames, blobsSourceDir);
+                        batch.clear();
                     }
                 }
             }
@@ -232,5 +217,33 @@ public class YouTrackDBAdminRoutes implements Routes {
                 .message("Blobs GC failed: " + e.getMessage())
                 .haltError();
         }
+    }
+
+    private static long processGcBatch(List<java.nio.file.Path> batch, java.util.Set<String> keepNames, File blobsSourceDir) {
+        long count = 0;
+        for (java.nio.file.Path path : batch) {
+            String fileName = path.getFileName().toString();
+            if (!keepNames.contains(fileName)) {
+                try {
+                    if (java.nio.file.Files.deleteIfExists(path)) {
+                        count++;
+                        java.io.File parent = path.toFile().getParentFile();
+                        while (parent != null && !parent.equals(blobsSourceDir) && parent.getAbsolutePath().startsWith(blobsSourceDir.getAbsolutePath())) {
+                            String[] list = parent.list();
+                            if (list != null && list.length == 0) {
+                                if (!parent.delete()) {
+                                    break;
+                                }
+                                parent = parent.getParentFile();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return count;
     }
 }

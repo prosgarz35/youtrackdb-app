@@ -374,12 +374,16 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             }
             long now = clock.millis();
             try {
-                // Database first: batch update using indexed enqueueId IN :ids
+                // Database first: batch updates using indexed enqueueId IN :ids in chunks of 500
                 List<String> enqueueIds = snapshot.stream().map(YouTrackDBMailQueueItem::getEnqueueId).toList();
-                YouTrackDBTransactions.executeStrictTx(g, tx ->
-                    tx.command("UPDATE JamesQueueItem SET nextDelivery = :now WHERE enqueueId IN :ids",
-                        "now", now,
-                        "ids", enqueueIds));
+                final int BATCH_SIZE = 500;
+                for (int i = 0; i < enqueueIds.size(); i += BATCH_SIZE) {
+                    List<String> batchIds = enqueueIds.subList(i, Math.min(i + BATCH_SIZE, enqueueIds.size()));
+                    YouTrackDBTransactions.executeStrictTx(g, tx ->
+                        tx.command("UPDATE JamesQueueItem SET nextDelivery = :now WHERE enqueueId IN :ids",
+                            "now", now,
+                            "ids", batchIds));
+                }
             } catch (RuntimeException e) {
                 throw new MailQueueException("Error while flushing queue " + name.asString(), e);
             }
