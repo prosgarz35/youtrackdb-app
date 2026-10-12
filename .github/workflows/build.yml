@@ -29,11 +29,13 @@ jobs:
       - name: Build and Package with Maven
         run: mvn clean package -Dcheckstyle.skip=true -Dsurefire.excludedGroups=benchmark
 
+      - name: Prepare Distribution Directory
+        run: |
+          mkdir -p dist
+          unzip -q target/james-server-youtrackdb-app.zip -d dist/
+
       - name: Upload Distribution Artifact
         uses: actions/upload-artifact@v4
         with:
           name: youtrackdb-app-dist
-          path: |
-            target/*.zip
-            target/*.tar.gz
-            target/*.jar
+          path: dist/
