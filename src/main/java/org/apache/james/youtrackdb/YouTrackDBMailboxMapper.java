@@ -125,6 +125,11 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
 
     @Override
     public Mono<MailboxId> rename(Mailbox mailbox) {
+        return rename(mailbox, null);
+    }
+
+    @Override
+    public Mono<MailboxId> rename(Mailbox mailbox, MailboxPath previousPath) {
         Objects.requireNonNull(mailbox.getMailboxId(), "A mailbox we want to rename should have a defined mailboxId");
 
         return Mono.fromCallable(() -> {
@@ -163,7 +168,10 @@ public class YouTrackDBMailboxMapper implements MailboxMapper {
                 throw e;
             }
 
-            // Invalidate both caches to avoid phantom paths on concurrent renames
+            // Invalidate caches for both previous path and id
+            if (previousPath != null) {
+                mailboxByPathCache.invalidate(previousPath);
+            }
             mailboxByIdCache.invalidate(mId);
             mailboxByPathCache.invalidateAll();
             putInCache(mailbox);

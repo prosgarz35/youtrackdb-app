@@ -266,4 +266,41 @@ public class YouTrackDBDeleteCommandsTest {
             factory.clean();
         });
     }
+
+    @Test
+    @DisplayName("Queue remove(Recipient): removes matching record from both in-memory and database")
+    void queueRemoveByRecipientRemovesItemAndRecord(@TempDir Path workingDir) throws Exception {
+        withGraph(workingDir, g -> {
+            YouTrackDBMailQueueFactory factory = newFactory(g);
+            ManageableMailQueue queue = factory.createQueue(MailQueueName.of("spool"));
+            queue.enQueue(mail("target"));
+
+            long removed = queue.remove(ManageableMailQueue.Type.Recipient, "recipient@acid.local");
+
+            assertThat(removed).isEqualTo(1L);
+            assertThat(count(g, "JamesQueueItem")).isZero();
+            assertThat(queue.getSize()).isZero();
+            factory.clean();
+        });
+    }
+
+    @Test
+    @DisplayName("Queue remove(): removes items currently in processing")
+    void queueRemoveCleansInProcessingItem(@TempDir Path workingDir) throws Exception {
+        withGraph(workingDir, g -> {
+            YouTrackDBMailQueueFactory factory = newFactory(g);
+            ManageableMailQueue queue = factory.createQueue(MailQueueName.of("spool"));
+            queue.enQueue(mail("in-flight"));
+
+            MailQueue.MailQueueItem dequeued = Mono.from(queue.deQueue()).block(Duration.ofSeconds(10));
+            assertThat(dequeued).isNotNull();
+
+            long removed = queue.remove(ManageableMailQueue.Type.Name, "in-flight");
+
+            assertThat(removed).isEqualTo(1L);
+            assertThat(count(g, "JamesQueueItem")).isZero();
+            assertThat(queue.getSize()).isZero();
+            factory.clean();
+        });
+    }
 }

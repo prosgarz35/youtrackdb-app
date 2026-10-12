@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import jakarta.annotation.PreDestroy;
@@ -418,20 +419,24 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
         @Override
         public long remove(Type type, String value) {
-            List<YouTrackDBMailQueueItem> toBeRemoved = mailItems.stream()
+            List<YouTrackDBMailQueueItem> toBeRemoved = Stream.concat(mailItems.stream(), inProcessingMailItems.stream())
                 .filter(item -> shouldRemove(item, type, value))
+                .distinct()
                 .toList();
             if (!toBeRemoved.isEmpty()) {
                 if (!closed) {
-                    try {
-                        List<String> enqueueIds = toBeRemoved.stream().map(YouTrackDBMailQueueItem::getEnqueueId).toList();
+                    List<String> enqueueIds = toBeRemoved.stream().map(YouTrackDBMailQueueItem::getEnqueueId).toList();
+                    final int BATCH_SIZE = 500;
+                    for (int i = 0; i < enqueueIds.size(); i += BATCH_SIZE) {
+                        List<String> batch = enqueueIds.subList(i, Math.min(i + BATCH_SIZE, enqueueIds.size()));
                         YouTrackDBTransactions.executeStrictTx(g, tx ->
-                            tx.command("DELETE VERTEX JamesQueueItem WHERE enqueueId IN :ids", "ids", enqueueIds));
-                    } catch (Exception e) {
-                        LOGGER.warn("Failed batch removal of mail items from queue {}", name.asString(), e);
+                            tx.command("DELETE VERTEX JamesQueueItem WHERE enqueueId IN :ids", "ids", batch));
                     }
                 }
-                toBeRemoved.forEach(mailItems::remove);
+                toBeRemoved.forEach(item -> {
+                    mailItems.remove(item);
+                    inProcessingMailItems.remove(item);
+                });
             }
             return toBeRemoved.size();
         }

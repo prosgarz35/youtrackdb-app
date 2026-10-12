@@ -623,8 +623,14 @@ public class YouTrackDBBlobStoreDAO implements BlobStoreDAO {
     }
 
     /** The smallest string greater than every string starting with {@code prefix}. */
-    static String prefixUpperBound(String prefix) {
-        int last = prefix.length() - 1;
-        return prefix.substring(0, last) + (char) (prefix.charAt(last) + 1);
+    public static String prefixUpperBound(String prefix) {
+        int i = prefix.length() - 1;
+        while (i >= 0 && prefix.charAt(i) == Character.MAX_VALUE) {
+            i--;
+        }
+        if (i < 0) {
+            return prefix + "\0";
+        }
+        return prefix.substring(0, i) + (char) (prefix.charAt(i) + 1);
     }
 }

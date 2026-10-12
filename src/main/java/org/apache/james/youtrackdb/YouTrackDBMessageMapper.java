@@ -463,6 +463,10 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                     ? original.getThreadId().getBaseMessageId().serialize()
                     : original.getMessageId().serialize();
 
+                SimpleMailboxMessage copy = SimpleMailboxMessage.copy(mailbox.getMailboxId(), original);
+                copy.setUid(uid);
+                copy.setModSeq(modSeq);
+
                 YouTrackDBTransactions.executeStrictTx(g, tx -> {
                     tx.addV(CLASS_NAME)
                         .property(PROP_MAILBOX_ID, newMailboxId)
@@ -481,9 +485,6 @@ public class YouTrackDBMessageMapper extends AbstractMessageMapper {
                         .iterate();
                 });
 
-                SimpleMailboxMessage copy = SimpleMailboxMessage.copy(mailbox.getMailboxId(), original);
-                copy.setUid(uid);
-                copy.setModSeq(modSeq);
                 return copy.metaData();
             }
 

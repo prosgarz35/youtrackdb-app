@@ -289,4 +289,20 @@ public class YouTrackDBBlobPathTest {
             }
         });
     }
+
+    @Test
+    @DisplayName("prefixUpperBound handles normal prefix and Character.MAX_VALUE edge cases without overflow")
+    void prefixUpperBoundEdgeCases() throws Exception {
+        String hiAbc = YouTrackDBBlobStoreDAO.prefixUpperBound("abc");
+        assertThat(hiAbc).isEqualTo("abd");
+        assertThat(hiAbc.compareTo("abc")).isGreaterThan(0);
+
+        String maxPrefix = "test" + Character.MAX_VALUE;
+        String hiMax = YouTrackDBBlobStoreDAO.prefixUpperBound(maxPrefix);
+        assertThat(hiMax.compareTo(maxPrefix)).isGreaterThan(0);
+
+        String allMax = "" + Character.MAX_VALUE;
+        String hiAllMax = YouTrackDBBlobStoreDAO.prefixUpperBound(allMax);
+        assertThat(hiAllMax.compareTo(allMax)).isGreaterThan(0);
+    }
 }

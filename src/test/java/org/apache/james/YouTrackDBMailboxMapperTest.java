@@ -142,10 +142,13 @@ public class YouTrackDBMailboxMapperTest {
         MailboxPath originalPath = MailboxPath.forUser(Username.of("alice"), "Drafts");
         Mailbox created = mailboxMapper.create(originalPath, UidValidity.of(100L)).block();
 
+        // Warm up cache for originalPath
+        assertThat(mailboxMapper.findMailboxByPath(originalPath).blockOptional()).isPresent();
+
         MailboxPath newPath = MailboxPath.forUser(Username.of("alice"), "Archive");
         created.setName("Archive");
 
-        mailboxMapper.rename(created).block();
+        mailboxMapper.rename(created, originalPath).block();
 
         assertThat(mailboxMapper.findMailboxByPath(originalPath).blockOptional()).isEmpty();
         Mailbox renamed = mailboxMapper.findMailboxByPath(newPath).block();
