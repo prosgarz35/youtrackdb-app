@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -122,6 +123,7 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
         static final String PROP_SERIALIZED_MAIL = "serializedMail";
         private static final int MAX_MIME_PAYLOAD_SIZE = 100 * 1024 * 1024; // 100 MB max message size safety guard
 
+        private static final int BATCH_POLL_SIZE = 32;
         private final AtomicInteger references = new AtomicInteger(0);
         private volatile boolean closed = false;
         private final DelayQueue<YouTrackDBMailQueueItem> mailItems;
@@ -145,16 +147,16 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
             this.scheduler = Schedulers.newSingle("ytdb-mail-queue-" + name.asString());
             this.virtualThreadScheduler = YouTrackDBTransactions.virtualThreadScheduler();
 
-            // Recover persistent items from YouTrackDB on startup
-            recoverItemsFromDatabase();
-
             this.flux = Mono.<YouTrackDBMailQueueItem>create(sink -> {
                     if (closed) {
                         sink.success();
                         return;
                     }
                     try {
-                        // Poll with 100ms timeout on virtual thread: blocks gracefully without burning CPU when items are delayed
+                        // Keep in-memory queue replenished in batches of 32 from database without loading full queue into RAM
+                        if (mailItems.size() <= BATCH_POLL_SIZE / 2) {
+                            fetchNextBatchFromDatabase(BATCH_POLL_SIZE);
+                        }
                         YouTrackDBMailQueueItem item = mailItems.poll(100, TimeUnit.MILLISECONDS);
                         if (item != null) {
                             sink.success(item);
@@ -174,27 +176,38 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 .map(item -> mailQueueItemDecoratorFactory.decorate(item, name));
         }
 
-        private void recoverItemsFromDatabase() {
+        private synchronized void fetchNextBatchFromDatabase(int limit) {
+            if (closed) {
+                return;
+            }
             try {
+                long now = clock.millis();
+                // Exclude items already in memory or in processing
+                Set<String> activeIds = new HashSet<>();
+                for (YouTrackDBMailQueueItem item : mailItems) {
+                    activeIds.add(item.getEnqueueId());
+                }
+                for (YouTrackDBMailQueueItem item : inProcessingMailItems) {
+                    activeIds.add(item.getEnqueueId());
+                }
+
                 List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
                     "SELECT enqueueId, serializedMail, nextDelivery FROM " + CLASS_NAME +
-                    " WHERE queueName = :qname ORDER BY nextDelivery ASC, enqueueId ASC",
-                    "qname", name.asString());
+                    " WHERE queueName = :qname AND nextDelivery <= :now ORDER BY nextDelivery ASC, enqueueId ASC LIMIT :lim",
+                    "qname", name.asString(),
+                    "now", now,
+                    "lim", limit);
 
-                List<YouTrackDBMailQueueItem> recovered = rows.stream()
-                    .map(this::toMailQueueItem)
-                    .flatMap(Optional::stream)
-                    .toList();
-
-                for (YouTrackDBMailQueueItem item : recovered) {
-                    mailItems.put(item);
-                }
-                if (!recovered.isEmpty()) {
-                    LOGGER.info("Recovered {} pending mail queue items for queue {} from YouTrackDB", recovered.size(), name.asString());
+                for (Map<String, Object> row : rows) {
+                    String enqueueId = Objects.toString(row.get(PROP_ENQUEUE_ID), null);
+                    if (enqueueId != null && !activeIds.contains(enqueueId)) {
+                        toMailQueueItem(row).ifPresent(mailItems::put);
+                    }
                 }
             } catch (Exception e) {
-                LOGGER.error("Fatal: failed to query persistent queue items from YouTrackDB for queue {}", name.asString(), e);
-                throw new IllegalStateException("Failed to recover persistent mail queue items for queue " + name.asString(), e);
+                if (!closed) {
+                    LOGGER.warn("Failed to fetch next mail queue batch from YouTrackDB for queue {}", name.asString(), e);
+                }
             }
         }
 
@@ -255,9 +268,13 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
                 byte[] serialized = serializeMail(cloned, mime);
                 String enqueueId = UUID.randomUUID().toString();
 
+                // Persist strictly to YouTrackDB; items are fetched in batches of 32 during deQueue() to keep RAM usage flat
                 persist(enqueueId, cloned.getName(), nextDelivery, serialized);
 
-                mailItems.put(new YouTrackDBMailQueueItem(enqueueId, cloned, this, clock, nextDelivery));
+                // If in-memory queue is starving, offer directly to avoid polling latency
+                if (mailItems.size() < BATCH_POLL_SIZE) {
+                    mailItems.put(new YouTrackDBMailQueueItem(enqueueId, cloned, this, clock, nextDelivery));
+                }
             } catch (MailQueueException e) {
                 throw e;
             } catch (Exception e) {
@@ -371,6 +388,15 @@ public class YouTrackDBMailQueueFactory implements MailQueueFactory<YouTrackDBMa
 
         @Override
         public long getSize() {
+            try {
+                List<Map<String, Object>> rows = YouTrackDBTransactions.queryRows(g,
+                    "SELECT count(*) as cnt FROM " + CLASS_NAME + " WHERE queueName = :qname",
+                    "qname", name.asString());
+                if (!rows.isEmpty() && rows.get(0).get("cnt") instanceof Number n) {
+                    return n.longValue();
+                }
+            } catch (Exception ignored) {
+            }
             return mailItems.size() + inProcessingMailItems.size();
         }
 

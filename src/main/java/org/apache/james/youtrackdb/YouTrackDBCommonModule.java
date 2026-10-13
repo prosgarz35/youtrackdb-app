@@ -51,13 +51,45 @@ public class YouTrackDBCommonModule extends AbstractModule {
             ytdbConfig.setProperty("youtrackdb.memory.directMemory.preallocate", true);
             ytdbConfig.setProperty("youtrackdb.statement.cacheSize", 2048);
             String dbName = DB_NAME;
+            Configuration conf = null;
             try {
-                Configuration conf = configurationProvider.getConfiguration("youtrackdb");
+                File propsFile = fileSystem.getFile("conf/youtrackdb.properties");
+                if (propsFile.exists()) {
+                    org.apache.commons.configuration2.builder.FileBasedConfigurationBuilder<org.apache.commons.configuration2.PropertiesConfiguration> builder =
+                        new org.apache.commons.configuration2.builder.FileBasedConfigurationBuilder<>(org.apache.commons.configuration2.PropertiesConfiguration.class)
+                            .configure(new org.apache.commons.configuration2.builder.fluent.Parameters().fileBased().setFile(propsFile));
+                    conf = builder.getConfiguration();
+                    LOGGER.info("Loaded configuration from {}", propsFile.getAbsolutePath());
+                }
+            } catch (Exception ignored) {
+            }
+
+            if (conf == null) {
+                try {
+                    java.io.InputStream stream = getClass().getClassLoader().getResourceAsStream("youtrackdb.properties");
+                    if (stream != null) {
+                        org.apache.commons.configuration2.PropertiesConfiguration pc = new org.apache.commons.configuration2.PropertiesConfiguration();
+                        new org.apache.commons.configuration2.io.FileHandler(pc).load(stream);
+                        conf = pc;
+                        LOGGER.info("Loaded configuration from classpath: youtrackdb.properties");
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            if (conf == null) {
+                try {
+                    conf = configurationProvider.getConfiguration("youtrackdb");
+                } catch (ConfigurationException e) {
+                    LOGGER.info("youtrackdb configuration not found, using default high-performance settings with path {}", DEFAULT_PATH);
+                }
+            }
+
+            if (conf != null) {
                 path = conf.getString("youtrackdb.path", DEFAULT_PATH);
                 dbName = conf.getString("youtrackdb.database", DB_NAME);
                 dbUser = conf.getString("youtrackdb.user", DB_USER);
                 dbPass = conf.getString("youtrackdb.password", DB_PASS);
-                // Merge overrides from configuration file if present
                 var keys = conf.getKeys();
                 while (keys.hasNext()) {
                     String k = keys.next();
@@ -66,8 +98,12 @@ public class YouTrackDBCommonModule extends AbstractModule {
                         ytdbConfig.setProperty(k, val);
                     }
                 }
-            } catch (ConfigurationException e) {
-                LOGGER.info("youtrackdb.properties not found, using default high-performance settings with path {}", DEFAULT_PATH);
+            }
+
+            // Also allow system property override: -Dyoutrackdb.storage.wal.path=...
+            String sysWal = System.getProperty("youtrackdb.storage.wal.path");
+            if (sysWal != null && !sysWal.isBlank()) {
+                ytdbConfig.setProperty("youtrackdb.storage.wal.path", sysWal);
             }
 
             if (DB_USER.equals(dbUser) && DB_PASS.equals(dbPass)) {
@@ -79,16 +115,20 @@ public class YouTrackDBCommonModule extends AbstractModule {
                 dir.mkdirs();
             }
 
-            // Create custom WAL directory if configured
+            // Create custom WAL directory if configured, or default to sibling directory (e.g. var/wal alongside var/youtrackdb)
             String customWalPath = ytdbConfig.getString("youtrackdb.storage.wal.path", null);
+            File walDir;
             if (customWalPath != null && !customWalPath.isBlank()) {
-                File walDir = new File(customWalPath).isAbsolute() ? new File(customWalPath) : new File(fileSystem.getBasedir(), customWalPath);
-                if (!walDir.exists()) {
-                    walDir.mkdirs();
-                }
-                ytdbConfig.setProperty("youtrackdb.storage.wal.path", walDir.getAbsolutePath());
-                LOGGER.info("Using dedicated WAL path for YouTrackDB: {}", walDir.getAbsolutePath());
+                walDir = new File(customWalPath).isAbsolute() ? new File(customWalPath) : new File(fileSystem.getBasedir(), customWalPath);
+            } else {
+                File parentDir = dir.getParentFile();
+                walDir = parentDir != null ? new File(parentDir, "wal") : new File(dir, "wal");
             }
+            if (!walDir.exists()) {
+                walDir.mkdirs();
+            }
+            ytdbConfig.setProperty("youtrackdb.storage.wal.path", walDir.getAbsolutePath());
+            LOGGER.info("Using dedicated WAL path for YouTrackDB: {}", walDir.getAbsolutePath());
 
             LOGGER.info("Initializing embedded YouTrackDB environment at {}", dir.getAbsolutePath());
             YouTrackDB ytdb = null;
