@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Oct 13 11:31:25 ICT 2026
+gremlin-groovy-0.5.0-SNAPSHOT-sources.jar>=
+gremlin-groovy-0.5.0-SNAPSHOT.jar>=
+gremlin-groovy-0.5.0-SNAPSHOT.pom>=

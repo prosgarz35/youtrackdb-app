@@ -1,0 +1,6 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Oct 13 11:30:37 ICT 2026
+tinkergraph-gremlin-0.5.0-SNAPSHOT-min.jar>=
+tinkergraph-gremlin-0.5.0-SNAPSHOT-sources.jar>=
+tinkergraph-gremlin-0.5.0-SNAPSHOT.jar>=
+tinkergraph-gremlin-0.5.0-SNAPSHOT.pom>=

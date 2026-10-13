@@ -3,7 +3,7 @@
   <groupId>org.apache.james</groupId>
   <artifactId>apache-james-mailbox</artifactId>
   <versioning>
-    <lastUpdated>20260929090846</lastUpdated>
+    <lastUpdated>20261013043622</lastUpdated>
     <snapshot>
       <localCopy>true</localCopy>
     </snapshot>
@@ -12,12 +12,12 @@
         <classifier>tests</classifier>
         <extension>jar</extension>
         <value>3.10.0-SNAPSHOT</value>
-        <updated>20260929090846</updated>
+        <updated>20261013043622</updated>
       </snapshotVersion>
       <snapshotVersion>
         <extension>pom</extension>
         <value>3.10.0-SNAPSHOT</value>
-        <updated>20260929090846</updated>
+        <updated>20261013043622</updated>
       </snapshotVersion>
     </snapshotVersions>
   </versioning>

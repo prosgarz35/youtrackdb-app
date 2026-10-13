@@ -3,7 +3,7 @@
   <groupId>io.youtrackdb</groupId>
   <artifactId>youtrackdb-gremlin-annotations</artifactId>
   <versioning>
-    <lastUpdated>20261010062043</lastUpdated>
+    <lastUpdated>20261013042859</lastUpdated>
     <snapshot>
       <localCopy>true</localCopy>
     </snapshot>
@@ -11,18 +11,18 @@
       <snapshotVersion>
         <extension>pom</extension>
         <value>0.5.0-SNAPSHOT</value>
-        <updated>20261010062043</updated>
+        <updated>20261013042859</updated>
       </snapshotVersion>
       <snapshotVersion>
         <extension>jar</extension>
         <value>0.5.0-SNAPSHOT</value>
-        <updated>20261010062043</updated>
+        <updated>20261013042859</updated>
       </snapshotVersion>
       <snapshotVersion>
         <classifier>sources</classifier>
         <extension>jar</extension>
         <value>0.5.0-SNAPSHOT</value>
-        <updated>20261010062043</updated>
+        <updated>20261013042859</updated>
       </snapshotVersion>
     </snapshotVersions>
   </versioning>

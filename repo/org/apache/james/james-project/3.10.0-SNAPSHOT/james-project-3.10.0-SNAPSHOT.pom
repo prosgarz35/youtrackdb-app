@@ -622,7 +622,6 @@
 
         <james.groupId>org.apache.james</james.groupId>
         <james.protocols.groupId>${james.groupId}.protocols</james.protocols.groupId>
-        <activemq.version>6.2.7</activemq.version>
         <apache-mime4j.version>0.8.15</apache-mime4j.version>
         <apache.openjpa.version>4.1.1</apache.openjpa.version>
         <!-- Align with EE10 Persistence 3.1 & Transactions 2.0: https://openjpa.apache.org/ -->
@@ -641,8 +640,7 @@
         <activmq-artemis.version>2.56.0</activmq-artemis.version>
         <apache-jspf-resolver.version>1.0.5</apache-jspf-resolver.version>
         <angus-mail.version>2.0.5</angus-mail.version>
-        <angus-activation.version>2.0.2</angus-activation.version>
-        <!-- Align with EE10 Activation 2.1: https://eclipse-ee4j.github.io/angus-activation/ -->
+        <angus-activation.version>2.0.2</angus-activation.version><!-- Align with EE10 Activation 2.1: https://eclipse-ee4j.github.io/angus-activation/ -->
         <slf4j.version>2.0.17</slf4j.version>
         <circe.version>0.14.14</circe.version>
         <dnsjava.version>3.6.3</dnsjava.version>
@@ -684,7 +682,6 @@
         <tink.version>1.17.0</tink.version>
         <zstd-jni.version>1.5.7-7</zstd-jni.version>
         <lettuce.core.version>6.8.2.RELEASE</lettuce.core.version>
-        <jimfs.version>1.3.2</jimfs.version>
         <io.micrometer.core.version>1.16.7</io.micrometer.core.version>
         <io.micrometer.tracing.version>1.6.7</io.micrometer.tracing.version>
 
@@ -697,6 +694,7 @@
         <jacoco-maven-plugin.version>0.8.13</jacoco-maven-plugin.version>
         <javacrumbs.json-unit.version>4.1.1</javacrumbs.json-unit.version>
         <fastutil-core.version>8.5.15</fastutil-core.version>
+        <git.useNativeGit>true</git.useNativeGit>
     </properties>
 
     <dependencyManagement>
@@ -2329,11 +2327,6 @@
                 <version>${guice.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.google.jimfs</groupId>
-                <artifactId>jimfs</artifactId>
-                <version>${jimfs.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>com.h2database</groupId>
                 <artifactId>h2</artifactId>
                 <version>${h2.version}</version>
@@ -2558,6 +2551,13 @@
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
                 <artifactId>netty-codec</artifactId>
                 <version>${netty.version}</version>
             </dependency>
@@ -2685,20 +2685,12 @@
                 <version>4.0.2</version>
             </dependency>
             <dependency>
-                <groupId>org.apache.activemq</groupId>
-                <artifactId>activemq-broker</artifactId>
-                <version>${activemq.version}</version>
-                <exclusions>
-                    <!-- exclude this, it's only used in the authentication plugin which we don't use -->
-                    <!-- exclude this, we don't use osgi yet -->
-                    <exclusion>
-                        <groupId>org.osgi</groupId>
-                        <artifactId>org.osgi.core</artifactId>
-                    </exclusion>
-                </exclusions>
+                <groupId>org.apache.ant</groupId>
+                <artifactId>ant</artifactId>
+                <version>1.10.15</version>
             </dependency>
             <dependency>
-                <groupId>org.apache.activemq</groupId>
+                <groupId>org.apache.artemis</groupId>
                 <artifactId>artemis-jakarta-client</artifactId>
                 <version>${activmq-artemis.version}</version>
                 <exclusions>
@@ -2708,10 +2700,11 @@
                     </exclusion>
                 </exclusions>
             </dependency>
+            <!-- Artemis embedded server (replaces legacy ActiveMQ BrokerService) -->
             <dependency>
-                <groupId>org.apache.ant</groupId>
-                <artifactId>ant</artifactId>
-                <version>1.10.15</version>
+                <groupId>org.apache.artemis</groupId>
+                <artifactId>artemis-jakarta-server</artifactId>
+                <version>${activmq-artemis.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.commons</groupId>
@@ -4243,7 +4236,7 @@
                     </includeOnlyProperties>
                     <prefix>git</prefix>
                     <skip>false</skip>
-                    <useNativeGit>true</useNativeGit>
+                    <useNativeGit>${git.useNativeGit}</useNativeGit>
                     <verbose>false</verbose>
                 </configuration>
                 <executions>
@@ -4609,6 +4602,17 @@
                     </plugins>
                 </pluginManagement>
             </build>
+        </profile>
+        <profile>
+            <id>windows-git</id>
+            <activation>
+                <os>
+                    <family>windows</family>
+                </os>
+            </activation>
+            <properties>
+                <git.useNativeGit>false</git.useNativeGit>
+            </properties>
         </profile>
     </profiles>
 </project>

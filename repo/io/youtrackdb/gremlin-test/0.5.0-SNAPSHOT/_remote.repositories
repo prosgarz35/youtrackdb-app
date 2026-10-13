@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Oct 13 11:30:34 ICT 2026
+gremlin-test-0.5.0-SNAPSHOT-sources.jar>=
+gremlin-test-0.5.0-SNAPSHOT.jar>=
+gremlin-test-0.5.0-SNAPSHOT.pom>=

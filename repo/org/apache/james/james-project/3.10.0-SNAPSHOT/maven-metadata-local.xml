@@ -3,7 +3,7 @@
   <groupId>org.apache.james</groupId>
   <artifactId>james-project</artifactId>
   <versioning>
-    <lastUpdated>20261002032104</lastUpdated>
+    <lastUpdated>20261013043622</lastUpdated>
     <snapshot>
       <localCopy>true</localCopy>
     </snapshot>
@@ -12,18 +12,18 @@
         <classifier>site</classifier>
         <extension>xml</extension>
         <value>3.10.0-SNAPSHOT</value>
-        <updated>20261002032104</updated>
+        <updated>20261013043622</updated>
       </snapshotVersion>
       <snapshotVersion>
         <classifier>tests</classifier>
         <extension>jar</extension>
         <value>3.10.0-SNAPSHOT</value>
-        <updated>20261002032104</updated>
+        <updated>20261013043622</updated>
       </snapshotVersion>
       <snapshotVersion>
         <extension>pom</extension>
         <value>3.10.0-SNAPSHOT</value>
-        <updated>20261002032104</updated>
+        <updated>20261013043622</updated>
       </snapshotVersion>
     </snapshotVersions>
   </versioning>
